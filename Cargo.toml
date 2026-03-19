@@ -1,0 +1,27 @@
+[package]
+name = "bevy_metalfx"
+version = "0.1.0"
+edition = "2021"
+description = "Bevy plugin for Apple MetalFX upscaling and frame interpolation"
+license = "MIT OR Apache-2.0"
+
+[dependencies]
+bevy = { version = "0.18", default-features = false, features = [
+  "bevy_render",
+  "bevy_core_pipeline",
+  "bevy_window",
+] }
+log = "0.4"
+
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2 = "0.6"
+objc2-foundation = { version = "0.3", features = ["NSObject"] }
+objc2-metal = { version = "0.3", features = [
+  "MTLDevice",
+  "MTLTexture",
+  "MTLCommandBuffer",
+  "MTLPixelFormat",
+] }
+objc2-metal-fx = { version = "0.3", features = [
+  "MTLFXSpatialScaler",
+] }
