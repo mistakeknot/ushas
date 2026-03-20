@@ -12,7 +12,13 @@
 mod platform;
 
 #[cfg(target_os = "macos")]
+mod node;
+
+#[cfg(target_os = "macos")]
 pub use platform::*;
+
+#[cfg(target_os = "macos")]
+pub use node::{MetalFxConfig, MetalFxUpscaleNode};
 
 /// Check whether MetalFX is available on this system at runtime.
 ///
@@ -65,7 +71,7 @@ impl Default for MetalFxPlugin {
 }
 
 impl bevy::app::Plugin for MetalFxPlugin {
-    fn build(&self, _app: &mut bevy::app::App) {
+    fn build(&self, app: &mut bevy::app::App) {
         assert!(
             (0.1..=1.0).contains(&self.render_scale),
             "MetalFxPlugin: render_scale must be in [0.1, 1.0], got {}",
@@ -88,7 +94,48 @@ impl bevy::app::Plugin for MetalFxPlugin {
             self.render_scale
         );
 
-        // TODO Phase 2: Insert render graph node, configure camera resolution
-        // TODO Phase 2: Remove/replace Bevy's UpscalingNode
+        #[cfg(target_os = "macos")]
+        {
+            use bevy::core_pipeline::core_3d::graph::Node3d;
+            use bevy::render::render_graph::ViewNodeRunner;
+            use bevy::render::RenderApp;
+
+            // Insert config resource into the render world.
+            if let Some(render_app) = app.get_sub_app_mut(RenderApp) {
+                render_app.insert_resource(node::MetalFxConfig {
+                    render_scale: self.render_scale,
+                });
+
+                // Add our MetalFX upscale node to the render graph.
+                // It runs at Node3d::Upscaling, alongside Bevy's built-in
+                // UpscalingNode. In Phase 2b we'll replace UpscalingNode
+                // entirely; for now both run (MetalFX does the upscale,
+                // UpscalingNode still does the final blit to swapchain).
+                use bevy::render::render_graph::RenderGraphExt;
+                render_app.add_render_graph_node::<ViewNodeRunner<node::MetalFxUpscaleNode>>(
+                    bevy::core_pipeline::core_3d::graph::Core3d,
+                    MetalFxLabel,
+                );
+
+                // Run our node just before the built-in Upscaling node.
+                render_app.add_render_graph_edge(
+                    bevy::core_pipeline::core_3d::graph::Core3d,
+                    MetalFxLabel,
+                    Node3d::Upscaling,
+                );
+
+                // Our node must come after tonemapping (which is the last
+                // post-processing step before upscaling).
+                render_app.add_render_graph_edge(
+                    bevy::core_pipeline::core_3d::graph::Core3d,
+                    Node3d::EndMainPassPostProcessing,
+                    MetalFxLabel,
+                );
+            }
+        }
     }
 }
+
+/// Render graph label for the MetalFX upscale node.
+#[derive(Debug, Hash, PartialEq, Eq, Clone, bevy::render::render_graph::RenderLabel)]
+pub struct MetalFxLabel;
