@@ -96,8 +96,6 @@ impl bevy::app::Plugin for MetalFxPlugin {
 
         #[cfg(target_os = "macos")]
         {
-            use bevy::core_pipeline::core_3d::graph::Node3d;
-            use bevy::render::render_graph::ViewNodeRunner;
             use bevy::render::RenderApp;
 
             // Insert config resource into the render world.
@@ -106,31 +104,12 @@ impl bevy::app::Plugin for MetalFxPlugin {
                     render_scale: self.render_scale,
                 });
 
-                // Add our MetalFX upscale node to the render graph.
-                // It runs at Node3d::Upscaling, alongside Bevy's built-in
-                // UpscalingNode. In Phase 2b we'll replace UpscalingNode
-                // entirely; for now both run (MetalFX does the upscale,
-                // UpscalingNode still does the final blit to swapchain).
-                use bevy::render::render_graph::RenderGraphExt;
-                render_app.add_render_graph_node::<ViewNodeRunner<node::MetalFxUpscaleNode>>(
-                    bevy::core_pipeline::core_3d::graph::Core3d,
-                    MetalFxLabel,
-                );
-
-                // Run our node just before the built-in Upscaling node.
-                render_app.add_render_graph_edge(
-                    bevy::core_pipeline::core_3d::graph::Core3d,
-                    MetalFxLabel,
-                    Node3d::Upscaling,
-                );
-
-                // Our node must come after tonemapping (which is the last
-                // post-processing step before upscaling).
-                render_app.add_render_graph_edge(
-                    bevy::core_pipeline::core_3d::graph::Core3d,
-                    Node3d::EndMainPassPostProcessing,
-                    MetalFxLabel,
-                );
+                // TODO Phase 2b: Add render graph node once command buffer
+                // synchronization with wgpu's internal encoder state is solved.
+                // The current encode_spatial_upscale call conflicts with wgpu's
+                // active command encoder, causing GPU hangs. Need to either:
+                // 1. Flush wgpu's encoder before MetalFX encode, or
+                // 2. Use a separate command buffer for MetalFX
             }
         }
     }
