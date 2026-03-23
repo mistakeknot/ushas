@@ -309,6 +309,11 @@ impl ViewNode for MetalFxUpscaleNode {
                 let motion_scale_x = -(input_w as f32);
                 let motion_scale_y = -(input_h as f32);
 
+                log::info!(
+                    "MetalFxUpscaleNode: temporal encode frame={} input={}x{} jitter=({:.3},{:.3}) reset={}",
+                    state.frame_count, input_w, input_h, jitter_offset.x, jitter_offset.y, is_first_frame
+                );
+
                 unsafe {
                     encoder.as_hal_mut::<wgpu_hal::metal::Api, _, ()>(|hal_encoder| {
                         let Some(enc) = hal_encoder else { return };
