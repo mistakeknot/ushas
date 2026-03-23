@@ -39,7 +39,7 @@ pub(crate) fn is_available_impl() -> bool {
 /// # Safety
 /// `device_ptr` must be a valid `id<MTLDevice>` pointer from wgpu-hal's
 /// `raw_device().lock().as_ptr()`.
-pub unsafe fn try_create_spatial_scaler_from_raw(
+pub(crate) unsafe fn try_create_spatial_scaler_from_raw(
     device_ptr: *mut c_void,
     input_width: usize,
     input_height: usize,
@@ -82,7 +82,7 @@ pub unsafe fn try_create_spatial_scaler_from_raw(
 /// - `color_ptr`, `output_ptr`, `cmd_buf_ptr` must be valid Metal objects
 ///   from wgpu-hal's `raw_handle()` / `raw_command_buffer()`.
 /// - No Metal render/compute encoder may be active on the command buffer.
-pub unsafe fn encode_spatial_upscale(
+pub(crate) unsafe fn encode_spatial_upscale(
     scaler: &ProtocolObject<dyn MTLFXSpatialScaler>,
     color_ptr: *mut c_void,
     output_ptr: *mut c_void,
@@ -121,7 +121,7 @@ pub unsafe fn encode_spatial_upscale(
 /// # Safety
 /// `device_ptr` must be a valid `id<MTLDevice>` pointer from wgpu-hal's
 /// `raw_device().lock().as_ptr()`.
-pub unsafe fn try_create_temporal_scaler_from_raw(
+pub(crate) unsafe fn try_create_temporal_scaler_from_raw(
     device_ptr: *mut c_void,
     input_width: usize,
     input_height: usize,
@@ -163,7 +163,7 @@ pub unsafe fn try_create_temporal_scaler_from_raw(
 /// # Safety
 /// - All pointers must be valid Metal objects from wgpu-hal's raw handles.
 /// - No Metal render/compute encoder may be active on the command buffer.
-pub unsafe fn encode_temporal_upscale(
+pub(crate) unsafe fn encode_temporal_upscale(
     scaler: &ProtocolObject<dyn MTLFXTemporalScaler>,
     color_ptr: *mut c_void,
     depth_ptr: *mut c_void,
@@ -258,7 +258,8 @@ pub(crate) unsafe fn spawn_temporal_scaler_thread(
 ///
 /// # Safety
 /// `device_ptr` must be a valid `id<MTLDevice>` pointer.
-pub unsafe fn is_frame_interpolation_supported(device_ptr: *mut c_void) -> bool {
+#[allow(dead_code)] // Reserved for future use (runtime capability check).
+pub(crate) unsafe fn is_frame_interpolation_supported(device_ptr: *mut c_void) -> bool {
     if device_ptr.is_null() {
         return false;
     }
@@ -273,7 +274,7 @@ pub unsafe fn is_frame_interpolation_supported(device_ptr: *mut c_void) -> bool 
 ///
 /// # Safety
 /// `device_ptr` must be a valid `id<MTLDevice>` pointer.
-pub unsafe fn try_create_frame_interpolator_from_raw(
+pub(crate) unsafe fn try_create_frame_interpolator_from_raw(
     device_ptr: *mut c_void,
     input_width: usize,
     input_height: usize,
@@ -316,7 +317,7 @@ pub unsafe fn try_create_frame_interpolator_from_raw(
 /// # Safety
 /// All pointers must be valid Metal objects. No encoder may be active on the command buffer.
 #[allow(clippy::too_many_arguments)]
-pub unsafe fn encode_frame_interpolation(
+pub(crate) unsafe fn encode_frame_interpolation(
     interpolator: &ProtocolObject<dyn MTLFXFrameInterpolator>,
     color_ptr: *mut c_void,
     prev_color_ptr: *mut c_void,
@@ -415,7 +416,7 @@ pub(crate) unsafe fn spawn_frame_interpolator_thread(
 
 /// Map a wgpu TextureFormat to the corresponding MTLPixelFormat.
 /// Returns None for formats that MetalFX doesn't support.
-pub fn wgpu_format_to_mtl(
+pub(crate) fn wgpu_format_to_mtl(
     format: bevy::render::render_resource::TextureFormat,
 ) -> Option<MTLPixelFormat> {
     use bevy::render::render_resource::TextureFormat as WF;

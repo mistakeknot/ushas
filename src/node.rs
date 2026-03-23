@@ -41,10 +41,11 @@ use objc2::rc::Retained;
 use objc2::runtime::ProtocolObject;
 use objc2_metal_fx::{MTLFXFrameInterpolator, MTLFXSpatialScaler, MTLFXTemporalScaler};
 
-use crate::{
+use crate::platform::{
     encode_spatial_upscale, encode_temporal_upscale, try_create_spatial_scaler_from_raw,
-    wgpu_format_to_mtl, MetalFxMode,
+    wgpu_format_to_mtl,
 };
+use crate::MetalFxMode;
 
 /// Resource holding the MetalFX render configuration.
 #[derive(Resource, Clone, Copy)]
@@ -296,7 +297,7 @@ impl ViewNode for MetalFxUpscaleNode {
                         let color_fmt_raw: usize = unsafe { std::mem::transmute(color_mtl_fmt) };
                         match mode {
                             MetalFxMode::Temporal => unsafe {
-                                crate::spawn_temporal_scaler_thread(
+                                crate::platform::spawn_temporal_scaler_thread(
                                     device_ptr,
                                     input_w as usize, input_h as usize,
                                     output_w as usize, output_h as usize,
@@ -304,7 +305,7 @@ impl ViewNode for MetalFxUpscaleNode {
                                 );
                             },
                             MetalFxMode::FrameInterpolation => unsafe {
-                                crate::spawn_frame_interpolator_thread(
+                                crate::platform::spawn_frame_interpolator_thread(
                                     device_ptr,
                                     input_w as usize, input_h as usize,
                                     output_w as usize, output_h as usize,
@@ -477,7 +478,7 @@ impl ViewNode for MetalFxUpscaleNode {
                         let Some(cmd_buf) = enc.raw_command_buffer() else { return };
                         let cmd_buf_ptr = cmd_buf.as_ptr() as *mut c_void;
 
-                        crate::encode_frame_interpolation(
+                        crate::platform::encode_frame_interpolation(
                             interpolator,
                             main_tex_ptr,
                             prev_color_ptr,

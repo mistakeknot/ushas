@@ -15,12 +15,29 @@ mod platform;
 mod node;
 
 #[cfg(target_os = "macos")]
-pub use platform::*;
-
-#[cfg(target_os = "macos")]
 pub use node::{MetalFxConfig, MetalFxUpscaleNode};
 
-#[cfg(target_os = "macos")]
+#[cfg(not(target_os = "macos"))]
+mod stub {
+    use super::MetalFxMode;
+    use bevy::prelude::*;
+
+    /// Render-world configuration (stub for non-macOS platforms).
+    #[derive(Resource, Clone, Copy)]
+    pub struct MetalFxConfig {
+        pub render_scale: f32,
+        pub mode: MetalFxMode,
+    }
+
+    /// Render graph node (stub for non-macOS platforms — does nothing).
+    #[derive(Default)]
+    pub struct MetalFxUpscaleNode;
+}
+
+#[cfg(not(target_os = "macos"))]
+pub use stub::{MetalFxConfig, MetalFxUpscaleNode};
+
+#[cfg(all(target_os = "macos", feature = "temporal"))]
 mod jitter;
 
 /// Check whether MetalFX is available on this system at runtime.
@@ -111,9 +128,18 @@ impl bevy::app::Plugin for MetalFxPlugin {
         app.add_systems(bevy::app::Update, update_resolution_on_resize);
 
         // Temporal + FrameInterpolation modes: add prepass components and jitter system.
+        #[cfg(feature = "temporal")]
         if self.mode == MetalFxMode::Temporal || self.mode == MetalFxMode::FrameInterpolation {
             app.add_systems(bevy::app::PostStartup, setup_temporal_camera);
             app.add_systems(bevy::app::Update, jitter::update_jitter);
+        }
+        #[cfg(not(feature = "temporal"))]
+        if self.mode == MetalFxMode::Temporal || self.mode == MetalFxMode::FrameInterpolation {
+            log::warn!(
+                "MetalFX: {:?} mode requested but 'temporal' feature not enabled — falling back to Spatial",
+                self.mode
+            );
+            app.insert_resource(MetalFxModeResource(MetalFxMode::Spatial));
         }
 
         #[cfg(target_os = "macos")]
@@ -144,9 +170,12 @@ impl bevy::app::Plugin for MetalFxPlugin {
 }
 
 use bevy::camera::MainPassResolutionOverride;
-use bevy::core_pipeline::prepass::{DepthPrepass, MotionVectorPrepass};
-use bevy::render::camera::TemporalJitter;
 use bevy::prelude::*;
+
+#[cfg(feature = "temporal")]
+use bevy::core_pipeline::prepass::{DepthPrepass, MotionVectorPrepass};
+#[cfg(feature = "temporal")]
+use bevy::render::camera::TemporalJitter;
 
 /// Main-world resource holding the MetalFX mode.
 #[derive(Resource, Clone, Copy)]
@@ -208,6 +237,7 @@ fn update_resolution_on_resize(
 }
 
 /// Insert prepass components and jitter on Camera3d for temporal mode.
+#[cfg(feature = "temporal")]
 fn setup_temporal_camera(
     mut commands: Commands,
     cameras: Query<Entity, (With<Camera3d>, Without<MotionVectorPrepass>)>,
@@ -225,3 +255,48 @@ fn setup_temporal_camera(
 /// Render graph label for the MetalFX upscale node.
 #[derive(Debug, Hash, PartialEq, Eq, Clone, bevy::render::render_graph::RenderLabel)]
 pub struct MetalFxLabel;
+
+/// Probe whether a spatial scaler can be created for the given render device.
+///
+/// Extracts the raw Metal device from Bevy's `RenderDevice`, attempts to create
+/// a spatial scaler at 800x450 → 1600x900 (Bgra8Unorm), and returns `true` on success.
+/// Returns `false` on non-macOS or if scaler creation fails.
+///
+/// Intended for integration testing — not needed at runtime (the plugin handles
+/// scaler creation internally).
+pub fn probe_spatial_scaler(_render_device: &bevy::render::renderer::RenderDevice) -> bool {
+    #[cfg(target_os = "macos")]
+    {
+        use std::ffi::c_void;
+        use foreign_types::ForeignType;
+
+        if !is_available() {
+            return false;
+        }
+
+        let wgpu_dev = _render_device.wgpu_device();
+        let Some(hal_dev) = (unsafe { wgpu_dev.as_hal::<wgpu_hal::metal::Api>() }) else {
+            return false;
+        };
+        let device_ptr = {
+            let dev_lock = hal_dev.raw_device().lock();
+            dev_lock.as_ptr() as *mut c_void
+        };
+
+        let fmt = bevy::render::render_resource::TextureFormat::Bgra8Unorm;
+        let Some(color_fmt) = platform::wgpu_format_to_mtl(fmt) else {
+            return false;
+        };
+
+        let scaler = unsafe {
+            platform::try_create_spatial_scaler_from_raw(
+                device_ptr, 800, 450, 1600, 900, color_fmt, color_fmt,
+            )
+        };
+        scaler.is_some()
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        false
+    }
+}
