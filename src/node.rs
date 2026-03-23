@@ -12,6 +12,14 @@
 //!     → metalfx_output (full-res, our texture)
 //!       → blit render pass → out_texture (swapchain)
 //! ```
+//!
+//! ## Temporal Scaler Threading
+//!
+//! The temporal scaler's `newTemporalScalerWithDevice:` compiles ML pipelines
+//! internally and can take several seconds. To avoid blocking the render thread,
+//! scaler creation is dispatched to a background OS thread. The render node
+//! polls for readiness each frame and falls through to Bevy's bilinear upscaling
+//! until the scaler is ready.
 
 use std::ffi::c_void;
 use std::sync::Mutex;
@@ -35,7 +43,7 @@ use objc2_metal_fx::{MTLFXSpatialScaler, MTLFXTemporalScaler};
 
 use crate::{
     encode_spatial_upscale, encode_temporal_upscale, try_create_spatial_scaler_from_raw,
-    try_create_temporal_scaler_from_raw, wgpu_format_to_mtl, MetalFxMode,
+    wgpu_format_to_mtl, MetalFxMode,
 };
 
 /// Resource holding the MetalFX render configuration.
@@ -46,7 +54,7 @@ pub struct MetalFxConfig {
 }
 
 /// Thread-safe wrapper for MetalFX scalers.
-enum SendScaler {
+pub(crate) enum SendScaler {
     Spatial(Retained<ProtocolObject<dyn MTLFXSpatialScaler>>),
     Temporal(Retained<ProtocolObject<dyn MTLFXTemporalScaler>>),
 }
@@ -68,13 +76,20 @@ struct CachedState {
     frame_count: u64,
 }
 
+/// Pending temporal scaler creation on a background thread.
+struct PendingScaler {
+    receiver: std::sync::mpsc::Receiver<Option<SendScaler>>,
+    input_w: u32,
+    input_h: u32,
+    output_w: u32,
+    output_h: u32,
+}
+
 /// MetalFX upscaling ViewNode (spatial + temporal).
-///
-/// Runs after `Node3d::Upscaling`, overwriting the bilinear-upscaled result
-/// with Apple's ML-accelerated upscaling.
 #[derive(Default)]
 pub struct MetalFxUpscaleNode {
     cached: Mutex<Option<CachedState>>,
+    pending: Mutex<Option<PendingScaler>>,
     cached_bind_group: Mutex<Option<(TextureViewId, BindGroup)>>,
     cached_pipeline: Mutex<Option<CachedRenderPipelineId>>,
 }
@@ -110,9 +125,8 @@ impl ViewNode for MetalFxUpscaleNode {
         let render_scale = config.map_or(0.5, |c| c.render_scale);
         let mode = config.map_or(MetalFxMode::Spatial, |c| c.mode);
 
-        // main_texture is always at full framebuffer resolution.
-        // The rendered content occupies render_scale * full_size (via MainPassResolutionOverride).
-        // MetalFX upscales from the rendered content back to full resolution.
+        // main_texture is at full framebuffer resolution.
+        // Rendered content is render_scale * full_size (via MainPassResolutionOverride).
         let output_w = main_size.width;
         let output_h = main_size.height;
         let input_w = (output_w as f32 * render_scale).round() as u32;
@@ -130,121 +144,249 @@ impl ViewNode for MetalFxUpscaleNode {
         });
 
         if needs_recreate {
-            log::info!(
-                "MetalFxUpscaleNode: creating {:?} scaler {input_w}x{input_h} -> {output_w}x{output_h}",
-                mode
-            );
+            // Check if a background scaler creation is pending.
+            let mut pending = self.pending.lock().unwrap();
+            if let Some(p) = pending.as_ref() {
+                // Check if dimensions match what we need.
+                if p.input_w == input_w && p.input_h == input_h
+                    && p.output_w == output_w && p.output_h == output_h
+                {
+                    // Try to receive the scaler (non-blocking).
+                    match p.receiver.try_recv() {
+                        Ok(Some(scaler)) => {
+                            log::info!(
+                                "MetalFxUpscaleNode: background scaler ready {input_w}x{input_h} -> {output_w}x{output_h}"
+                            );
+                            *pending = None;
 
-            let wgpu_dev = device.wgpu_device();
-            let Some(hal_dev) = (unsafe { wgpu_dev.as_hal::<wgpu_hal::metal::Api>() }) else {
-                log::error!("MetalFxUpscaleNode: no Metal HAL device");
-                return Ok(());
-            };
-            let dev_lock = hal_dev.raw_device().lock();
-            let device_ptr = dev_lock.as_ptr() as *mut c_void;
+                            let output_texture = device.create_texture(&TextureDescriptor {
+                                label: Some("metalfx_output"),
+                                size: Extent3d {
+                                    width: output_w,
+                                    height: output_h,
+                                    depth_or_array_layers: 1,
+                                },
+                                mip_level_count: 1,
+                                sample_count: 1,
+                                dimension: TextureDimension::D2,
+                                format: main_format,
+                                usage: TextureUsages::RENDER_ATTACHMENT
+                                    | TextureUsages::TEXTURE_BINDING
+                                    | TextureUsages::STORAGE_BINDING,
+                                view_formats: &[],
+                            });
+                            let output_view = output_texture.create_view(
+                                &bevy::render::render_resource::TextureViewDescriptor::default(),
+                            );
 
-            let scaler = match mode {
-                MetalFxMode::Spatial => {
-                    let s = unsafe {
-                        try_create_spatial_scaler_from_raw(
-                            device_ptr,
-                            input_w as usize,
-                            input_h as usize,
-                            output_w as usize,
-                            output_h as usize,
-                            color_mtl_fmt,
-                            color_mtl_fmt,
-                        )
-                    };
-                    s.map(SendScaler::Spatial)
+                            *self.cached_bind_group.lock().unwrap() = None;
+                            *self.cached_pipeline.lock().unwrap() = None;
+
+                            *cached = Some(CachedState {
+                                scaler,
+                                output_texture,
+                                output_view,
+                                input_w,
+                                input_h,
+                                output_w,
+                                output_h,
+                                frame_count: 0,
+                            });
+                        }
+                        Ok(None) => {
+                            log::warn!("MetalFxUpscaleNode: background scaler creation failed");
+                            *pending = None;
+                            return Ok(());
+                        }
+                        Err(std::sync::mpsc::TryRecvError::Empty) => {
+                            // Still creating — skip this frame.
+                            return Ok(());
+                        }
+                        Err(std::sync::mpsc::TryRecvError::Disconnected) => {
+                            log::error!("MetalFxUpscaleNode: background thread panicked");
+                            *pending = None;
+                            return Ok(());
+                        }
+                    }
+                } else {
+                    // Dimensions changed, discard pending and start new.
+                    *pending = None;
                 }
-                MetalFxMode::Temporal => {
-                    use objc2_metal::MTLPixelFormat;
-                    let depth_fmt = MTLPixelFormat::Depth32Float;
-                    let motion_fmt = MTLPixelFormat::RG16Float;
-                    let s = unsafe {
-                        try_create_temporal_scaler_from_raw(
-                            device_ptr,
-                            input_w as usize,
-                            input_h as usize,
-                            output_w as usize,
-                            output_h as usize,
-                            color_mtl_fmt,
-                            color_mtl_fmt,
-                            depth_fmt,
-                            motion_fmt,
-                        )
-                    };
-                    s.map(SendScaler::Temporal)
-                }
-                _ => {
-                    log::warn!("MetalFxUpscaleNode: unsupported mode {:?}", mode);
+            }
+
+            // If no cached scaler and no pending creation, start one.
+            if cached.is_none() && pending.is_none() {
+                log::info!(
+                    "MetalFxUpscaleNode: creating {:?} scaler {input_w}x{input_h} -> {output_w}x{output_h}",
+                    mode
+                );
+
+                let wgpu_dev = device.wgpu_device();
+                let Some(hal_dev) = (unsafe { wgpu_dev.as_hal::<wgpu_hal::metal::Api>() }) else {
+                    log::error!("MetalFxUpscaleNode: no Metal HAL device");
                     return Ok(());
+                };
+                let device_ptr = {
+                    let dev_lock = hal_dev.raw_device().lock();
+                    dev_lock.as_ptr() as *mut c_void
+                };
+
+                match mode {
+                    MetalFxMode::Spatial => {
+                        // Spatial is fast — create synchronously.
+                        let scaler = unsafe {
+                            try_create_spatial_scaler_from_raw(
+                                device_ptr,
+                                input_w as usize,
+                                input_h as usize,
+                                output_w as usize,
+                                output_h as usize,
+                                color_mtl_fmt,
+                                color_mtl_fmt,
+                            )
+                        };
+                        let Some(scaler) = scaler else {
+                            log::error!("MetalFxUpscaleNode: failed to create spatial scaler");
+                            return Ok(());
+                        };
+
+                        let output_texture = device.create_texture(&TextureDescriptor {
+                            label: Some("metalfx_output"),
+                            size: Extent3d {
+                                width: output_w,
+                                height: output_h,
+                                depth_or_array_layers: 1,
+                            },
+                            mip_level_count: 1,
+                            sample_count: 1,
+                            dimension: TextureDimension::D2,
+                            format: main_format,
+                            usage: TextureUsages::RENDER_ATTACHMENT
+                                | TextureUsages::TEXTURE_BINDING
+                                | TextureUsages::STORAGE_BINDING,
+                            view_formats: &[],
+                        });
+                        let output_view = output_texture.create_view(
+                            &bevy::render::render_resource::TextureViewDescriptor::default(),
+                        );
+
+                        *self.cached_bind_group.lock().unwrap() = None;
+                        *self.cached_pipeline.lock().unwrap() = None;
+
+                        *cached = Some(CachedState {
+                            scaler: SendScaler::Spatial(scaler),
+                            output_texture,
+                            output_view,
+                            input_w,
+                            input_h,
+                            output_w,
+                            output_h,
+                            frame_count: 0,
+                        });
+                    }
+                    MetalFxMode::Temporal => {
+                        // Temporal is slow — create on background thread.
+                        let (tx, rx) = std::sync::mpsc::channel();
+
+                        let color_fmt_raw: usize = unsafe { std::mem::transmute(color_mtl_fmt) };
+                        unsafe {
+                            crate::spawn_temporal_scaler_thread(
+                                device_ptr,
+                                input_w as usize, input_h as usize,
+                                output_w as usize, output_h as usize,
+                                color_fmt_raw,
+                                tx,
+                            );
+                        }
+
+                        *pending = Some(PendingScaler {
+                            receiver: rx,
+                            input_w,
+                            input_h,
+                            output_w,
+                            output_h,
+                        });
+
+                        return Ok(());
+                    }
+                    _ => {
+                        log::warn!("MetalFxUpscaleNode: unsupported mode {:?}", mode);
+                        return Ok(());
+                    }
                 }
-            };
+            }
 
-            let Some(scaler) = scaler else {
-                log::error!("MetalFxUpscaleNode: failed to create {:?} scaler", mode);
+            // Still no cached scaler after all attempts — skip this frame.
+            if cached.is_none() {
                 return Ok(());
-            };
-
-            let output_texture = device.create_texture(&TextureDescriptor {
-                label: Some("metalfx_output"),
-                size: Extent3d {
-                    width: output_w,
-                    height: output_h,
-                    depth_or_array_layers: 1,
-                },
-                mip_level_count: 1,
-                sample_count: 1,
-                dimension: TextureDimension::D2,
-                format: main_format,
-                usage: TextureUsages::RENDER_ATTACHMENT
-                    | TextureUsages::TEXTURE_BINDING
-                    | TextureUsages::STORAGE_BINDING,
-                view_formats: &[],
-            });
-            let output_view = output_texture.create_view(
-                &bevy::render::render_resource::TextureViewDescriptor::default(),
-            );
-
-            *self.cached_bind_group.lock().unwrap() = None;
-            *self.cached_pipeline.lock().unwrap() = None;
-
-            *cached = Some(CachedState {
-                scaler,
-                output_texture,
-                output_view,
-                input_w,
-                input_h,
-                output_w,
-                output_h,
-                frame_count: 0,
-            });
+            }
         }
 
         let state = cached.as_mut().unwrap();
 
         // --- Phase B: MetalFX encode ---
-        let Some(hal_main_tex) =
-            (unsafe { main_tex.as_hal::<wgpu_hal::metal::Api>() })
-        else {
-            log::error!("MetalFxUpscaleNode: no Metal HAL for main texture");
-            return Ok(());
-        };
-        let main_tex_ptr = unsafe { hal_main_tex.raw_handle().as_ptr() } as *mut c_void;
+        // CRITICAL: Extract ALL raw texture pointers in isolated scopes BEFORE
+        // calling encoder.as_hal_mut(). wgpu uses a "snatch lock" internally;
+        // calling as_hal() on textures while as_hal_mut() is active (or vice
+        // versa) causes a recursive lock panic.
+        let main_tex_ptr = {
+            let Some(hal) = (unsafe { main_tex.as_hal::<wgpu_hal::metal::Api>() }) else {
+                log::error!("MetalFxUpscaleNode: no Metal HAL for main texture");
+                return Ok(());
+            };
+            unsafe { hal.raw_handle().as_ptr() as *mut c_void }
+        }; // hal guard dropped here
 
-        let Some(hal_out_tex) =
-            (unsafe { state.output_texture.as_hal::<wgpu_hal::metal::Api>() })
-        else {
-            log::error!("MetalFxUpscaleNode: no Metal HAL for output texture");
-            return Ok(());
-        };
-        let out_tex_ptr = unsafe { hal_out_tex.raw_handle().as_ptr() } as *mut c_void;
+        let out_tex_ptr = {
+            let Some(hal) = (unsafe { state.output_texture.as_hal::<wgpu_hal::metal::Api>() }) else {
+                log::error!("MetalFxUpscaleNode: no Metal HAL for output texture");
+                return Ok(());
+            };
+            unsafe { hal.raw_handle().as_ptr() as *mut c_void }
+        }; // hal guard dropped here
 
-        let encoder = render_context.command_encoder();
         let is_first_frame = state.frame_count == 0;
         state.frame_count += 1;
+
+        // For temporal mode, also extract depth + motion vector pointers.
+        let temporal_ptrs = match &state.scaler {
+            SendScaler::Temporal(_) => {
+                let Some(prepass) = prepass_textures else {
+                    log::warn!("MetalFxUpscaleNode: temporal mode but no prepass textures");
+                    return Ok(());
+                };
+                let Some(depth_attachment) = &prepass.depth else {
+                    log::warn!("MetalFxUpscaleNode: no depth prepass texture");
+                    return Ok(());
+                };
+                let Some(motion_attachment) = &prepass.motion_vectors else {
+                    log::warn!("MetalFxUpscaleNode: no motion vector prepass texture");
+                    return Ok(());
+                };
+
+                let depth_ptr = {
+                    let Some(hal) = (unsafe { depth_attachment.texture.texture.as_hal::<wgpu_hal::metal::Api>() }) else {
+                        log::error!("MetalFxUpscaleNode: no Metal HAL for depth texture");
+                        return Ok(());
+                    };
+                    unsafe { hal.raw_handle().as_ptr() as *mut c_void }
+                };
+
+                let motion_ptr = {
+                    let Some(hal) = (unsafe { motion_attachment.texture.texture.as_hal::<wgpu_hal::metal::Api>() }) else {
+                        log::error!("MetalFxUpscaleNode: no Metal HAL for motion texture");
+                        return Ok(());
+                    };
+                    unsafe { hal.raw_handle().as_ptr() as *mut c_void }
+                };
+
+                Some((depth_ptr, motion_ptr))
+            }
+            _ => None,
+        };
+
+        // Now safe to acquire encoder's as_hal_mut — all texture guards dropped.
+        let encoder = render_context.command_encoder();
 
         match &state.scaler {
             SendScaler::Spatial(scaler) => {
@@ -266,53 +408,13 @@ impl ViewNode for MetalFxUpscaleNode {
                 }
             }
             SendScaler::Temporal(scaler) => {
-                // Extract depth and motion vector textures from prepass.
-                let Some(prepass) = prepass_textures else {
-                    log::warn!("MetalFxUpscaleNode: temporal mode but no prepass textures");
-                    return Ok(());
-                };
-                let Some(depth_attachment) = &prepass.depth else {
-                    log::warn!("MetalFxUpscaleNode: no depth prepass texture");
-                    return Ok(());
-                };
-                let Some(motion_attachment) = &prepass.motion_vectors else {
-                    log::warn!("MetalFxUpscaleNode: no motion vector prepass texture");
-                    return Ok(());
-                };
-
-                let depth_tex = &depth_attachment.texture.texture;
-                let motion_tex = &motion_attachment.texture.texture;
-
-                let Some(hal_depth) =
-                    (unsafe { depth_tex.as_hal::<wgpu_hal::metal::Api>() })
-                else {
-                    log::error!("MetalFxUpscaleNode: no Metal HAL for depth texture");
-                    return Ok(());
-                };
-                let depth_ptr = unsafe { hal_depth.raw_handle().as_ptr() } as *mut c_void;
-
-                let Some(hal_motion) =
-                    (unsafe { motion_tex.as_hal::<wgpu_hal::metal::Api>() })
-                else {
-                    log::error!("MetalFxUpscaleNode: no Metal HAL for motion texture");
-                    return Ok(());
-                };
-                let motion_ptr = unsafe { hal_motion.raw_handle().as_ptr() } as *mut c_void;
-
+                let (depth_ptr, motion_ptr) = temporal_ptrs.unwrap();
                 let jitter_offset = temporal_jitter
                     .map(|j| j.offset)
                     .unwrap_or(Vec2::ZERO);
 
-                // Bevy motion vectors: UV-offset space [-1,1], previous→current direction.
-                // MetalFX expects pixel-space, current→previous direction.
-                // Negate both axes to reverse direction; multiply by resolution for pixels.
                 let motion_scale_x = -(input_w as f32);
                 let motion_scale_y = -(input_h as f32);
-
-                log::info!(
-                    "MetalFxUpscaleNode: temporal encode frame={} input={}x{} jitter=({:.3},{:.3}) reset={}",
-                    state.frame_count, input_w, input_h, jitter_offset.x, jitter_offset.y, is_first_frame
-                );
 
                 unsafe {
                     encoder.as_hal_mut::<wgpu_hal::metal::Api, _, ()>(|hal_encoder| {

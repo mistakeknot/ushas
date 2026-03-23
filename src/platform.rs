@@ -219,6 +219,40 @@ pub unsafe fn encode_temporal_upscale(
     }
 }
 
+/// Spawn a background thread to create a temporal scaler (avoids blocking the render thread).
+///
+/// # Safety
+/// `device_ptr` must be a valid `id<MTLDevice>` pointer that outlives the thread.
+pub(crate) unsafe fn spawn_temporal_scaler_thread(
+    device_ptr: *mut c_void,
+    iw: usize, ih: usize, ow: usize, oh: usize,
+    color_fmt_raw: usize,
+    tx: std::sync::mpsc::Sender<Option<super::node::SendScaler>>,
+) {
+    // Wrapper to make raw pointer Send-able for thread transfer.
+    struct SendablePtr(usize); // Store as usize to avoid *mut c_void !Send
+    unsafe impl Send for SendablePtr {}
+
+    let dev = SendablePtr(device_ptr as usize);
+
+    std::thread::spawn(move || {
+        let cfmt: MTLPixelFormat = unsafe { std::mem::transmute(color_fmt_raw) };
+        let ptr = dev.0 as *mut c_void;
+        log::info!("MetalFX: background thread starting temporal scaler creation");
+        let scaler = unsafe {
+            try_create_temporal_scaler_from_raw(
+                ptr,
+                iw, ih, ow, oh,
+                cfmt, cfmt,
+                MTLPixelFormat::Depth32Float,
+                MTLPixelFormat::RG16Float,
+            )
+        };
+        log::info!("MetalFX: background thread done, scaler={}", scaler.is_some());
+        let _ = tx.send(scaler.map(super::node::SendScaler::Temporal));
+    });
+}
+
 /// Map a wgpu TextureFormat to the corresponding MTLPixelFormat.
 /// Returns None for formats that MetalFX doesn't support.
 pub fn wgpu_format_to_mtl(
