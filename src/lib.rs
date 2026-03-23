@@ -110,8 +110,8 @@ impl bevy::app::Plugin for MetalFxPlugin {
         );
         app.add_systems(bevy::app::Update, update_resolution_on_resize);
 
-        // Temporal mode: add prepass components and jitter system.
-        if self.mode == MetalFxMode::Temporal {
+        // Temporal + FrameInterpolation modes: add prepass components and jitter system.
+        if self.mode == MetalFxMode::Temporal || self.mode == MetalFxMode::FrameInterpolation {
             app.add_systems(bevy::app::PostStartup, setup_temporal_camera);
             app.add_systems(bevy::app::Update, jitter::update_jitter);
         }

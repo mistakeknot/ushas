@@ -39,7 +39,7 @@ use bevy::render::view::ViewTarget;
 use foreign_types::ForeignType;
 use objc2::rc::Retained;
 use objc2::runtime::ProtocolObject;
-use objc2_metal_fx::{MTLFXSpatialScaler, MTLFXTemporalScaler};
+use objc2_metal_fx::{MTLFXFrameInterpolator, MTLFXSpatialScaler, MTLFXTemporalScaler};
 
 use crate::{
     encode_spatial_upscale, encode_temporal_upscale, try_create_spatial_scaler_from_raw,
@@ -53,10 +53,11 @@ pub struct MetalFxConfig {
     pub mode: MetalFxMode,
 }
 
-/// Thread-safe wrapper for MetalFX scalers.
+/// Thread-safe wrapper for MetalFX scalers/interpolators.
 pub(crate) enum SendScaler {
     Spatial(Retained<ProtocolObject<dyn MTLFXSpatialScaler>>),
     Temporal(Retained<ProtocolObject<dyn MTLFXTemporalScaler>>),
+    FrameInterpolator(Retained<ProtocolObject<dyn MTLFXFrameInterpolator>>),
 }
 
 // Safety: Metal framework objects are thread-safe per Apple's Metal Best
@@ -69,6 +70,8 @@ struct CachedState {
     scaler: SendScaler,
     output_texture: bevy::render::render_resource::Texture,
     output_view: TextureView,
+    /// Previous frame color texture for frame interpolation (ring buffer A).
+    prev_color_texture: Option<bevy::render::render_resource::Texture>,
     input_w: u32,
     input_h: u32,
     output_w: u32,
@@ -186,6 +189,7 @@ impl ViewNode for MetalFxUpscaleNode {
                                 scaler,
                                 output_texture,
                                 output_view,
+                                prev_color_texture: None,
                                 input_w,
                                 input_h,
                                 output_w,
@@ -277,6 +281,7 @@ impl ViewNode for MetalFxUpscaleNode {
                             scaler: SendScaler::Spatial(scaler),
                             output_texture,
                             output_view,
+                            prev_color_texture: None,
                             input_w,
                             input_h,
                             output_w,
@@ -284,19 +289,29 @@ impl ViewNode for MetalFxUpscaleNode {
                             frame_count: 0,
                         });
                     }
-                    MetalFxMode::Temporal => {
-                        // Temporal is slow — create on background thread.
+                    MetalFxMode::Temporal | MetalFxMode::FrameInterpolation => {
+                        // Temporal + FrameInterpolation are slow — create on background thread.
                         let (tx, rx) = std::sync::mpsc::channel();
 
                         let color_fmt_raw: usize = unsafe { std::mem::transmute(color_mtl_fmt) };
-                        unsafe {
-                            crate::spawn_temporal_scaler_thread(
-                                device_ptr,
-                                input_w as usize, input_h as usize,
-                                output_w as usize, output_h as usize,
-                                color_fmt_raw,
-                                tx,
-                            );
+                        match mode {
+                            MetalFxMode::Temporal => unsafe {
+                                crate::spawn_temporal_scaler_thread(
+                                    device_ptr,
+                                    input_w as usize, input_h as usize,
+                                    output_w as usize, output_h as usize,
+                                    color_fmt_raw, tx,
+                                );
+                            },
+                            MetalFxMode::FrameInterpolation => unsafe {
+                                crate::spawn_frame_interpolator_thread(
+                                    device_ptr,
+                                    input_w as usize, input_h as usize,
+                                    output_w as usize, output_h as usize,
+                                    color_fmt_raw, tx,
+                                );
+                            },
+                            _ => unreachable!(),
                         }
 
                         *pending = Some(PendingScaler {
@@ -385,6 +400,38 @@ impl ViewNode for MetalFxUpscaleNode {
             _ => None,
         };
 
+        // For frame interpolation, extract prev color ptr (must be before as_hal_mut).
+        let prev_color_ptr = match &state.scaler {
+            SendScaler::FrameInterpolator(_) => {
+                if state.prev_color_texture.is_none() {
+                    let prev_tex = device.create_texture(&TextureDescriptor {
+                        label: Some("metalfx_prev_color"),
+                        size: Extent3d {
+                            width: output_w,
+                            height: output_h,
+                            depth_or_array_layers: 1,
+                        },
+                        mip_level_count: 1,
+                        sample_count: 1,
+                        dimension: TextureDimension::D2,
+                        format: main_format,
+                        usage: TextureUsages::RENDER_ATTACHMENT
+                            | TextureUsages::TEXTURE_BINDING
+                            | TextureUsages::COPY_DST,
+                        view_formats: &[],
+                    });
+                    state.prev_color_texture = Some(prev_tex);
+                }
+                let prev_tex = state.prev_color_texture.as_ref().unwrap();
+                let Some(hal) = (unsafe { prev_tex.as_hal::<wgpu_hal::metal::Api>() }) else {
+                    log::error!("MetalFxUpscaleNode: no Metal HAL for prev color texture");
+                    return Ok(());
+                };
+                Some(unsafe { hal.raw_handle().as_ptr() as *mut c_void })
+            }
+            _ => None,
+        };
+
         // Now safe to acquire encoder's as_hal_mut — all texture guards dropped.
         let encoder = render_context.command_encoder();
 
@@ -406,6 +453,55 @@ impl ViewNode for MetalFxUpscaleNode {
                         );
                     });
                 }
+            }
+            SendScaler::FrameInterpolator(interpolator) => {
+                let (depth_ptr, motion_ptr) = temporal_ptrs.unwrap();
+                let prev_color_ptr = prev_color_ptr.unwrap();
+                let jitter_offset = temporal_jitter
+                    .map(|j| j.offset)
+                    .unwrap_or(Vec2::ZERO);
+                let motion_scale_x = -(input_w as f32);
+                let motion_scale_y = -(input_h as f32);
+
+                // Camera params — use defaults for strategy game.
+                // TODO: Extract from Bevy Projection component when available in ViewQuery.
+                let delta_time = 1.0 / 60.0; // Approximate
+                let field_of_view = 45.0_f32; // Degrees
+                let aspect_ratio = output_w as f32 / output_h as f32;
+                let near_plane = 0.1_f32;
+                let far_plane = 1000.0_f32;
+
+                unsafe {
+                    encoder.as_hal_mut::<wgpu_hal::metal::Api, _, ()>(|hal_encoder| {
+                        let Some(enc) = hal_encoder else { return };
+                        let Some(cmd_buf) = enc.raw_command_buffer() else { return };
+                        let cmd_buf_ptr = cmd_buf.as_ptr() as *mut c_void;
+
+                        crate::encode_frame_interpolation(
+                            interpolator,
+                            main_tex_ptr,
+                            prev_color_ptr,
+                            depth_ptr,
+                            motion_ptr,
+                            out_tex_ptr,
+                            cmd_buf_ptr,
+                            jitter_offset.x,
+                            jitter_offset.y,
+                            motion_scale_x,
+                            motion_scale_y,
+                            delta_time,
+                            field_of_view,
+                            aspect_ratio,
+                            near_plane,
+                            far_plane,
+                            is_first_frame,
+                        );
+                    });
+                }
+
+                // After encoding, copy current color to prev for next frame.
+                // The encoder will handle this as a GPU copy.
+                // TODO: Implement GPU blit from main_texture to prev_color_texture.
             }
             SendScaler::Temporal(scaler) => {
                 let (depth_ptr, motion_ptr) = temporal_ptrs.unwrap();

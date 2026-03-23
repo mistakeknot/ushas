@@ -15,6 +15,7 @@ use objc2::rc::Retained;
 use objc2::runtime::{AnyClass, ProtocolObject};
 use objc2_metal::{MTLCommandBuffer, MTLDevice, MTLPixelFormat, MTLTexture};
 use objc2_metal_fx::{
+    MTLFXFrameInterpolator, MTLFXFrameInterpolatorBase, MTLFXFrameInterpolatorDescriptor,
     MTLFXSpatialScaler, MTLFXSpatialScalerBase, MTLFXSpatialScalerDescriptor,
     MTLFXTemporalScaler, MTLFXTemporalScalerBase, MTLFXTemporalScalerDescriptor,
 };
@@ -250,6 +251,165 @@ pub(crate) unsafe fn spawn_temporal_scaler_thread(
         };
         log::info!("MetalFX: background thread done, scaler={}", scaler.is_some());
         let _ = tx.send(scaler.map(super::node::SendScaler::Temporal));
+    });
+}
+
+/// Check if frame interpolation is supported on this device (macOS 26+).
+///
+/// # Safety
+/// `device_ptr` must be a valid `id<MTLDevice>` pointer.
+pub unsafe fn is_frame_interpolation_supported(device_ptr: *mut c_void) -> bool {
+    if device_ptr.is_null() {
+        return false;
+    }
+    let device: &ProtocolObject<dyn MTLDevice> =
+        unsafe { &*(device_ptr as *const ProtocolObject<dyn MTLDevice>) };
+    unsafe { MTLFXFrameInterpolatorDescriptor::supportsDevice(device) }
+}
+
+/// Attempt to create a frame interpolator for the given Metal device.
+///
+/// Returns `None` if the device doesn't support frame interpolation (macOS < 26).
+///
+/// # Safety
+/// `device_ptr` must be a valid `id<MTLDevice>` pointer.
+pub unsafe fn try_create_frame_interpolator_from_raw(
+    device_ptr: *mut c_void,
+    input_width: usize,
+    input_height: usize,
+    output_width: usize,
+    output_height: usize,
+    color_format: MTLPixelFormat,
+    output_format: MTLPixelFormat,
+    depth_format: MTLPixelFormat,
+    motion_format: MTLPixelFormat,
+) -> Option<Retained<ProtocolObject<dyn MTLFXFrameInterpolator>>> {
+    if device_ptr.is_null() {
+        return None;
+    }
+    let device: &ProtocolObject<dyn MTLDevice> =
+        unsafe { &*(device_ptr as *const ProtocolObject<dyn MTLDevice>) };
+
+    if !unsafe { MTLFXFrameInterpolatorDescriptor::supportsDevice(device) } {
+        log::warn!("MetalFX: frame interpolation not supported on this device (requires macOS 26+)");
+        return None;
+    }
+
+    let descriptor = unsafe { MTLFXFrameInterpolatorDescriptor::new() };
+
+    unsafe {
+        descriptor.setInputWidth(input_width);
+        descriptor.setInputHeight(input_height);
+        descriptor.setOutputWidth(output_width);
+        descriptor.setOutputHeight(output_height);
+        descriptor.setColorTextureFormat(color_format);
+        descriptor.setOutputTextureFormat(output_format);
+        descriptor.setDepthTextureFormat(depth_format);
+        descriptor.setMotionTextureFormat(motion_format);
+    }
+
+    unsafe { descriptor.newFrameInterpolatorWithDevice(device) }
+}
+
+/// Set textures and encode a frame interpolation pass.
+///
+/// # Safety
+/// All pointers must be valid Metal objects. No encoder may be active on the command buffer.
+#[allow(clippy::too_many_arguments)]
+pub unsafe fn encode_frame_interpolation(
+    interpolator: &ProtocolObject<dyn MTLFXFrameInterpolator>,
+    color_ptr: *mut c_void,
+    prev_color_ptr: *mut c_void,
+    depth_ptr: *mut c_void,
+    motion_ptr: *mut c_void,
+    output_ptr: *mut c_void,
+    cmd_buf_ptr: *mut c_void,
+    jitter_offset_x: f32,
+    jitter_offset_y: f32,
+    motion_vector_scale_x: f32,
+    motion_vector_scale_y: f32,
+    delta_time: f32,
+    field_of_view: f32,
+    aspect_ratio: f32,
+    near_plane: f32,
+    far_plane: f32,
+    reset_history: bool,
+) {
+    if color_ptr.is_null() || prev_color_ptr.is_null() || depth_ptr.is_null()
+        || motion_ptr.is_null() || output_ptr.is_null() || cmd_buf_ptr.is_null()
+    {
+        log::error!("encode_frame_interpolation: received null pointer");
+        return;
+    }
+
+    let color: &ProtocolObject<dyn MTLTexture> =
+        unsafe { &*(color_ptr as *const ProtocolObject<dyn MTLTexture>) };
+    let prev_color: &ProtocolObject<dyn MTLTexture> =
+        unsafe { &*(prev_color_ptr as *const ProtocolObject<dyn MTLTexture>) };
+    let depth: &ProtocolObject<dyn MTLTexture> =
+        unsafe { &*(depth_ptr as *const ProtocolObject<dyn MTLTexture>) };
+    let motion: &ProtocolObject<dyn MTLTexture> =
+        unsafe { &*(motion_ptr as *const ProtocolObject<dyn MTLTexture>) };
+    let output: &ProtocolObject<dyn MTLTexture> =
+        unsafe { &*(output_ptr as *const ProtocolObject<dyn MTLTexture>) };
+    let cmd_buf: &ProtocolObject<dyn MTLCommandBuffer> =
+        unsafe { &*(cmd_buf_ptr as *const ProtocolObject<dyn MTLCommandBuffer>) };
+
+    unsafe {
+        interpolator.setColorTexture(Some(color));
+        interpolator.setPrevColorTexture(Some(prev_color));
+        interpolator.setDepthTexture(Some(depth));
+        interpolator.setMotionTexture(Some(motion));
+        interpolator.setOutputTexture(Some(output));
+
+        interpolator.setJitterOffsetX(jitter_offset_x);
+        interpolator.setJitterOffsetY(jitter_offset_y);
+
+        interpolator.setMotionVectorScaleX(motion_vector_scale_x);
+        interpolator.setMotionVectorScaleY(motion_vector_scale_y);
+
+        interpolator.setDeltaTime(delta_time);
+        interpolator.setFieldOfView(field_of_view);
+        interpolator.setAspectRatio(aspect_ratio);
+        interpolator.setNearPlane(near_plane);
+        interpolator.setFarPlane(far_plane);
+
+        interpolator.setShouldResetHistory(reset_history);
+
+        interpolator.encodeToCommandBuffer(cmd_buf);
+    }
+}
+
+/// Spawn a background thread to create a frame interpolator.
+///
+/// # Safety
+/// `device_ptr` must be a valid `id<MTLDevice>` pointer that outlives the thread.
+pub(crate) unsafe fn spawn_frame_interpolator_thread(
+    device_ptr: *mut c_void,
+    iw: usize, ih: usize, ow: usize, oh: usize,
+    color_fmt_raw: usize,
+    tx: std::sync::mpsc::Sender<Option<super::node::SendScaler>>,
+) {
+    struct SendablePtr(usize);
+    unsafe impl Send for SendablePtr {}
+
+    let dev = SendablePtr(device_ptr as usize);
+
+    std::thread::spawn(move || {
+        let cfmt: MTLPixelFormat = unsafe { std::mem::transmute(color_fmt_raw) };
+        let ptr = dev.0 as *mut c_void;
+        log::info!("MetalFX: background thread starting frame interpolator creation");
+        let interpolator = unsafe {
+            try_create_frame_interpolator_from_raw(
+                ptr,
+                iw, ih, ow, oh,
+                cfmt, cfmt,
+                MTLPixelFormat::Depth32Float,
+                MTLPixelFormat::RG16Float,
+            )
+        };
+        log::info!("MetalFX: background thread done, interpolator={}", interpolator.is_some());
+        let _ = tx.send(interpolator.map(super::node::SendScaler::FrameInterpolator));
     });
 }
 
