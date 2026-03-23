@@ -1,9 +1,8 @@
 //! MetalFX spatial upscaling render graph node.
 //!
-//! Implements `ViewNode` to run at `Node3d::Upscaling`. Creates its own
-//! output texture at full resolution, uses MetalFX to upscale from
-//! `main_texture` (low-res) into it, then blits to the swapchain via
-//! a render pass on `ViewTarget::out_texture()`.
+//! Runs after `Node3d::Upscaling`. Creates its own output texture at full
+//! resolution, uses MetalFX to upscale from `main_texture` (low-res) into it,
+//! then blits to the swapchain via a render pass on `ViewTarget::out_texture()`.
 //!
 //! ## Architecture
 //!
@@ -17,10 +16,13 @@
 use std::ffi::c_void;
 use std::sync::Mutex;
 
+use bevy::core_pipeline::blit::{BlitPipeline, BlitPipelineKey};
 use bevy::prelude::*;
 use bevy::render::render_graph::{NodeRunError, RenderGraphContext, ViewNode};
 use bevy::render::render_resource::{
-    Extent3d, TextureDescriptor, TextureDimension, TextureUsages, TextureView,
+    BindGroup, CachedRenderPipelineId, Extent3d, PipelineCache, RenderPassDescriptor,
+    SpecializedRenderPipeline, TextureDescriptor, TextureDimension, TextureUsages, TextureView,
+    TextureViewId,
 };
 use bevy::render::renderer::RenderContext;
 use bevy::render::view::ViewTarget;
@@ -38,11 +40,6 @@ pub struct MetalFxConfig {
 }
 
 /// Thread-safe wrapper for the MetalFX spatial scaler.
-///
-/// Metal objects are thread-safe by design — the Metal runtime serializes
-/// access internally. objc2 doesn't mark protocol objects as Send/Sync
-/// because it can't verify this for arbitrary protocols, but MTLFXSpatialScaler
-/// is guaranteed safe by Apple's documentation.
 struct SendScaler(Retained<ProtocolObject<dyn MTLFXSpatialScaler>>);
 
 // Safety: MTLFXSpatialScaler is a Metal framework object. All Metal objects
@@ -53,9 +50,7 @@ unsafe impl Sync for SendScaler {}
 /// Cached state for the MetalFX upscale node.
 struct CachedState {
     scaler: SendScaler,
-    /// Our full-resolution output texture (MetalFX writes here).
     output_texture: bevy::render::render_resource::Texture,
-    #[allow(dead_code)]
     output_view: TextureView,
     input_w: u32,
     input_h: u32,
@@ -65,11 +60,13 @@ struct CachedState {
 
 /// MetalFX spatial upscaling ViewNode.
 ///
-/// Runs at `Node3d::Upscaling`, replacing Bevy's built-in blit upscaler
+/// Runs after `Node3d::Upscaling`, overwriting the bilinear-upscaled result
 /// with Apple's ML-accelerated spatial upscaling.
 #[derive(Default)]
 pub struct MetalFxUpscaleNode {
     cached: Mutex<Option<CachedState>>,
+    cached_bind_group: Mutex<Option<(TextureViewId, BindGroup)>>,
+    cached_pipeline: Mutex<Option<CachedRenderPipelineId>>,
 }
 
 impl ViewNode for MetalFxUpscaleNode {
@@ -115,7 +112,6 @@ impl ViewNode for MetalFxUpscaleNode {
                 "MetalFxUpscaleNode: creating scaler {input_w}x{input_h} -> {output_w}x{output_h}"
             );
 
-            // Get raw Metal device pointer.
             let wgpu_dev = device.wgpu_device();
             let Some(hal_dev) = (unsafe { wgpu_dev.as_hal::<wgpu_hal::metal::Api>() }) else {
                 log::error!("MetalFxUpscaleNode: no Metal HAL device");
@@ -140,7 +136,6 @@ impl ViewNode for MetalFxUpscaleNode {
                 return Ok(());
             };
 
-            // Create our output texture at full resolution.
             let output_texture = device.create_texture(&TextureDescriptor {
                 label: Some("metalfx_output"),
                 size: Extent3d {
@@ -161,6 +156,10 @@ impl ViewNode for MetalFxUpscaleNode {
                 &bevy::render::render_resource::TextureViewDescriptor::default(),
             );
 
+            // Invalidate cached bind group and pipeline since texture changed.
+            *self.cached_bind_group.lock().unwrap() = None;
+            *self.cached_pipeline.lock().unwrap() = None;
+
             *cached = Some(CachedState {
                 scaler: SendScaler(scaler),
                 output_texture,
@@ -175,7 +174,6 @@ impl ViewNode for MetalFxUpscaleNode {
         let state = cached.as_ref().unwrap();
 
         // --- Phase B: MetalFX encode ---
-        // Extract raw Metal texture pointers.
         let Some(hal_main_tex) =
             (unsafe { main_tex.as_hal::<wgpu_hal::metal::Api>() })
         else {
@@ -192,7 +190,6 @@ impl ViewNode for MetalFxUpscaleNode {
         };
         let out_tex_ptr = unsafe { hal_out_tex.raw_handle().as_ptr() } as *mut c_void;
 
-        // Get the command encoder and encode the MetalFX upscale.
         let encoder = render_context.command_encoder();
         unsafe {
             encoder.as_hal_mut::<wgpu_hal::metal::Api, _, ()>(|hal_encoder| {
@@ -217,13 +214,71 @@ impl ViewNode for MetalFxUpscaleNode {
             });
         }
 
-        // Drop the cached lock before any further rendering.
-        drop(cached);
+        // --- Phase C: Blit metalfx_output → out_texture (swapchain) ---
+        let pipeline_cache = world.resource::<PipelineCache>();
+        let blit_pipeline = world.resource::<BlitPipeline>();
 
-        // --- Phase C: Blit upscaled texture → swapchain ---
-        // The existing UpscalingNode runs after us and blits main_texture
-        // to out_texture. In Phase 2b we'll replace it entirely with our
-        // own blit from metalfx_output → out_texture.
+        // Specialize + queue the blit pipeline for the output format.
+        let mut cached_pipeline = self.cached_pipeline.lock().unwrap();
+        let pipeline_id = match *cached_pipeline {
+            Some(id) => id,
+            None => {
+                let key = BlitPipelineKey {
+                    texture_format: target.out_texture_view_format(),
+                    blend_state: None,
+                    samples: 1,
+                };
+                let descriptor = blit_pipeline.specialize(key);
+                let id = pipeline_cache.queue_render_pipeline(descriptor);
+                *cached_pipeline = Some(id);
+                id
+            }
+        };
+
+        let Some(pipeline) = pipeline_cache.get_render_pipeline(pipeline_id) else {
+            log::warn!("MetalFxUpscaleNode: blit pipeline not ready yet");
+            drop(cached);
+            return Ok(());
+        };
+
+        // Get or create bind group for our metalfx_output texture.
+        let output_view = &state.output_view;
+        let mut cached_bg = self.cached_bind_group.lock().unwrap();
+        let bind_group = match &mut *cached_bg {
+            Some((id, bg)) if output_view.id() == *id => bg,
+            slot => {
+                let bg = blit_pipeline.create_bind_group(
+                    render_context.render_device(),
+                    output_view,
+                    pipeline_cache,
+                );
+                let (_, bg) = slot.insert((output_view.id(), bg));
+                bg
+            }
+        };
+
+        let pass_descriptor = RenderPassDescriptor {
+            label: Some("metalfx_blit"),
+            color_attachments: &[Some(target.out_texture_color_attachment(None))],
+            depth_stencil_attachment: None,
+            timestamp_writes: None,
+            occlusion_query_set: None,
+        };
+
+        // Drop locks before starting the render pass (borrow checker).
+        drop(cached);
+        drop(cached_pipeline);
+
+        let mut render_pass = render_context
+            .command_encoder()
+            .begin_render_pass(&pass_descriptor);
+
+        render_pass.set_pipeline(pipeline);
+        render_pass.set_bind_group(0, bind_group, &[]);
+        render_pass.draw(0..3, 0..1);
+
+        drop(render_pass);
+        drop(cached_bg);
 
         Ok(())
     }

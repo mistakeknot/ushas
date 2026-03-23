@@ -70,6 +70,10 @@ impl Default for MetalFxPlugin {
     }
 }
 
+/// Main-world resource holding the render scale for resolution override systems.
+#[derive(bevy::prelude::Resource, Clone, Copy)]
+pub struct MetalFxRenderScale(pub f32);
+
 impl bevy::app::Plugin for MetalFxPlugin {
     fn build(&self, app: &mut bevy::app::App) {
         assert!(
@@ -94,24 +98,95 @@ impl bevy::app::Plugin for MetalFxPlugin {
             self.render_scale
         );
 
+        // Main-world: insert render scale resource and resolution override systems.
+        app.insert_resource(MetalFxRenderScale(self.render_scale));
+        app.add_systems(
+            bevy::app::PostStartup,
+            apply_resolution_override,
+        );
+        app.add_systems(bevy::app::Update, update_resolution_on_resize);
+
         #[cfg(target_os = "macos")]
         {
+            use bevy::core_pipeline::core_3d::graph::{Core3d, Node3d};
+            use bevy::render::render_graph::{RenderGraphExt, ViewNodeRunner};
             use bevy::render::RenderApp;
 
-            // Insert config resource into the render world.
             if let Some(render_app) = app.get_sub_app_mut(RenderApp) {
-                render_app.insert_resource(node::MetalFxConfig {
-                    render_scale: self.render_scale,
-                });
-
-                // TODO Phase 2b: Add render graph node once command buffer
-                // synchronization with wgpu's internal encoder state is solved.
-                // The current encode_spatial_upscale call conflicts with wgpu's
-                // active command encoder, causing GPU hangs. Need to either:
-                // 1. Flush wgpu's encoder before MetalFX encode, or
-                // 2. Use a separate command buffer for MetalFX
+                render_app
+                    .insert_resource(node::MetalFxConfig {
+                        render_scale: self.render_scale,
+                    })
+                    .add_render_graph_node::<ViewNodeRunner<MetalFxUpscaleNode>>(
+                        Core3d,
+                        MetalFxLabel,
+                    )
+                    // Run MetalFX after Bevy's UpscalingNode — we overwrite
+                    // out_texture with the ML-upscaled result via Metal blit.
+                    .add_render_graph_edges(
+                        Core3d,
+                        (Node3d::Upscaling, MetalFxLabel),
+                    );
             }
         }
+    }
+}
+
+use bevy::camera::MainPassResolutionOverride;
+use bevy::prelude::*;
+
+/// Insert `MainPassResolutionOverride` on all Camera3d entities at startup.
+fn apply_resolution_override(
+    mut commands: Commands,
+    cameras: Query<Entity, (With<Camera3d>, Without<MainPassResolutionOverride>)>,
+    windows: Query<&Window>,
+    scale: Res<MetalFxRenderScale>,
+) {
+    let Ok(window) = windows.single() else {
+        return;
+    };
+    let w = window.physical_width();
+    let h = window.physical_height();
+    if w == 0 || h == 0 {
+        return;
+    }
+    let override_w = (w as f32 * scale.0).round() as u32;
+    let override_h = (h as f32 * scale.0).round() as u32;
+
+    for entity in cameras.iter() {
+        log::info!(
+            "MetalFX: setting MainPassResolutionOverride {override_w}x{override_h} \
+             (window {w}x{h}, scale {})",
+            scale.0
+        );
+        commands
+            .entity(entity)
+            .insert(MainPassResolutionOverride(UVec2::new(override_w, override_h)));
+    }
+}
+
+/// Update resolution override when the window size changes.
+fn update_resolution_on_resize(
+    mut cameras: Query<&mut MainPassResolutionOverride, With<Camera3d>>,
+    windows: Query<&Window, Changed<Window>>,
+    scale: Res<MetalFxRenderScale>,
+) {
+    let Ok(window) = windows.single() else {
+        return;
+    };
+    let w = window.physical_width();
+    let h = window.physical_height();
+    if w == 0 || h == 0 {
+        return;
+    }
+    let override_w = (w as f32 * scale.0).round() as u32;
+    let override_h = (h as f32 * scale.0).round() as u32;
+
+    for mut res_override in cameras.iter_mut() {
+        log::info!(
+            "MetalFX: resize -> MainPassResolutionOverride {override_w}x{override_h}"
+        );
+        res_override.0 = UVec2::new(override_w, override_h);
     }
 }
 
