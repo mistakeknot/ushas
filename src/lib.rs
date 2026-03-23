@@ -20,6 +20,9 @@ pub use platform::*;
 #[cfg(target_os = "macos")]
 pub use node::{MetalFxConfig, MetalFxUpscaleNode};
 
+#[cfg(target_os = "macos")]
+mod jitter;
+
 /// Check whether MetalFX is available on this system at runtime.
 ///
 /// Returns `false` on non-macOS platforms or when the MetalFX framework
@@ -100,11 +103,18 @@ impl bevy::app::Plugin for MetalFxPlugin {
 
         // Main-world: insert render scale resource and resolution override systems.
         app.insert_resource(MetalFxRenderScale(self.render_scale));
+        app.insert_resource(MetalFxModeResource(self.mode));
         app.add_systems(
             bevy::app::PostStartup,
             apply_resolution_override,
         );
         app.add_systems(bevy::app::Update, update_resolution_on_resize);
+
+        // Temporal mode: add prepass components and jitter system.
+        if self.mode == MetalFxMode::Temporal {
+            app.add_systems(bevy::app::PostStartup, setup_temporal_camera);
+            app.add_systems(bevy::app::Update, jitter::update_jitter);
+        }
 
         #[cfg(target_os = "macos")]
         {
@@ -116,6 +126,7 @@ impl bevy::app::Plugin for MetalFxPlugin {
                 render_app
                     .insert_resource(node::MetalFxConfig {
                         render_scale: self.render_scale,
+                        mode: self.mode,
                     })
                     .add_render_graph_node::<ViewNodeRunner<MetalFxUpscaleNode>>(
                         Core3d,
@@ -133,7 +144,13 @@ impl bevy::app::Plugin for MetalFxPlugin {
 }
 
 use bevy::camera::MainPassResolutionOverride;
+use bevy::core_pipeline::prepass::{DepthPrepass, MotionVectorPrepass};
+use bevy::render::camera::TemporalJitter;
 use bevy::prelude::*;
+
+/// Main-world resource holding the MetalFX mode.
+#[derive(Resource, Clone, Copy)]
+pub struct MetalFxModeResource(pub MetalFxMode);
 
 /// Insert `MainPassResolutionOverride` on all Camera3d entities at startup.
 fn apply_resolution_override(
@@ -187,6 +204,21 @@ fn update_resolution_on_resize(
             "MetalFX: resize -> MainPassResolutionOverride {override_w}x{override_h}"
         );
         res_override.0 = UVec2::new(override_w, override_h);
+    }
+}
+
+/// Insert prepass components and jitter on Camera3d for temporal mode.
+fn setup_temporal_camera(
+    mut commands: Commands,
+    cameras: Query<Entity, (With<Camera3d>, Without<MotionVectorPrepass>)>,
+) {
+    for entity in cameras.iter() {
+        log::info!("MetalFX temporal: adding MotionVectorPrepass + DepthPrepass + TemporalJitter");
+        commands.entity(entity).insert((
+            MotionVectorPrepass,
+            DepthPrepass,
+            TemporalJitter::default(),
+        ));
     }
 }
 

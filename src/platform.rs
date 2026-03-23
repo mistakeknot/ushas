@@ -14,7 +14,10 @@ use std::ffi::c_void;
 use objc2::rc::Retained;
 use objc2::runtime::{AnyClass, ProtocolObject};
 use objc2_metal::{MTLCommandBuffer, MTLDevice, MTLPixelFormat, MTLTexture};
-use objc2_metal_fx::{MTLFXSpatialScaler, MTLFXSpatialScalerBase, MTLFXSpatialScalerDescriptor};
+use objc2_metal_fx::{
+    MTLFXSpatialScaler, MTLFXSpatialScalerBase, MTLFXSpatialScalerDescriptor,
+    MTLFXTemporalScaler, MTLFXTemporalScalerBase, MTLFXTemporalScalerDescriptor,
+};
 
 // Link MetalFX.framework. MetalFX symbols are called through objc_msgSend
 // (ObjC runtime dispatch), not direct C linkage, so no unresolved symbols.
@@ -105,6 +108,113 @@ pub unsafe fn encode_spatial_upscale(
         scaler.setInputContentHeight(input_content_height);
 
         // Encode the upscale operation into the command buffer
+        scaler.encodeToCommandBuffer(cmd_buf);
+    }
+}
+
+/// Attempt to create a temporal scaler for the given Metal device.
+///
+/// Returns `None` if the device/format combination is unsupported,
+/// or if MetalFX is not available on this system.
+///
+/// # Safety
+/// `device_ptr` must be a valid `id<MTLDevice>` pointer from wgpu-hal's
+/// `raw_device().lock().as_ptr()`.
+pub unsafe fn try_create_temporal_scaler_from_raw(
+    device_ptr: *mut c_void,
+    input_width: usize,
+    input_height: usize,
+    output_width: usize,
+    output_height: usize,
+    color_format: MTLPixelFormat,
+    output_format: MTLPixelFormat,
+    depth_format: MTLPixelFormat,
+    motion_format: MTLPixelFormat,
+) -> Option<Retained<ProtocolObject<dyn MTLFXTemporalScaler>>> {
+    if !is_available_impl() {
+        return None;
+    }
+    if device_ptr.is_null() {
+        return None;
+    }
+    let device: &ProtocolObject<dyn MTLDevice> =
+        unsafe { &*(device_ptr as *const ProtocolObject<dyn MTLDevice>) };
+
+    let descriptor = unsafe { MTLFXTemporalScalerDescriptor::new() };
+
+    unsafe {
+        descriptor.setInputWidth(input_width);
+        descriptor.setInputHeight(input_height);
+        descriptor.setOutputWidth(output_width);
+        descriptor.setOutputHeight(output_height);
+        descriptor.setColorTextureFormat(color_format);
+        descriptor.setOutputTextureFormat(output_format);
+        descriptor.setDepthTextureFormat(depth_format);
+        descriptor.setMotionTextureFormat(motion_format);
+        descriptor.setAutoExposureEnabled(true);
+    }
+
+    unsafe { descriptor.newTemporalScalerWithDevice(device) }
+}
+
+/// Set textures and encode a temporal upscale pass.
+///
+/// # Safety
+/// - All pointers must be valid Metal objects from wgpu-hal's raw handles.
+/// - No Metal render/compute encoder may be active on the command buffer.
+pub unsafe fn encode_temporal_upscale(
+    scaler: &ProtocolObject<dyn MTLFXTemporalScaler>,
+    color_ptr: *mut c_void,
+    depth_ptr: *mut c_void,
+    motion_ptr: *mut c_void,
+    output_ptr: *mut c_void,
+    cmd_buf_ptr: *mut c_void,
+    input_content_width: usize,
+    input_content_height: usize,
+    jitter_offset_x: f32,
+    jitter_offset_y: f32,
+    motion_vector_scale_x: f32,
+    motion_vector_scale_y: f32,
+    reset: bool,
+) {
+    if color_ptr.is_null() || depth_ptr.is_null() || motion_ptr.is_null()
+        || output_ptr.is_null() || cmd_buf_ptr.is_null()
+    {
+        log::error!("encode_temporal_upscale: received null pointer");
+        return;
+    }
+
+    let color: &ProtocolObject<dyn MTLTexture> =
+        unsafe { &*(color_ptr as *const ProtocolObject<dyn MTLTexture>) };
+    let depth: &ProtocolObject<dyn MTLTexture> =
+        unsafe { &*(depth_ptr as *const ProtocolObject<dyn MTLTexture>) };
+    let motion: &ProtocolObject<dyn MTLTexture> =
+        unsafe { &*(motion_ptr as *const ProtocolObject<dyn MTLTexture>) };
+    let output: &ProtocolObject<dyn MTLTexture> =
+        unsafe { &*(output_ptr as *const ProtocolObject<dyn MTLTexture>) };
+    let cmd_buf: &ProtocolObject<dyn MTLCommandBuffer> =
+        unsafe { &*(cmd_buf_ptr as *const ProtocolObject<dyn MTLCommandBuffer>) };
+
+    unsafe {
+        scaler.setColorTexture(Some(color));
+        scaler.setDepthTexture(Some(depth));
+        scaler.setMotionTexture(Some(motion));
+        scaler.setOutputTexture(Some(output));
+
+        scaler.setInputContentWidth(input_content_width);
+        scaler.setInputContentHeight(input_content_height);
+
+        scaler.setJitterOffsetX(jitter_offset_x);
+        scaler.setJitterOffsetY(jitter_offset_y);
+
+        scaler.setMotionVectorScaleX(motion_vector_scale_x);
+        scaler.setMotionVectorScaleY(motion_vector_scale_y);
+
+        // Bevy uses infinite reversed-Z: near=1.0, far=0.0.
+        scaler.setDepthReversed(true);
+
+        scaler.setReset(reset);
+
         scaler.encodeToCommandBuffer(cmd_buf);
     }
 }
