@@ -129,12 +129,13 @@ impl ViewNode for MetalFxUpscaleNode {
         let render_scale = config.map_or(0.5, |c| c.render_scale);
         let mode = config.map_or(MetalFxMode::Spatial, |c| c.mode);
 
-        // main_texture is at full framebuffer resolution.
-        // Rendered content is render_scale * full_size (via MainPassResolutionOverride).
-        let output_w = main_size.width;
-        let output_h = main_size.height;
-        let input_w = (output_w as f32 * render_scale).round() as u32;
-        let input_h = (output_h as f32 * render_scale).round() as u32;
+        // main_texture is at LOW resolution (set by MainPassResolutionOverride).
+        // The full window resolution = main_texture_size / render_scale.
+        // MetalFX upscales from main_texture size → full window size.
+        let input_w = main_size.width;
+        let input_h = main_size.height;
+        let output_w = (input_w as f32 / render_scale).round() as u32;
+        let output_h = (input_h as f32 / render_scale).round() as u32;
 
         // --- Phase A: Get or create scaler + output texture ---
         let device = render_context.render_device().clone();
