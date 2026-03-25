@@ -129,13 +129,25 @@ impl ViewNode for MetalFxUpscaleNode {
         let render_scale = config.map_or(0.5, |c| c.render_scale);
         let mode = config.map_or(MetalFxMode::Spatial, |c| c.mode);
 
-        // main_texture is at LOW resolution (set by MainPassResolutionOverride).
-        // The full window resolution = main_texture_size / render_scale.
-        // MetalFX upscales from main_texture size → full window size.
-        let input_w = main_size.width;
-        let input_h = main_size.height;
-        let output_w = (input_w as f32 / render_scale).round() as u32;
-        let output_h = (input_h as f32 / render_scale).round() as u32;
+        // main_texture is allocated at full physical resolution (e.g., 3024x1800 on Retina).
+        // MainPassResolutionOverride renders content at render_scale within that texture.
+        //
+        // MetalFX API:
+        //   - inputWidth/outputWidth (scaler creation): the texture dimensions
+        //   - inputContentWidth/Height (per-frame): how many pixels of the input are valid content
+        //
+        // Since main_texture is full-size and the content occupies a sub-region,
+        // we create the scaler with input=full, output=full, and set inputContent
+        // to the actual rendered area each frame.
+        let tex_w = main_size.width;
+        let tex_h = main_size.height;
+        let content_w = (tex_w as f32 * render_scale).round() as u32;
+        let content_h = (tex_h as f32 * render_scale).round() as u32;
+        // For scaler creation, input and output are both the full texture size.
+        let input_w = tex_w;
+        let input_h = tex_h;
+        let output_w = tex_w;
+        let output_h = tex_h;
 
         // --- Phase A: Get or create scaler + output texture ---
         let device = render_context.render_device().clone();
@@ -450,8 +462,8 @@ impl ViewNode for MetalFxUpscaleNode {
                             main_tex_ptr,
                             out_tex_ptr,
                             cmd_buf_ptr,
-                            input_w as usize,
-                            input_h as usize,
+                            content_w as usize,
+                            content_h as usize,
                         );
                     });
                 }
