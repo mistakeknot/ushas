@@ -69,6 +69,8 @@ unsafe impl Sync for SendScaler {}
 /// Cached state for the MetalFX upscale node.
 struct CachedState {
     scaler: SendScaler,
+    /// Content-sized input texture (copied from main_texture's top-left region).
+    input_texture: bevy::render::render_resource::Texture,
     output_texture: bevy::render::render_resource::Texture,
     output_view: TextureView,
     /// Previous frame color texture for frame interpolation (ring buffer A).
@@ -130,21 +132,20 @@ impl ViewNode for MetalFxUpscaleNode {
         let mode = config.map_or(MetalFxMode::Spatial, |c| c.mode);
 
         // main_texture is full physical resolution (e.g., 3024x1800 on Retina).
-        // MainPassResolutionOverride sets a viewport within that texture, rendering
-        // content at render_scale resolution in the top-left corner.
+        // MainPassResolutionOverride renders content at half-res in the top-left corner.
         //
-        // MetalFX spatial scaler needs:
-        //   - inputWidth/outputWidth: texture dimensions (both full-size for 1:1 pass)
-        //   - inputContentWidth/Height: how many pixels of input are valid content
-        //
-        // However, Bevy's viewport with MainPassResolutionOverride may not render
-        // exclusively to the top-left corner. To avoid content placement issues,
-        // we tell MetalFX the entire texture is valid content and let it process
-        // the full frame. This trades optimal upscaling for correct rendering.
-        let input_w = main_size.width;
-        let input_h = main_size.height;
-        let output_w = input_w;
-        let output_h = input_h;
+        // MetalFX spatial scaler requires inputWidth to match the texture it reads from.
+        // We create a content-sized input texture, GPU-copy the rendered region from
+        // main_texture into it, then pass it to MetalFX for true upscaling:
+        //   - input_texture: content_w × content_h (e.g., 1512×900)
+        //   - output_texture: full_w × full_h (e.g., 3024×1800)
+        //   - Scaler upscales input → output (2× ML upscale)
+        let full_w = main_size.width;
+        let full_h = main_size.height;
+        let input_w = (full_w as f32 * render_scale).round() as u32;
+        let input_h = (full_h as f32 * render_scale).round() as u32;
+        let output_w = full_w;
+        let output_h = full_h;
         let content_w = input_w;
         let content_h = input_h;
 
@@ -175,6 +176,23 @@ impl ViewNode for MetalFxUpscaleNode {
                             );
                             *pending = None;
 
+                            let input_texture = device.create_texture(&TextureDescriptor {
+                                label: Some("metalfx_input"),
+                                size: Extent3d {
+                                    width: input_w,
+                                    height: input_h,
+                                    depth_or_array_layers: 1,
+                                },
+                                mip_level_count: 1,
+                                sample_count: 1,
+                                dimension: TextureDimension::D2,
+                                format: main_format,
+                                usage: TextureUsages::COPY_DST
+                                    | TextureUsages::TEXTURE_BINDING
+                                    | TextureUsages::STORAGE_BINDING,
+                                view_formats: &[],
+                            });
+
                             let output_texture = device.create_texture(&TextureDescriptor {
                                 label: Some("metalfx_output"),
                                 size: Extent3d {
@@ -200,6 +218,7 @@ impl ViewNode for MetalFxUpscaleNode {
 
                             *cached = Some(CachedState {
                                 scaler,
+                                input_texture,
                                 output_texture,
                                 output_view,
                                 prev_color_texture: None,
@@ -267,6 +286,24 @@ impl ViewNode for MetalFxUpscaleNode {
                             return Ok(());
                         };
 
+                        // Content-sized input texture for MetalFX (GPU-copied from main_texture).
+                        let input_texture = device.create_texture(&TextureDescriptor {
+                            label: Some("metalfx_input"),
+                            size: Extent3d {
+                                width: input_w,
+                                height: input_h,
+                                depth_or_array_layers: 1,
+                            },
+                            mip_level_count: 1,
+                            sample_count: 1,
+                            dimension: TextureDimension::D2,
+                            format: main_format,
+                            usage: TextureUsages::COPY_DST
+                                | TextureUsages::TEXTURE_BINDING
+                                | TextureUsages::STORAGE_BINDING,
+                            view_formats: &[],
+                        });
+
                         let output_texture = device.create_texture(&TextureDescriptor {
                             label: Some("metalfx_output"),
                             size: Extent3d {
@@ -292,6 +329,7 @@ impl ViewNode for MetalFxUpscaleNode {
 
                         *cached = Some(CachedState {
                             scaler: SendScaler::Spatial(scaler),
+                            input_texture,
                             output_texture,
                             output_view,
                             prev_color_texture: None,
@@ -352,14 +390,27 @@ impl ViewNode for MetalFxUpscaleNode {
 
         let state = cached.as_mut().unwrap();
 
+        // --- Phase B0: GPU-copy content region from main_texture → input_texture ---
+        // main_texture is full-res (e.g., 3024×1800); content is top-left content_w × content_h.
+        // input_texture is content-sized (e.g., 1512×900) for MetalFX to read.
+        render_context.command_encoder().copy_texture_to_texture(
+            main_tex.as_image_copy(),
+            state.input_texture.as_image_copy(),
+            Extent3d {
+                width: content_w,
+                height: content_h,
+                depth_or_array_layers: 1,
+            },
+        );
+
         // --- Phase B: MetalFX encode ---
         // CRITICAL: Extract ALL raw texture pointers in isolated scopes BEFORE
         // calling encoder.as_hal_mut(). wgpu uses a "snatch lock" internally;
         // calling as_hal() on textures while as_hal_mut() is active (or vice
         // versa) causes a recursive lock panic.
-        let main_tex_ptr = {
-            let Some(hal) = (unsafe { main_tex.as_hal::<wgpu_hal::metal::Api>() }) else {
-                log::error!("MetalFxUpscaleNode: no Metal HAL for main texture");
+        let input_tex_ptr = {
+            let Some(hal) = (unsafe { state.input_texture.as_hal::<wgpu_hal::metal::Api>() }) else {
+                log::error!("MetalFxUpscaleNode: no Metal HAL for input texture");
                 return Ok(());
             };
             unsafe { hal.raw_handle().as_ptr() as *mut c_void }
@@ -458,7 +509,7 @@ impl ViewNode for MetalFxUpscaleNode {
 
                         encode_spatial_upscale(
                             scaler,
-                            main_tex_ptr,
+                            input_tex_ptr,
                             out_tex_ptr,
                             cmd_buf_ptr,
                             content_w as usize,
@@ -492,7 +543,7 @@ impl ViewNode for MetalFxUpscaleNode {
 
                         crate::platform::encode_frame_interpolation(
                             interpolator,
-                            main_tex_ptr,
+                            input_tex_ptr,
                             prev_color_ptr,
                             depth_ptr,
                             motion_ptr,
@@ -533,7 +584,7 @@ impl ViewNode for MetalFxUpscaleNode {
 
                         encode_temporal_upscale(
                             scaler,
-                            main_tex_ptr,
+                            input_tex_ptr,
                             depth_ptr,
                             motion_ptr,
                             out_tex_ptr,
