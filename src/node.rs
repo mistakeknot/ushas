@@ -129,25 +129,24 @@ impl ViewNode for MetalFxUpscaleNode {
         let render_scale = config.map_or(0.5, |c| c.render_scale);
         let mode = config.map_or(MetalFxMode::Spatial, |c| c.mode);
 
-        // main_texture is allocated at full physical resolution (e.g., 3024x1800 on Retina).
-        // MainPassResolutionOverride renders content at render_scale within that texture.
+        // main_texture is full physical resolution (e.g., 3024x1800 on Retina).
+        // MainPassResolutionOverride sets a viewport within that texture, rendering
+        // content at render_scale resolution in the top-left corner.
         //
-        // MetalFX API:
-        //   - inputWidth/outputWidth (scaler creation): the texture dimensions
-        //   - inputContentWidth/Height (per-frame): how many pixels of the input are valid content
+        // MetalFX spatial scaler needs:
+        //   - inputWidth/outputWidth: texture dimensions (both full-size for 1:1 pass)
+        //   - inputContentWidth/Height: how many pixels of input are valid content
         //
-        // Since main_texture is full-size and the content occupies a sub-region,
-        // we create the scaler with input=full, output=full, and set inputContent
-        // to the actual rendered area each frame.
-        let tex_w = main_size.width;
-        let tex_h = main_size.height;
-        let content_w = (tex_w as f32 * render_scale).round() as u32;
-        let content_h = (tex_h as f32 * render_scale).round() as u32;
-        // For scaler creation, input and output are both the full texture size.
-        let input_w = tex_w;
-        let input_h = tex_h;
-        let output_w = tex_w;
-        let output_h = tex_h;
+        // However, Bevy's viewport with MainPassResolutionOverride may not render
+        // exclusively to the top-left corner. To avoid content placement issues,
+        // we tell MetalFX the entire texture is valid content and let it process
+        // the full frame. This trades optimal upscaling for correct rendering.
+        let input_w = main_size.width;
+        let input_h = main_size.height;
+        let output_w = input_w;
+        let output_h = input_h;
+        let content_w = input_w;
+        let content_h = input_h;
 
         // --- Phase A: Get or create scaler + output texture ---
         let device = render_context.render_device().clone();
