@@ -108,7 +108,20 @@ impl bevy::app::Plugin for MetalFxPlugin {
         }
 
         if self.mode == MetalFxMode::Disabled {
-            log::info!("MetalFX mode is Disabled — bypassing");
+            // Even in Disabled mode, apply resolution override if scale < 1.0.
+            // This lets Bevy's built-in bilinear upscaler handle the upscale,
+            // serving as a control condition for MetalFX benchmarks.
+            if self.render_scale < 1.0 {
+                log::info!(
+                    "MetalFX Disabled + scale={} — applying resolution override only (Bevy bilinear upscaler)",
+                    self.render_scale
+                );
+                app.insert_resource(MetalFxRenderScale(self.render_scale));
+                app.add_systems(bevy::app::PostStartup, apply_resolution_override);
+                app.add_systems(bevy::app::Update, update_resolution_on_resize);
+            } else {
+                log::info!("MetalFX mode is Disabled at full resolution — bypassing");
+            }
             return;
         }
 
