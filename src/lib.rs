@@ -256,11 +256,15 @@ fn setup_temporal_camera(
     cameras: Query<Entity, (With<Camera3d>, Without<MotionVectorPrepass>)>,
 ) {
     for entity in cameras.iter() {
-        log::info!("MetalFX temporal: adding MotionVectorPrepass + DepthPrepass + TemporalJitter");
+        log::info!("MetalFX temporal: adding MotionVectorPrepass + DepthPrepass + TemporalJitter + Msaa::Off");
         commands.entity(entity).insert((
             MotionVectorPrepass,
             DepthPrepass,
             TemporalJitter::default(),
+            // Disable MSAA — MetalFX temporal provides anti-aliasing via jittered
+            // accumulation. MSAA multisampled depth textures can't be partially
+            // copied to content-sized input buffers for MetalFX.
+            bevy::render::view::Msaa::Off,
         ));
     }
 }

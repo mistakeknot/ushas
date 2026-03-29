@@ -347,9 +347,13 @@ impl ViewNode for MetalFxUpscaleNode {
                         let color_fmt_raw: usize = unsafe { std::mem::transmute(color_mtl_fmt) };
                         match mode {
                             MetalFxMode::Temporal => unsafe {
+                                // Temporal scaler uses full texture dimensions because
+                                // prepass depth/motion textures are always full-res
+                                // (MainPassResolutionOverride doesn't affect prepass).
+                                // inputContentWidth/Height tells MetalFX the content region.
                                 crate::platform::spawn_temporal_scaler_thread(
                                     device_ptr,
-                                    input_w as usize, input_h as usize,
+                                    full_w as usize, full_h as usize,
                                     output_w as usize, output_h as usize,
                                     color_fmt_raw, tx,
                                 );
@@ -390,31 +394,42 @@ impl ViewNode for MetalFxUpscaleNode {
 
         let state = cached.as_mut().unwrap();
 
-        // --- Phase B0: GPU-copy content region from main_texture → input_texture ---
-        // main_texture is full-res (e.g., 3024×1800); content is top-left content_w × content_h.
-        // input_texture is content-sized (e.g., 1512×900) for MetalFX to read.
-        render_context.command_encoder().copy_texture_to_texture(
-            main_tex.as_image_copy(),
-            state.input_texture.as_image_copy(),
-            Extent3d {
-                width: content_w,
-                height: content_h,
-                depth_or_array_layers: 1,
-            },
-        );
+        // --- Phase B0: Prepare color input texture ---
+        let is_temporal = matches!(state.scaler, SendScaler::Temporal(_));
+
+        let input_tex_ptr = if is_temporal {
+            // Temporal mode: pass main_texture directly at full-res. The scaler was
+            // created with full texture dimensions; inputContentWidth/Height tells it
+            // the rendered content region. This avoids copying depth (Depth32Float
+            // doesn't support partial copy_texture_to_texture).
+            let Some(hal) = (unsafe { main_tex.as_hal::<wgpu_hal::metal::Api>() }) else {
+                log::error!("MetalFxUpscaleNode: no Metal HAL for main texture");
+                return Ok(());
+            };
+            unsafe { hal.raw_handle().as_ptr() as *mut c_void }
+        } else {
+            // Spatial mode: GPU-copy content region into content-sized input texture.
+            render_context.command_encoder().copy_texture_to_texture(
+                main_tex.as_image_copy(),
+                state.input_texture.as_image_copy(),
+                Extent3d {
+                    width: content_w,
+                    height: content_h,
+                    depth_or_array_layers: 1,
+                },
+            );
+            let Some(hal) = (unsafe { state.input_texture.as_hal::<wgpu_hal::metal::Api>() }) else {
+                log::error!("MetalFxUpscaleNode: no Metal HAL for input texture");
+                return Ok(());
+            };
+            unsafe { hal.raw_handle().as_ptr() as *mut c_void }
+        };
 
         // --- Phase B: MetalFX encode ---
         // CRITICAL: Extract ALL raw texture pointers in isolated scopes BEFORE
         // calling encoder.as_hal_mut(). wgpu uses a "snatch lock" internally;
         // calling as_hal() on textures while as_hal_mut() is active (or vice
         // versa) causes a recursive lock panic.
-        let input_tex_ptr = {
-            let Some(hal) = (unsafe { state.input_texture.as_hal::<wgpu_hal::metal::Api>() }) else {
-                log::error!("MetalFxUpscaleNode: no Metal HAL for input texture");
-                return Ok(());
-            };
-            unsafe { hal.raw_handle().as_ptr() as *mut c_void }
-        }; // hal guard dropped here
 
         let out_tex_ptr = {
             let Some(hal) = (unsafe { state.output_texture.as_hal::<wgpu_hal::metal::Api>() }) else {
@@ -427,7 +442,12 @@ impl ViewNode for MetalFxUpscaleNode {
         let is_first_frame = state.frame_count == 0;
         state.frame_count += 1;
 
-        // For temporal mode, also extract depth + motion vector pointers.
+        // For temporal mode, GPU-copy depth + motion vector content regions into
+        // content-sized textures, then extract raw Metal pointers.
+        //
+        // Bevy's prepass renders depth/motion at full physical resolution even when
+        // MainPassResolutionOverride is active. MetalFX temporal scaler requires all
+        // input textures to match the input content dimensions (input_w × input_h).
         let temporal_ptrs = match &state.scaler {
             SendScaler::Temporal(_) => {
                 let Some(prepass) = prepass_textures else {
@@ -443,6 +463,26 @@ impl ViewNode for MetalFxUpscaleNode {
                     return Ok(());
                 };
 
+                let depth_fmt = depth_attachment.texture.texture.format();
+                let motion_fmt = motion_attachment.texture.texture.format();
+
+                // Log prepass texture dimensions on first frame for debugging.
+                if state.frame_count <= 1 {
+                    let depth_size = depth_attachment.texture.texture.size();
+                    let motion_size = motion_attachment.texture.texture.size();
+                    log::info!(
+                        "MetalFxUpscaleNode temporal: prepass depth={}x{} ({:?}), motion={}x{} ({:?}), \
+                         passing full-res textures with inputContent={}x{}",
+                        depth_size.width, depth_size.height, depth_fmt,
+                        motion_size.width, motion_size.height, motion_fmt,
+                        content_w, content_h,
+                    );
+                }
+
+                // Pass full-res prepass textures directly. The temporal scaler was created
+                // with full texture dimensions (full_w × full_h), using inputContentWidth/Height
+                // to read only the rendered content region. No GPU copy needed — this avoids
+                // the Depth32Float partial-copy limitation.
                 let depth_ptr = {
                     let Some(hal) = (unsafe { depth_attachment.texture.texture.as_hal::<wgpu_hal::metal::Api>() }) else {
                         log::error!("MetalFxUpscaleNode: no Metal HAL for depth texture");
