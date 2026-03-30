@@ -652,7 +652,10 @@ impl ViewNode for MetalFxUpscaleNode {
                             bevy::render::render_resource::RenderPassDepthStencilAttachment {
                                 view: content_depth_view,
                                 depth_ops: Some(bevy::render::render_resource::Operations {
-                                    load: bevy::render::render_resource::LoadOp::Clear(0.0),
+                                    // Clear to 1.0 (near plane in Bevy's reversed-Z).
+                                    // Safe default: out-of-viewport fragments read as near-plane
+                                    // rather than far-plane (infinity), preventing edge ghosting.
+                                    load: bevy::render::render_resource::LoadOp::Clear(1.0),
                                     store: bevy::render::render_resource::StoreOp::Store,
                                 }),
                                 stencil_ops: None,
