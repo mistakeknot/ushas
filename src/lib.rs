@@ -23,7 +23,7 @@ mod stub {
     use bevy::prelude::*;
 
     /// Render-world configuration (stub for non-macOS platforms).
-    #[derive(Resource, Clone, Copy)]
+    #[derive(Resource, Clone, Copy, bevy::render::extract_resource::ExtractResource)]
     pub struct MetalFxConfig {
         pub render_scale: f32,
         pub mode: MetalFxMode,
@@ -79,6 +79,10 @@ pub struct MetalFxPlugin {
     pub render_scale: f32,
     /// Which MetalFX mode to use.
     pub mode: MetalFxMode,
+    /// Enable adaptive render scale — dynamically adjusts scale based on P99 frame time.
+    /// The initial `render_scale` is snapped to the nearest supported step (0.5 or 0.75).
+    /// The system will not scale outside this range. `MetalFxRenderScale` becomes mutable.
+    pub adaptive: bool,
 }
 
 impl Default for MetalFxPlugin {
@@ -86,6 +90,7 @@ impl Default for MetalFxPlugin {
         Self {
             render_scale: 0.5,
             mode: MetalFxMode::Spatial,
+            adaptive: false,
         }
     }
 }
@@ -134,11 +139,31 @@ impl bevy::app::Plugin for MetalFxPlugin {
         // Main-world: insert render scale resource and resolution override systems.
         app.insert_resource(MetalFxRenderScale(self.render_scale));
         app.insert_resource(MetalFxModeResource(self.mode));
+        // Main-world MetalFxConfig for render-world extraction.
+        app.insert_resource(MetalFxConfig {
+            render_scale: self.render_scale,
+            mode: self.mode,
+        });
         app.add_systems(
             bevy::app::PostStartup,
             apply_resolution_override,
         );
         app.add_systems(bevy::app::Update, update_resolution_on_resize);
+
+        // Adaptive render scale (opt-in).
+        if self.adaptive {
+            app.insert_resource(AdaptiveScaleState::new(self.render_scale));
+            app.add_systems(
+                bevy::app::Update,
+                (adaptive_scale_system, sync_config_scale, update_resolution_on_scale_change).chain(),
+            );
+        } else {
+            // Even without adaptive, keep config in sync for manual scale changes.
+            app.add_systems(
+                bevy::app::Update,
+                (sync_config_scale, update_resolution_on_scale_change).chain(),
+            );
+        }
 
         // Temporal + FrameInterpolation modes: add prepass components and jitter system.
         #[cfg(feature = "temporal")]
@@ -155,6 +180,13 @@ impl bevy::app::Plugin for MetalFxPlugin {
             app.insert_resource(MetalFxModeResource(MetalFxMode::Spatial));
         }
 
+        // Extract MetalFxConfig from main world to render world each frame.
+        // Must be added to main app — the plugin internally finds the RenderApp sub-app.
+        #[cfg(target_os = "macos")]
+        app.add_plugins(
+            bevy::render::extract_resource::ExtractResourcePlugin::<MetalFxConfig>::default(),
+        );
+
         #[cfg(target_os = "macos")]
         {
             use bevy::core_pipeline::core_3d::graph::{Core3d, Node3d};
@@ -163,10 +195,6 @@ impl bevy::app::Plugin for MetalFxPlugin {
 
             if let Some(render_app) = app.get_sub_app_mut(RenderApp) {
                 render_app
-                    .insert_resource(node::MetalFxConfig {
-                        render_scale: self.render_scale,
-                        mode: self.mode,
-                    })
                     .add_render_graph_node::<ViewNodeRunner<MetalFxUpscaleNode>>(
                         Core3d,
                         MetalFxLabel,
@@ -193,6 +221,70 @@ use bevy::render::camera::TemporalJitter;
 /// Main-world resource holding the MetalFX mode.
 #[derive(Resource, Clone, Copy)]
 pub struct MetalFxModeResource(pub MetalFxMode);
+
+// --- Adaptive render scale ---
+
+/// Scale steps from lowest quality (best perf) to highest quality (worst perf).
+const SCALE_STEPS: [f32; 2] = [0.5, 0.75];
+/// Number of frames in the rolling window (~2 seconds at 60fps).
+const WINDOW_SIZE: usize = 120;
+/// P99 threshold to trigger scale-down (60fps = 16.67ms).
+const P99_SCALE_DOWN_MS: f32 = 16.67;
+/// P99 threshold to trigger scale-up (generous margin below 60fps).
+const P99_SCALE_UP_MS: f32 = 12.0;
+/// Consecutive windows over threshold before scaling down.
+const WINDOWS_TO_SCALE_DOWN: u32 = 3;
+/// Consecutive windows under threshold before scaling up.
+const WINDOWS_TO_SCALE_UP: u32 = 5;
+/// Cooldown after a scale change (seconds). 10s covers temporal scaler background creation.
+const SCALE_CHANGE_COOLDOWN: f32 = 10.0;
+/// Evaluate P99 every N frames (half the window — overlapping evaluation).
+const EVAL_CADENCE_FRAMES: u32 = 60;
+
+/// Adaptive render scale state — tracks frame times and manages scale transitions.
+#[derive(Resource)]
+pub struct AdaptiveScaleState {
+    /// Rolling buffer of recent frame times (milliseconds).
+    frame_times: [f32; WINDOW_SIZE],
+    /// Write index into `frame_times` (circular buffer).
+    write_idx: usize,
+    /// Number of valid samples (grows until buffer is full).
+    sample_count: usize,
+    /// Current scale step index into `SCALE_STEPS`.
+    current_step: usize,
+    /// Consecutive evaluation windows where P99 exceeded the scale-down threshold.
+    consecutive_over: u32,
+    /// Consecutive evaluation windows where P99 was under the scale-up threshold.
+    consecutive_under: u32,
+    /// Cooldown timer (seconds remaining). No scale changes while > 0.
+    cooldown: f32,
+    /// Frame counter for evaluation cadence.
+    frames_since_eval: u32,
+}
+
+impl AdaptiveScaleState {
+    fn new(initial_scale: f32) -> Self {
+        let current_step = SCALE_STEPS
+            .iter()
+            .enumerate()
+            .min_by(|(_, a), (_, b)| {
+                (*a - initial_scale).abs().total_cmp(&(*b - initial_scale).abs())
+            })
+            .map(|(i, _)| i)
+            .unwrap_or(0);
+
+        Self {
+            frame_times: [0.0; WINDOW_SIZE],
+            write_idx: 0,
+            sample_count: 0,
+            current_step,
+            consecutive_over: 0,
+            consecutive_under: 0,
+            cooldown: 0.0,
+            frames_since_eval: 0,
+        }
+    }
+}
 
 /// Insert `MainPassResolutionOverride` on all Camera3d entities at startup.
 fn apply_resolution_override(
@@ -246,6 +338,132 @@ fn update_resolution_on_resize(
             "MetalFX: resize -> MainPassResolutionOverride {override_w}x{override_h}"
         );
         res_override.0 = UVec2::new(override_w, override_h);
+    }
+}
+
+/// Adaptive render scale system — adjusts scale based on P99 frame time.
+fn adaptive_scale_system(
+    time: Res<Time>,
+    mut state: ResMut<AdaptiveScaleState>,
+    mut scale: ResMut<MetalFxRenderScale>,
+) {
+    // Record frame time.
+    let dt_ms = time.delta_secs() * 1000.0;
+    let idx = state.write_idx;
+    state.frame_times[idx] = dt_ms;
+    state.write_idx = (idx + 1) % WINDOW_SIZE;
+    if state.sample_count < WINDOW_SIZE {
+        state.sample_count += 1;
+    }
+
+    // Tick cooldown.
+    if state.cooldown > 0.0 {
+        state.cooldown -= time.delta_secs();
+        if state.cooldown > 0.0 {
+            state.frames_since_eval = 0;
+            return;
+        }
+        state.consecutive_over = 0;
+        state.consecutive_under = 0;
+        state.frames_since_eval = 0;
+    }
+
+    // Check evaluation cadence.
+    state.frames_since_eval += 1;
+    if state.frames_since_eval < EVAL_CADENCE_FRAMES {
+        return;
+    }
+    state.frames_since_eval = 0;
+
+    // Need enough samples.
+    if state.sample_count < WINDOW_SIZE / 2 {
+        return;
+    }
+
+    // Compute P99 from rolling window.
+    let count = state.sample_count;
+    let mut sorted = state.frame_times;
+    sorted[..count].sort_by(|a, b| a.total_cmp(b));
+    let p99_idx = ((count as f32 * 0.99) as usize).min(count - 1);
+    let p99 = sorted[p99_idx];
+
+    // Evaluate thresholds with proper hysteresis.
+    // Dead zone (P99_SCALE_UP_MS..=P99_SCALE_DOWN_MS): neither counter advances or resets.
+    // This prevents jitter near the threshold from resetting accumulated evidence.
+    if p99 > P99_SCALE_DOWN_MS {
+        state.consecutive_over += 1;
+        state.consecutive_under = 0;
+    } else if p99 < P99_SCALE_UP_MS {
+        state.consecutive_under += 1;
+        state.consecutive_over = 0;
+    }
+    // Dead zone: no action — counters hold their values.
+
+    // Scale down: move to lower step.
+    if state.consecutive_over >= WINDOWS_TO_SCALE_DOWN && state.current_step > 0 {
+        let old = SCALE_STEPS[state.current_step];
+        state.current_step -= 1;
+        let new_scale = SCALE_STEPS[state.current_step];
+        log::info!(
+            "MetalFX adaptive: scale DOWN {old} -> {new_scale} (P99={p99:.2}ms > {P99_SCALE_DOWN_MS}ms)"
+        );
+        scale.0 = new_scale;
+        state.cooldown = SCALE_CHANGE_COOLDOWN;
+        state.consecutive_over = 0;
+        state.consecutive_under = 0;
+    } else if state.consecutive_under >= WINDOWS_TO_SCALE_UP
+        && state.current_step < SCALE_STEPS.len() - 1
+    {
+        // Scale up: move to higher step.
+        let old = SCALE_STEPS[state.current_step];
+        state.current_step += 1;
+        let new_scale = SCALE_STEPS[state.current_step];
+        log::info!(
+            "MetalFX adaptive: scale UP {old} -> {new_scale} (P99={p99:.2}ms < {P99_SCALE_UP_MS}ms)"
+        );
+        scale.0 = new_scale;
+        state.cooldown = SCALE_CHANGE_COOLDOWN;
+        state.consecutive_over = 0;
+        state.consecutive_under = 0;
+    }
+}
+
+/// Update resolution override when the render scale changes (adaptive mode).
+fn update_resolution_on_scale_change(
+    mut cameras: Query<&mut MainPassResolutionOverride, With<Camera3d>>,
+    windows: Query<&Window>,
+    scale: Res<MetalFxRenderScale>,
+) {
+    if !scale.is_changed() || scale.is_added() {
+        return;
+    }
+    let Ok(window) = windows.single() else {
+        return;
+    };
+    let w = window.physical_width();
+    let h = window.physical_height();
+    if w == 0 || h == 0 {
+        return;
+    }
+    let override_w = (w as f32 * scale.0).round() as u32;
+    let override_h = (h as f32 * scale.0).round() as u32;
+
+    for mut res_override in cameras.iter_mut() {
+        log::info!(
+            "MetalFX: scale change -> MainPassResolutionOverride {override_w}x{override_h} (scale={})",
+            scale.0
+        );
+        res_override.0 = UVec2::new(override_w, override_h);
+    }
+}
+
+/// Keep main-world MetalFxConfig.render_scale in sync with MetalFxRenderScale.
+fn sync_config_scale(
+    scale: Res<MetalFxRenderScale>,
+    mut config: ResMut<MetalFxConfig>,
+) {
+    if scale.is_changed() && !scale.is_added() {
+        config.render_scale = scale.0;
     }
 }
 

@@ -48,7 +48,8 @@ use crate::platform::{
 use crate::MetalFxMode;
 
 /// Resource holding the MetalFX render configuration.
-#[derive(Resource, Clone, Copy)]
+/// Extracted from main world each frame via `ExtractResourcePlugin`.
+#[derive(Resource, Clone, Copy, bevy::render::extract_resource::ExtractResource)]
 pub struct MetalFxConfig {
     pub render_scale: f32,
     pub mode: MetalFxMode,
@@ -345,8 +346,11 @@ impl ViewNode for MetalFxUpscaleNode {
                 }
             }
 
-            // If no cached scaler and no pending creation, start one.
-            if cached.is_none() && pending.is_none() {
+            // If no pending creation, start one (clear stale cached scaler).
+            // The old guard `cached.is_none() && pending.is_none()` would block
+            // new scaler creation when a cached scaler existed at stale dimensions.
+            if pending.is_none() {
+                *cached = None;
                 log::info!(
                     "MetalFxUpscaleNode: creating {:?} scaler {input_w}x{input_h} -> {output_w}x{output_h}",
                     mode
