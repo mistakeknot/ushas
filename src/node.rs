@@ -79,8 +79,10 @@ struct CachedState {
     content_depth_texture: Option<bevy::render::render_resource::Texture>,
     /// Stable view for the content depth texture (avoids per-frame view creation).
     content_depth_view: Option<TextureView>,
-    /// Content-sized RG16Float texture for temporal mode (written by copy_texture_to_texture).
+    /// Content-sized RG16Float texture for temporal mode (written by motion resolve pass).
     content_motion_texture: Option<bevy::render::render_resource::Texture>,
+    /// Stable view for the content motion texture.
+    content_motion_view: Option<TextureView>,
     input_w: u32,
     input_h: u32,
     output_w: u32,
@@ -97,8 +99,8 @@ struct PendingScaler {
     output_h: u32,
 }
 
-/// Depth resolve render pipeline + bind group layout (single Mutex to prevent lock ordering issues).
-struct DepthResolvePipeline {
+/// Render pipeline + bind group layout for prepass texture resolve.
+struct ResolvePipeline {
     pipeline: wgpu::RenderPipeline,
     bind_group_layout: wgpu::BindGroupLayout,
 }
@@ -110,9 +112,13 @@ pub struct MetalFxUpscaleNode {
     cached_bind_group: Mutex<Option<(TextureViewId, BindGroup)>>,
     cached_pipeline: Mutex<Option<CachedRenderPipelineId>>,
     /// Depth resolve render pipeline (lazy-init, resolution-independent).
-    depth_resolve: Mutex<Option<DepthResolvePipeline>>,
+    depth_resolve: Mutex<Option<ResolvePipeline>>,
     /// Cached bind group for depth resolve (keyed on src + dst TextureViewId).
     depth_resolve_bind_group: Mutex<Option<(TextureViewId, TextureViewId, wgpu::BindGroup)>>,
+    /// Motion vector resolve render pipeline (lazy-init, resolution-independent).
+    motion_resolve: Mutex<Option<ResolvePipeline>>,
+    /// Cached bind group for motion resolve (keyed on src TextureViewId).
+    motion_resolve_bind_group: Mutex<Option<(TextureViewId, wgpu::BindGroup)>>,
 }
 
 impl Default for MetalFxUpscaleNode {
@@ -124,6 +130,8 @@ impl Default for MetalFxUpscaleNode {
             cached_pipeline: Mutex::new(None),
             depth_resolve: Mutex::new(None),
             depth_resolve_bind_group: Mutex::new(None),
+            motion_resolve: Mutex::new(None),
+            motion_resolve_bind_group: Mutex::new(None),
         }
     }
 }
@@ -248,9 +256,10 @@ impl ViewNode for MetalFxUpscaleNode {
                             };
 
                             // Content-sized motion vector texture for temporal mode.
-                            // RG16Float supports copy_texture_to_texture.
-                            let content_motion_texture = if matches!(scaler, SendScaler::Temporal(_) | SendScaler::FrameInterpolator(_)) {
-                                Some(device.create_texture(&TextureDescriptor {
+                            // Written via motion resolve render pass (Bevy's prepass
+                            // textures lack COPY_SRC, so copy_texture_to_texture fails).
+                            let (content_motion_texture, content_motion_view) = if matches!(scaler, SendScaler::Temporal(_) | SendScaler::FrameInterpolator(_)) {
+                                let tex = device.create_texture(&TextureDescriptor {
                                     label: Some("metalfx_content_motion"),
                                     size: Extent3d {
                                         width: input_w,
@@ -261,12 +270,16 @@ impl ViewNode for MetalFxUpscaleNode {
                                     sample_count: 1,
                                     dimension: TextureDimension::D2,
                                     format: bevy::render::render_resource::TextureFormat::Rg16Float,
-                                    usage: TextureUsages::COPY_DST
+                                    usage: TextureUsages::RENDER_ATTACHMENT
                                         | TextureUsages::TEXTURE_BINDING,
                                     view_formats: &[],
-                                }))
+                                });
+                                let view = tex.create_view(
+                                    &bevy::render::render_resource::TextureViewDescriptor::default(),
+                                );
+                                (Some(tex), Some(view))
                             } else {
-                                None
+                                (None, None)
                             };
 
                             let output_texture = device.create_texture(&TextureDescriptor {
@@ -292,6 +305,7 @@ impl ViewNode for MetalFxUpscaleNode {
                             *self.cached_bind_group.lock().unwrap() = None;
                             *self.cached_pipeline.lock().unwrap() = None;
                             *self.depth_resolve_bind_group.lock().unwrap() = None;
+                            *self.motion_resolve_bind_group.lock().unwrap() = None;
 
                             *cached = Some(CachedState {
                                 scaler,
@@ -302,6 +316,7 @@ impl ViewNode for MetalFxUpscaleNode {
                                 content_depth_texture,
                                 content_depth_view,
                                 content_motion_texture,
+                                content_motion_view,
                                 input_w,
                                 input_h,
                                 output_w,
@@ -416,6 +431,7 @@ impl ViewNode for MetalFxUpscaleNode {
                             content_depth_texture: None,
                             content_depth_view: None,
                             content_motion_texture: None,
+                            content_motion_view: None,
                             input_w,
                             input_h,
                             output_w,
@@ -528,17 +544,121 @@ impl ViewNode for MetalFxUpscaleNode {
                 );
             }
 
-            // Copy motion vectors to content-sized texture (RG16Float supports copy).
-            let content_motion = state.content_motion_texture.as_ref().unwrap();
-            render_context.command_encoder().copy_texture_to_texture(
-                motion_attachment.texture.texture.as_image_copy(),
-                content_motion.as_image_copy(),
-                Extent3d {
-                    width: content_w,
-                    height: content_h,
-                    depth_or_array_layers: 1,
-                },
-            );
+            // Resolve motion vectors to content-sized RG16Float via render pass.
+            // Bevy's prepass textures lack COPY_SRC, so copy_texture_to_texture fails.
+            let content_motion_view = state.content_motion_view.as_ref().unwrap();
+            {
+                let mut mr = self.motion_resolve.lock().unwrap();
+                if mr.is_none() {
+                    let wgpu_dev = device.wgpu_device();
+                    let shader = wgpu_dev.create_shader_module(wgpu::ShaderModuleDescriptor {
+                        label: Some("motion_resolve_shader"),
+                        source: wgpu::ShaderSource::Wgsl(
+                            include_str!("motion_resolve.wgsl").into(),
+                        ),
+                    });
+                    let bgl = wgpu_dev.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                        label: Some("motion_resolve_bgl"),
+                        entries: &[wgpu::BindGroupLayoutEntry {
+                            binding: 0,
+                            visibility: wgpu::ShaderStages::FRAGMENT,
+                            ty: wgpu::BindingType::Texture {
+                                sample_type: wgpu::TextureSampleType::Float { filterable: false },
+                                view_dimension: wgpu::TextureViewDimension::D2,
+                                multisampled: false,
+                            },
+                            count: None,
+                        }],
+                    });
+                    let pipeline_layout = wgpu_dev.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                        label: Some("motion_resolve_layout"),
+                        bind_group_layouts: &[&bgl],
+                        push_constant_ranges: &[],
+                    });
+                    let pipeline = wgpu_dev.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+                        label: Some("motion_resolve_pipeline"),
+                        layout: Some(&pipeline_layout),
+                        vertex: wgpu::VertexState {
+                            module: &shader,
+                            entry_point: Some("vs_main"),
+                            buffers: &[],
+                            compilation_options: Default::default(),
+                        },
+                        fragment: Some(wgpu::FragmentState {
+                            module: &shader,
+                            entry_point: Some("fs_main"),
+                            targets: &[Some(wgpu::ColorTargetState {
+                                format: wgpu::TextureFormat::Rg16Float,
+                                blend: None,
+                                write_mask: wgpu::ColorWrites::ALL,
+                            })],
+                            compilation_options: Default::default(),
+                        }),
+                        primitive: wgpu::PrimitiveState {
+                            topology: wgpu::PrimitiveTopology::TriangleList,
+                            ..Default::default()
+                        },
+                        depth_stencil: None,
+                        multisample: Default::default(),
+                        multiview: None,
+                        cache: None,
+                    });
+                    *mr = Some(ResolvePipeline {
+                        pipeline,
+                        bind_group_layout: bgl,
+                    });
+                }
+                let mr_ref = mr.as_ref().unwrap();
+
+                let src_motion_view = motion_attachment.texture.texture.create_view(
+                    &bevy::render::render_resource::TextureViewDescriptor::default(),
+                );
+
+                // Get or create cached bind group for motion resolve.
+                let mut mr_bg = self.motion_resolve_bind_group.lock().unwrap();
+                let need_new = match &*mr_bg {
+                    Some((src_id, _)) if *src_id == src_motion_view.id() => false,
+                    _ => true,
+                };
+                if need_new {
+                    let wgpu_dev = device.wgpu_device();
+                    let src_view_wgpu: &wgpu::TextureView = &src_motion_view;
+                    let bg = wgpu_dev.create_bind_group(&wgpu::BindGroupDescriptor {
+                        label: Some("motion_resolve_bg"),
+                        layout: &mr_ref.bind_group_layout,
+                        entries: &[wgpu::BindGroupEntry {
+                            binding: 0,
+                            resource: wgpu::BindingResource::TextureView(src_view_wgpu),
+                        }],
+                    });
+                    *mr_bg = Some((src_motion_view.id(), bg));
+                }
+                let bind_group = &mr_bg.as_ref().unwrap().1;
+
+                let mut pass = render_context.command_encoder().begin_render_pass(
+                    &RenderPassDescriptor {
+                        label: Some("metalfx_motion_resolve"),
+                        color_attachments: &[Some(
+                            wgpu::RenderPassColorAttachment {
+                                view: content_motion_view,
+                                resolve_target: None,
+                                ops: wgpu::Operations {
+                                    load: wgpu::LoadOp::Clear(wgpu::Color::TRANSPARENT),
+                                    store: wgpu::StoreOp::Store,
+                                },
+                                depth_slice: None,
+                            },
+                        )],
+                        depth_stencil_attachment: None,
+                        timestamp_writes: None,
+                        occlusion_query_set: None,
+                    },
+                );
+                pass.set_pipeline(&mr_ref.pipeline);
+                pass.set_bind_group(0, bind_group, &[]);
+                pass.set_viewport(0.0, 0.0, content_w as f32, content_h as f32, 0.0, 1.0);
+                pass.draw(0..3, 0..1);
+            }
 
             // Resolve depth to content-sized Depth32Float via fragment shader render pass.
             // This block must be a separate scope — render pass guard must drop before
@@ -603,7 +723,7 @@ impl ViewNode for MetalFxUpscaleNode {
                         multiview: None,
                         cache: None,
                     });
-                    *dr = Some(DepthResolvePipeline {
+                    *dr = Some(ResolvePipeline {
                         pipeline,
                         bind_group_layout: bgl,
                     });
