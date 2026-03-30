@@ -9,7 +9,7 @@
 
 struct VertexOutput {
     @builtin(position) position: vec4<f32>,
-};
+}
 
 @vertex
 fn vs_main(@builtin(vertex_index) vi: u32) -> VertexOutput {

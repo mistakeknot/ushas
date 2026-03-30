@@ -77,6 +77,8 @@ struct CachedState {
     prev_color_texture: Option<bevy::render::render_resource::Texture>,
     /// Content-sized Depth32Float texture for temporal mode (written by depth resolve pass).
     content_depth_texture: Option<bevy::render::render_resource::Texture>,
+    /// Stable view for the content depth texture (avoids per-frame view creation).
+    content_depth_view: Option<TextureView>,
     /// Content-sized RG16Float texture for temporal mode (written by copy_texture_to_texture).
     content_motion_texture: Option<bevy::render::render_resource::Texture>,
     input_w: u32,
@@ -221,8 +223,8 @@ impl ViewNode for MetalFxUpscaleNode {
                             // Content-sized depth texture for temporal mode.
                             // Depth32Float — matches scaler's setDepthTextureFormat.
                             // Written via depth resolve render pass (@builtin(frag_depth)).
-                            let content_depth_texture = if matches!(scaler, SendScaler::Temporal(_) | SendScaler::FrameInterpolator(_)) {
-                                Some(device.create_texture(&TextureDescriptor {
+                            let (content_depth_texture, content_depth_view) = if matches!(scaler, SendScaler::Temporal(_) | SendScaler::FrameInterpolator(_)) {
+                                let tex = device.create_texture(&TextureDescriptor {
                                     label: Some("metalfx_content_depth"),
                                     size: Extent3d {
                                         width: input_w,
@@ -236,9 +238,13 @@ impl ViewNode for MetalFxUpscaleNode {
                                     usage: TextureUsages::RENDER_ATTACHMENT
                                         | TextureUsages::TEXTURE_BINDING,
                                     view_formats: &[],
-                                }))
+                                });
+                                let view = tex.create_view(
+                                    &bevy::render::render_resource::TextureViewDescriptor::default(),
+                                );
+                                (Some(tex), Some(view))
                             } else {
-                                None
+                                (None, None)
                             };
 
                             // Content-sized motion vector texture for temporal mode.
@@ -294,6 +300,7 @@ impl ViewNode for MetalFxUpscaleNode {
                                 output_view,
                                 prev_color_texture: None,
                                 content_depth_texture,
+                                content_depth_view,
                                 content_motion_texture,
                                 input_w,
                                 input_h,
@@ -407,6 +414,7 @@ impl ViewNode for MetalFxUpscaleNode {
                             output_view,
                             prev_color_texture: None,
                             content_depth_texture: None,
+                            content_depth_view: None,
                             content_motion_texture: None,
                             input_w,
                             input_h,
@@ -535,7 +543,7 @@ impl ViewNode for MetalFxUpscaleNode {
             // Resolve depth to content-sized Depth32Float via fragment shader render pass.
             // This block must be a separate scope — render pass guard must drop before
             // as_hal_mut is called for the MetalFX encode.
-            let content_depth = state.content_depth_texture.as_ref().unwrap();
+            let content_depth_view = state.content_depth_view.as_ref().unwrap();
             {
                 // Lazy-init depth resolve render pipeline.
                 let mut dr = self.depth_resolve.lock().unwrap();
@@ -602,19 +610,18 @@ impl ViewNode for MetalFxUpscaleNode {
                 }
                 let dr_ref = dr.as_ref().unwrap();
 
-                // Create texture views for the depth resolve pass.
+                // Create source depth view (prepass texture — changes if prepass is recreated).
+                // Destination view is stored in CachedState (stable across frames).
                 let src_depth_view = depth_attachment.texture.texture.create_view(
                     &bevy::render::render_resource::TextureViewDescriptor::default(),
                 );
-                let dst_depth_view = content_depth.create_view(
-                    &bevy::render::render_resource::TextureViewDescriptor::default(),
-                );
 
-                // Get or create cached bind group (keyed on src TextureViewId).
+                // Get or create cached bind group (keyed on src + dst TextureViewId).
+                // dst_id is stable (stored in CachedState), src_id changes on prepass recreation.
                 let mut dr_bg = self.depth_resolve_bind_group.lock().unwrap();
                 let need_new_bg = match &*dr_bg {
                     Some((src_id, dst_id, _))
-                        if *src_id == src_depth_view.id() && *dst_id == dst_depth_view.id() =>
+                        if *src_id == src_depth_view.id() && *dst_id == content_depth_view.id() =>
                     {
                         false
                     }
@@ -632,7 +639,7 @@ impl ViewNode for MetalFxUpscaleNode {
                             resource: wgpu::BindingResource::TextureView(src_view_wgpu),
                         }],
                     });
-                    *dr_bg = Some((src_depth_view.id(), dst_depth_view.id(), bg));
+                    *dr_bg = Some((src_depth_view.id(), content_depth_view.id(), bg));
                 }
                 let bind_group = &dr_bg.as_ref().unwrap().2;
 
@@ -643,7 +650,7 @@ impl ViewNode for MetalFxUpscaleNode {
                         color_attachments: &[],
                         depth_stencil_attachment: Some(
                             bevy::render::render_resource::RenderPassDepthStencilAttachment {
-                                view: &dst_depth_view,
+                                view: content_depth_view,
                                 depth_ops: Some(bevy::render::render_resource::Operations {
                                     load: bevy::render::render_resource::LoadOp::Clear(0.0),
                                     store: bevy::render::render_resource::StoreOp::Store,
