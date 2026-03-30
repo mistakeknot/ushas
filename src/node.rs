@@ -75,6 +75,10 @@ struct CachedState {
     output_view: TextureView,
     /// Previous frame color texture for frame interpolation (ring buffer A).
     prev_color_texture: Option<bevy::render::render_resource::Texture>,
+    /// Content-sized Depth32Float texture for temporal mode (written by depth resolve pass).
+    content_depth_texture: Option<bevy::render::render_resource::Texture>,
+    /// Content-sized RG16Float texture for temporal mode (written by copy_texture_to_texture).
+    content_motion_texture: Option<bevy::render::render_resource::Texture>,
     input_w: u32,
     input_h: u32,
     output_w: u32,
@@ -91,13 +95,35 @@ struct PendingScaler {
     output_h: u32,
 }
 
+/// Depth resolve render pipeline + bind group layout (single Mutex to prevent lock ordering issues).
+struct DepthResolvePipeline {
+    pipeline: wgpu::RenderPipeline,
+    bind_group_layout: wgpu::BindGroupLayout,
+}
+
 /// MetalFX upscaling ViewNode (spatial + temporal).
-#[derive(Default)]
 pub struct MetalFxUpscaleNode {
     cached: Mutex<Option<CachedState>>,
     pending: Mutex<Option<PendingScaler>>,
     cached_bind_group: Mutex<Option<(TextureViewId, BindGroup)>>,
     cached_pipeline: Mutex<Option<CachedRenderPipelineId>>,
+    /// Depth resolve render pipeline (lazy-init, resolution-independent).
+    depth_resolve: Mutex<Option<DepthResolvePipeline>>,
+    /// Cached bind group for depth resolve (keyed on src + dst TextureViewId).
+    depth_resolve_bind_group: Mutex<Option<(TextureViewId, TextureViewId, wgpu::BindGroup)>>,
+}
+
+impl Default for MetalFxUpscaleNode {
+    fn default() -> Self {
+        Self {
+            cached: Mutex::new(None),
+            pending: Mutex::new(None),
+            cached_bind_group: Mutex::new(None),
+            cached_pipeline: Mutex::new(None),
+            depth_resolve: Mutex::new(None),
+            depth_resolve_bind_group: Mutex::new(None),
+        }
+    }
 }
 
 impl ViewNode for MetalFxUpscaleNode {
@@ -188,10 +214,54 @@ impl ViewNode for MetalFxUpscaleNode {
                                 dimension: TextureDimension::D2,
                                 format: main_format,
                                 usage: TextureUsages::COPY_DST
-                                    | TextureUsages::TEXTURE_BINDING
-                                    | TextureUsages::STORAGE_BINDING,
+                                    | TextureUsages::TEXTURE_BINDING,
                                 view_formats: &[],
                             });
+
+                            // Content-sized depth texture for temporal mode.
+                            // Depth32Float — matches scaler's setDepthTextureFormat.
+                            // Written via depth resolve render pass (@builtin(frag_depth)).
+                            let content_depth_texture = if matches!(scaler, SendScaler::Temporal(_) | SendScaler::FrameInterpolator(_)) {
+                                Some(device.create_texture(&TextureDescriptor {
+                                    label: Some("metalfx_content_depth"),
+                                    size: Extent3d {
+                                        width: input_w,
+                                        height: input_h,
+                                        depth_or_array_layers: 1,
+                                    },
+                                    mip_level_count: 1,
+                                    sample_count: 1,
+                                    dimension: TextureDimension::D2,
+                                    format: bevy::render::render_resource::TextureFormat::Depth32Float,
+                                    usage: TextureUsages::RENDER_ATTACHMENT
+                                        | TextureUsages::TEXTURE_BINDING,
+                                    view_formats: &[],
+                                }))
+                            } else {
+                                None
+                            };
+
+                            // Content-sized motion vector texture for temporal mode.
+                            // RG16Float supports copy_texture_to_texture.
+                            let content_motion_texture = if matches!(scaler, SendScaler::Temporal(_) | SendScaler::FrameInterpolator(_)) {
+                                Some(device.create_texture(&TextureDescriptor {
+                                    label: Some("metalfx_content_motion"),
+                                    size: Extent3d {
+                                        width: input_w,
+                                        height: input_h,
+                                        depth_or_array_layers: 1,
+                                    },
+                                    mip_level_count: 1,
+                                    sample_count: 1,
+                                    dimension: TextureDimension::D2,
+                                    format: bevy::render::render_resource::TextureFormat::Rg16Float,
+                                    usage: TextureUsages::COPY_DST
+                                        | TextureUsages::TEXTURE_BINDING,
+                                    view_formats: &[],
+                                }))
+                            } else {
+                                None
+                            };
 
                             let output_texture = device.create_texture(&TextureDescriptor {
                                 label: Some("metalfx_output"),
@@ -215,6 +285,7 @@ impl ViewNode for MetalFxUpscaleNode {
 
                             *self.cached_bind_group.lock().unwrap() = None;
                             *self.cached_pipeline.lock().unwrap() = None;
+                            *self.depth_resolve_bind_group.lock().unwrap() = None;
 
                             *cached = Some(CachedState {
                                 scaler,
@@ -222,6 +293,8 @@ impl ViewNode for MetalFxUpscaleNode {
                                 output_texture,
                                 output_view,
                                 prev_color_texture: None,
+                                content_depth_texture,
+                                content_motion_texture,
                                 input_w,
                                 input_h,
                                 output_w,
@@ -333,6 +406,8 @@ impl ViewNode for MetalFxUpscaleNode {
                             output_texture,
                             output_view,
                             prev_color_texture: None,
+                            content_depth_texture: None,
+                            content_motion_texture: None,
                             input_w,
                             input_h,
                             output_w,
@@ -347,13 +422,12 @@ impl ViewNode for MetalFxUpscaleNode {
                         let color_fmt_raw: usize = unsafe { std::mem::transmute(color_mtl_fmt) };
                         match mode {
                             MetalFxMode::Temporal => unsafe {
-                                // Temporal scaler uses full texture dimensions because
-                                // prepass depth/motion textures are always full-res
-                                // (MainPassResolutionOverride doesn't affect prepass).
-                                // inputContentWidth/Height tells MetalFX the content region.
+                                // Create temporal scaler at content dimensions (not full-res).
+                                // Depth and motion vectors are resolved to content-sized
+                                // textures before being passed to MetalFX.
                                 crate::platform::spawn_temporal_scaler_thread(
                                     device_ptr,
-                                    full_w as usize, full_h as usize,
+                                    input_w as usize, input_h as usize,
                                     output_w as usize, output_h as usize,
                                     color_fmt_raw, tx,
                                 );
@@ -394,36 +468,205 @@ impl ViewNode for MetalFxUpscaleNode {
 
         let state = cached.as_mut().unwrap();
 
-        // --- Phase B0: Prepare color input texture ---
-        let is_temporal = matches!(state.scaler, SendScaler::Temporal(_));
+        // --- Phase B0: GPU-copy color content region into content-sized input texture ---
+        // All modes now use the same path: copy the top-left content region from
+        // main_texture into the content-sized input texture.
+        render_context.command_encoder().copy_texture_to_texture(
+            main_tex.as_image_copy(),
+            state.input_texture.as_image_copy(),
+            Extent3d {
+                width: content_w,
+                height: content_h,
+                depth_or_array_layers: 1,
+            },
+        );
 
-        let input_tex_ptr = if is_temporal {
-            // Temporal mode: pass main_texture directly at full-res. The scaler was
-            // created with full texture dimensions; inputContentWidth/Height tells it
-            // the rendered content region. This avoids copying depth (Depth32Float
-            // doesn't support partial copy_texture_to_texture).
-            let Some(hal) = (unsafe { main_tex.as_hal::<wgpu_hal::metal::Api>() }) else {
-                log::error!("MetalFxUpscaleNode: no Metal HAL for main texture");
+        // --- Phase B0.5: Temporal/FrameInterp — resolve depth + copy motion vectors ---
+        // Bevy's prepass renders depth/motion at full physical resolution. We resolve
+        // them into content-sized textures before passing to MetalFX.
+        let is_temporal_like = matches!(
+            state.scaler,
+            SendScaler::Temporal(_) | SendScaler::FrameInterpolator(_)
+        );
+
+        if is_temporal_like {
+            let Some(prepass) = prepass_textures else {
+                log::warn!("MetalFxUpscaleNode: temporal mode but no prepass textures");
                 return Ok(());
             };
-            unsafe { hal.raw_handle().as_ptr() as *mut c_void }
-        } else {
-            // Spatial mode: GPU-copy content region into content-sized input texture.
+            let Some(depth_attachment) = &prepass.depth else {
+                log::warn!("MetalFxUpscaleNode: no depth prepass texture");
+                return Ok(());
+            };
+            let Some(motion_attachment) = &prepass.motion_vectors else {
+                log::warn!("MetalFxUpscaleNode: no motion vector prepass texture");
+                return Ok(());
+            };
+
+            // Log prepass and content-sized dimensions on first frame.
+            if state.frame_count == 0 {
+                let depth_size = depth_attachment.texture.texture.size();
+                let motion_size = motion_attachment.texture.texture.size();
+                log::info!(
+                    "MetalFxUpscaleNode temporal: prepass depth={}x{} ({:?}), motion={}x{} ({:?}), \
+                     content-sized={}x{}, scaler input={}x{} -> output={}x{}",
+                    depth_size.width, depth_size.height,
+                    depth_attachment.texture.texture.format(),
+                    motion_size.width, motion_size.height,
+                    motion_attachment.texture.texture.format(),
+                    content_w, content_h,
+                    state.input_w, state.input_h,
+                    state.output_w, state.output_h,
+                );
+            }
+
+            // Copy motion vectors to content-sized texture (RG16Float supports copy).
+            let content_motion = state.content_motion_texture.as_ref().unwrap();
             render_context.command_encoder().copy_texture_to_texture(
-                main_tex.as_image_copy(),
-                state.input_texture.as_image_copy(),
+                motion_attachment.texture.texture.as_image_copy(),
+                content_motion.as_image_copy(),
                 Extent3d {
                     width: content_w,
                     height: content_h,
                     depth_or_array_layers: 1,
                 },
             );
-            let Some(hal) = (unsafe { state.input_texture.as_hal::<wgpu_hal::metal::Api>() }) else {
-                log::error!("MetalFxUpscaleNode: no Metal HAL for input texture");
-                return Ok(());
-            };
-            unsafe { hal.raw_handle().as_ptr() as *mut c_void }
-        };
+
+            // Resolve depth to content-sized Depth32Float via fragment shader render pass.
+            // This block must be a separate scope — render pass guard must drop before
+            // as_hal_mut is called for the MetalFX encode.
+            let content_depth = state.content_depth_texture.as_ref().unwrap();
+            {
+                // Lazy-init depth resolve render pipeline.
+                let mut dr = self.depth_resolve.lock().unwrap();
+                if dr.is_none() {
+                    let wgpu_dev = device.wgpu_device();
+                    let shader = wgpu_dev.create_shader_module(wgpu::ShaderModuleDescriptor {
+                        label: Some("depth_resolve_shader"),
+                        source: wgpu::ShaderSource::Wgsl(
+                            include_str!("depth_resolve.wgsl").into(),
+                        ),
+                    });
+                    let bgl = wgpu_dev.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                        label: Some("depth_resolve_bgl"),
+                        entries: &[wgpu::BindGroupLayoutEntry {
+                            binding: 0,
+                            visibility: wgpu::ShaderStages::FRAGMENT,
+                            ty: wgpu::BindingType::Texture {
+                                sample_type: wgpu::TextureSampleType::Depth,
+                                view_dimension: wgpu::TextureViewDimension::D2,
+                                multisampled: false,
+                            },
+                            count: None,
+                        }],
+                    });
+                    let pipeline_layout = wgpu_dev.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                        label: Some("depth_resolve_layout"),
+                        bind_group_layouts: &[&bgl],
+                        push_constant_ranges: &[],
+                    });
+                    let pipeline = wgpu_dev.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+                        label: Some("depth_resolve_pipeline"),
+                        layout: Some(&pipeline_layout),
+                        vertex: wgpu::VertexState {
+                            module: &shader,
+                            entry_point: Some("vs_main"),
+                            buffers: &[],
+                            compilation_options: Default::default(),
+                        },
+                        fragment: Some(wgpu::FragmentState {
+                            module: &shader,
+                            entry_point: Some("fs_main"),
+                            targets: &[],
+                            compilation_options: Default::default(),
+                        }),
+                        primitive: wgpu::PrimitiveState {
+                            topology: wgpu::PrimitiveTopology::TriangleList,
+                            ..Default::default()
+                        },
+                        depth_stencil: Some(wgpu::DepthStencilState {
+                            format: wgpu::TextureFormat::Depth32Float,
+                            depth_write_enabled: true,
+                            depth_compare: wgpu::CompareFunction::Always,
+                            stencil: Default::default(),
+                            bias: Default::default(),
+                        }),
+                        multisample: Default::default(),
+                        multiview: None,
+                        cache: None,
+                    });
+                    *dr = Some(DepthResolvePipeline {
+                        pipeline,
+                        bind_group_layout: bgl,
+                    });
+                }
+                let dr_ref = dr.as_ref().unwrap();
+
+                // Create texture views for the depth resolve pass.
+                let src_depth_view = depth_attachment.texture.texture.create_view(
+                    &bevy::render::render_resource::TextureViewDescriptor::default(),
+                );
+                let dst_depth_view = content_depth.create_view(
+                    &bevy::render::render_resource::TextureViewDescriptor::default(),
+                );
+
+                // Get or create cached bind group (keyed on src TextureViewId).
+                let mut dr_bg = self.depth_resolve_bind_group.lock().unwrap();
+                let need_new_bg = match &*dr_bg {
+                    Some((src_id, dst_id, _))
+                        if *src_id == src_depth_view.id() && *dst_id == dst_depth_view.id() =>
+                    {
+                        false
+                    }
+                    _ => true,
+                };
+                if need_new_bg {
+                    let wgpu_dev = device.wgpu_device();
+                    // Extract the raw wgpu TextureView from Bevy's wrapped type.
+                    let src_view_wgpu: &wgpu::TextureView = &src_depth_view;
+                    let bg = wgpu_dev.create_bind_group(&wgpu::BindGroupDescriptor {
+                        label: Some("depth_resolve_bg"),
+                        layout: &dr_ref.bind_group_layout,
+                        entries: &[wgpu::BindGroupEntry {
+                            binding: 0,
+                            resource: wgpu::BindingResource::TextureView(src_view_wgpu),
+                        }],
+                    });
+                    *dr_bg = Some((src_depth_view.id(), dst_depth_view.id(), bg));
+                }
+                let bind_group = &dr_bg.as_ref().unwrap().2;
+
+                // Dispatch depth resolve render pass.
+                let mut pass = render_context.command_encoder().begin_render_pass(
+                    &RenderPassDescriptor {
+                        label: Some("metalfx_depth_resolve"),
+                        color_attachments: &[],
+                        depth_stencil_attachment: Some(
+                            bevy::render::render_resource::RenderPassDepthStencilAttachment {
+                                view: &dst_depth_view,
+                                depth_ops: Some(bevy::render::render_resource::Operations {
+                                    load: bevy::render::render_resource::LoadOp::Clear(0.0),
+                                    store: bevy::render::render_resource::StoreOp::Store,
+                                }),
+                                stencil_ops: None,
+                            },
+                        ),
+                        timestamp_writes: None,
+                        occlusion_query_set: None,
+                    },
+                );
+                pass.set_pipeline(&dr_ref.pipeline);
+                pass.set_bind_group(0, bind_group, &[]);
+                pass.set_viewport(
+                    0.0, 0.0,
+                    content_w as f32, content_h as f32,
+                    0.0, 1.0,
+                );
+                pass.draw(0..3, 0..1);
+                // pass drops here → render encoder ends
+            }
+            // dr and dr_bg guards also dropped here
+        }
 
         // --- Phase B: MetalFX encode ---
         // CRITICAL: Extract ALL raw texture pointers in isolated scopes BEFORE
@@ -431,77 +674,49 @@ impl ViewNode for MetalFxUpscaleNode {
         // calling as_hal() on textures while as_hal_mut() is active (or vice
         // versa) causes a recursive lock panic.
 
+        let input_tex_ptr = {
+            let Some(hal) = (unsafe { state.input_texture.as_hal::<wgpu_hal::metal::Api>() }) else {
+                log::error!("MetalFxUpscaleNode: no Metal HAL for input texture");
+                return Ok(());
+            };
+            unsafe { hal.raw_handle().as_ptr() as *mut c_void }
+        };
+
         let out_tex_ptr = {
             let Some(hal) = (unsafe { state.output_texture.as_hal::<wgpu_hal::metal::Api>() }) else {
                 log::error!("MetalFxUpscaleNode: no Metal HAL for output texture");
                 return Ok(());
             };
             unsafe { hal.raw_handle().as_ptr() as *mut c_void }
-        }; // hal guard dropped here
+        };
 
         let is_first_frame = state.frame_count == 0;
         state.frame_count += 1;
 
-        // For temporal mode, GPU-copy depth + motion vector content regions into
-        // content-sized textures, then extract raw Metal pointers.
-        //
-        // Bevy's prepass renders depth/motion at full physical resolution even when
-        // MainPassResolutionOverride is active. MetalFX temporal scaler requires all
-        // input textures to match the input content dimensions (input_w × input_h).
-        let temporal_ptrs = match &state.scaler {
-            SendScaler::Temporal(_) => {
-                let Some(prepass) = prepass_textures else {
-                    log::warn!("MetalFxUpscaleNode: temporal mode but no prepass textures");
+        // Extract temporal texture pointers (content-sized depth + motion).
+        let temporal_ptrs = if is_temporal_like {
+            let content_depth = state.content_depth_texture.as_ref().unwrap();
+            let content_motion = state.content_motion_texture.as_ref().unwrap();
+
+            let depth_ptr = {
+                let Some(hal) = (unsafe { content_depth.as_hal::<wgpu_hal::metal::Api>() }) else {
+                    log::error!("MetalFxUpscaleNode: no Metal HAL for content depth texture");
                     return Ok(());
                 };
-                let Some(depth_attachment) = &prepass.depth else {
-                    log::warn!("MetalFxUpscaleNode: no depth prepass texture");
+                unsafe { hal.raw_handle().as_ptr() as *mut c_void }
+            };
+
+            let motion_ptr = {
+                let Some(hal) = (unsafe { content_motion.as_hal::<wgpu_hal::metal::Api>() }) else {
+                    log::error!("MetalFxUpscaleNode: no Metal HAL for content motion texture");
                     return Ok(());
                 };
-                let Some(motion_attachment) = &prepass.motion_vectors else {
-                    log::warn!("MetalFxUpscaleNode: no motion vector prepass texture");
-                    return Ok(());
-                };
+                unsafe { hal.raw_handle().as_ptr() as *mut c_void }
+            };
 
-                let depth_fmt = depth_attachment.texture.texture.format();
-                let motion_fmt = motion_attachment.texture.texture.format();
-
-                // Log prepass texture dimensions on first frame for debugging.
-                if state.frame_count <= 1 {
-                    let depth_size = depth_attachment.texture.texture.size();
-                    let motion_size = motion_attachment.texture.texture.size();
-                    log::info!(
-                        "MetalFxUpscaleNode temporal: prepass depth={}x{} ({:?}), motion={}x{} ({:?}), \
-                         passing full-res textures with inputContent={}x{}",
-                        depth_size.width, depth_size.height, depth_fmt,
-                        motion_size.width, motion_size.height, motion_fmt,
-                        content_w, content_h,
-                    );
-                }
-
-                // Pass full-res prepass textures directly. The temporal scaler was created
-                // with full texture dimensions (full_w × full_h), using inputContentWidth/Height
-                // to read only the rendered content region. No GPU copy needed — this avoids
-                // the Depth32Float partial-copy limitation.
-                let depth_ptr = {
-                    let Some(hal) = (unsafe { depth_attachment.texture.texture.as_hal::<wgpu_hal::metal::Api>() }) else {
-                        log::error!("MetalFxUpscaleNode: no Metal HAL for depth texture");
-                        return Ok(());
-                    };
-                    unsafe { hal.raw_handle().as_ptr() as *mut c_void }
-                };
-
-                let motion_ptr = {
-                    let Some(hal) = (unsafe { motion_attachment.texture.texture.as_hal::<wgpu_hal::metal::Api>() }) else {
-                        log::error!("MetalFxUpscaleNode: no Metal HAL for motion texture");
-                        return Ok(());
-                    };
-                    unsafe { hal.raw_handle().as_ptr() as *mut c_void }
-                };
-
-                Some((depth_ptr, motion_ptr))
-            }
-            _ => None,
+            Some((depth_ptr, motion_ptr))
+        } else {
+            None
         };
 
         // For frame interpolation, extract prev color ptr (must be before as_hal_mut).
@@ -629,8 +844,8 @@ impl ViewNode for MetalFxUpscaleNode {
                             motion_ptr,
                             out_tex_ptr,
                             cmd_buf_ptr,
-                            input_w as usize,
-                            input_h as usize,
+                            content_w as usize,
+                            content_h as usize,
                             jitter_offset.x,
                             jitter_offset.y,
                             motion_scale_x,
