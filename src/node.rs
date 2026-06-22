@@ -45,7 +45,8 @@ use crate::platform::{
     encode_spatial_upscale, encode_temporal_upscale, try_create_spatial_scaler_from_raw,
     wgpu_format_to_mtl,
 };
-use crate::MetalFxMode;
+use crate::gpu_timing::add_gpu_timing_handler;
+use crate::{GpuTimingDiag, MetalFxMode};
 
 /// Resource holding the MetalFX render configuration.
 /// Extracted from main world each frame via `ExtractResourcePlugin`.
@@ -885,6 +886,12 @@ impl ViewNode for MetalFxUpscaleNode {
             _ => None,
         };
 
+        // GPU-timing sink (Phase 0 bound-ness bench): clone the Arc before
+        // borrowing the encoder, so the completion handler can capture it.
+        let timing_sink = world
+            .get_resource::<GpuTimingDiag>()
+            .map(|d| d.0.clone());
+
         // Now safe to acquire encoder's as_hal_mut — all texture guards dropped.
         let encoder = render_context.command_encoder();
 
@@ -904,6 +911,11 @@ impl ViewNode for MetalFxUpscaleNode {
                             content_w as usize,
                             content_h as usize,
                         );
+
+                        if let Some(sink) = timing_sink.clone() {
+                            // Borrowed cmd buffer, registered pre-commit (Codex review A/B/D).
+                            add_gpu_timing_handler(cmd_buf_ptr, sink);
+                        }
                     });
                 }
             }
@@ -949,6 +961,10 @@ impl ViewNode for MetalFxUpscaleNode {
                             far_plane,
                             is_first_frame,
                         );
+
+                        if let Some(sink) = timing_sink.clone() {
+                            add_gpu_timing_handler(cmd_buf_ptr, sink);
+                        }
                     });
                 }
 
@@ -986,6 +1002,10 @@ impl ViewNode for MetalFxUpscaleNode {
                             motion_scale_y,
                             is_first_frame,
                         );
+
+                        if let Some(sink) = timing_sink.clone() {
+                            add_gpu_timing_handler(cmd_buf_ptr, sink);
+                        }
                     });
                 }
             }

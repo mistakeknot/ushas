@@ -200,3 +200,58 @@ near-free, raises quality-per-input-pixel that everything downstream depends on)
 (unblocks adaptive work, kills the rebuild hitch) → **Phase 3** bandwidth/encode cleanup *if GPU-bound* →
 **Phase 4** frame interpolation (the big bet, only after correctness + the present-path spike). Defer indefinitely:
 `TemporalDenoisedScaler` (only with RT lighting), MTL4/residency (only when wgpu exposes it), foveated VRS (esoteric spike).
+
+---
+
+## Phase 0 RESULTS — measured 2026-06-22 on M5 Max (shadow-work-6zit.11)
+
+**Harness built (committed):** `bevy_metalfx` now captures true GPU command-buffer elapsed time via
+`addCompletedHandler` (`GPUEndTime − GPUStartTime`) on the MetalFX command buffer, in all three scaler
+branches (`src/gpu_timing.rs`, wired through `src/node.rs`). `sw-renderer --bench` reports GPU-elapsed
+mean/p50/p99 alongside CPU frame time + a bound-ness verdict (`crates/sw-renderer/src/main.rs`).
+
+**Methodology corrections applied (Codex plan review, 2 passes):** primary signal is *GPU command-buffer
+elapsed*, not vsync-pinned total frame time; render-scale sweep is the *confirmation* test, not the primary
+discriminator; completion handler is observational, registered pre-commit, borrowed ptr only, `try_lock` sink
+on the Metal callback thread. **Metric caveat (Codex item C):** `GPUStartTime/EndTime` measures one command
+buffer — confirm against Metal System Trace that the frame is one relevant buffer before reading as total GPU cost.
+
+**Spatial mode, uncapped scale sweep (`--bench-quick`, globe spike scene):**
+
+| render_scale | frame mean (ms) | GPU mean (ms) | GPU/frame fraction |
+|--------------|-----------------|---------------|--------------------|
+| 0.50         | 16.67           | 1.25          | 7.5%               |
+| 0.75         | 16.67           | 1.27          | 7.6%               |
+| 1.00         | 16.67           | 1.30          | 7.8%               |
+
+**VERDICT (Codex-verified, narrowed): the MetalFX command buffer is NOT the bottleneck.** The broader claim
+"the whole app is not GPU-bound" is **not yet proven** — see the open caveat below.
+
+What the data *does* establish:
+1. **The timed MetalFX upscale command buffer is ~1.3ms of a 16.67ms frame (≈8%) and nearly flat across render
+   scale** (1.25→1.30ms across 0.5→1.0). A GPU-bound *upscale pass* would scale ~quadratically with render
+   scale; it doesn't budge → the MetalFX pass itself is not the limiter, and optimizing it optimizes ≤8% of the frame.
+2. **Frame time is paced at exactly 16.67ms (60Hz) even with `--uncapped`.** *Something* pins the loop at 60Hz.
+
+What the data does **NOT** yet establish (Codex verification pass):
+- **The 8% is for the MetalFX command buffer only.** The main globe render pass may be a *separate, untimed*
+  command buffer. If it is large, the app could still be GPU-bound on that buffer and the 8% figure is misleading.
+- **The 16.67ms pin ≠ proof of CPU/present-bound.** It is equally consistent with `AutoNoVsync` not actually
+  applying (macOS/CAMetalLayer/compositor forcing vsync). "CPU-bound" and "vsync-not-lifted" are both still open.
+
+**Most important next measurement (gates everything):** capture the *total per-frame GPU timeline across ALL
+command buffers* — `main_render_gpu_ms + metalfx_gpu_ms + queue/present_wait + actual_frame_interval` — via
+Metal System Trace (Instruments) or per-command-buffer timestamps. If total GPU active time ≪ 16.67ms and the
+rest is present/wait → "not GPU-bound" is justified. If the main render pass is large and currently hidden →
+this conclusion collapses and MetalFX optimization may be warranted after all.
+
+**Implication for the program (conditional):** *if* the next measurement confirms low total GPU time, then
+`6zit.12/13/14` (MetalFX dynamic-res / quality / governor) are premature as frame-rate wins (they can't move a
+frame whose GPU cost is small) and remain valid only as *quality* + *hitch-elimination* work — with the real
+frame-rate lever being the CPU/present cap, outside MetalFX. This implication is **gated on the all-buffer
+measurement above**, not yet actionable.
+
+**Known harness gap (corroborating evidence for `6zit.12`):** Temporal mode yielded **0 GPU samples** because it
+rebuilds the scaler *every frame* (`needs_recreate` churn — the exact bug `6zit.12` targets), which prevents
+steady command-buffer completion. Spatial mode proves the capture mechanism works; temporal capture comes online
+once the rebuild churn is fixed.

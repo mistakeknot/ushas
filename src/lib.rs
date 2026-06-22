@@ -40,6 +40,20 @@ pub use stub::{MetalFxConfig, MetalFxUpscaleNode};
 #[cfg(all(target_os = "macos", feature = "temporal"))]
 mod jitter;
 
+#[cfg(target_os = "macos")]
+pub mod gpu_timing;
+
+#[cfg(target_os = "macos")]
+pub use gpu_timing::{GpuTimingSink, GpuTimingStats};
+
+/// Shared GPU-timing sink, cloned into both the main world (for the debug
+/// server to read) and the render world (for the upscale node to push into).
+/// Holds recent per-command-buffer GPU-elapsed samples for Phase 0 bound-ness
+/// analysis. See [`gpu_timing`] for the metric caveat.
+#[cfg(target_os = "macos")]
+#[derive(bevy::prelude::Resource, Clone)]
+pub struct GpuTimingDiag(pub std::sync::Arc<GpuTimingSink>);
+
 /// Check whether MetalFX is available on this system at runtime.
 ///
 /// Returns `false` on non-macOS platforms or when the MetalFX framework
@@ -83,6 +97,12 @@ pub struct MetalFxPlugin {
     /// The initial `render_scale` is snapped to the nearest supported step (0.5 or 0.75).
     /// The system will not scale outside this range. `MetalFxRenderScale` becomes mutable.
     pub adaptive: bool,
+    /// Optional externally-owned GPU-timing sink (Phase 0 bench). When the host
+    /// (e.g. `src-tauri`) wants to read GPU timings over the debug server, it
+    /// constructs the sink, passes a clone here, and keeps a clone for the diag
+    /// provider — avoiding a process-global. `None` ⇒ the plugin makes its own.
+    #[cfg(target_os = "macos")]
+    pub gpu_timing_sink: Option<std::sync::Arc<GpuTimingSink>>,
 }
 
 impl Default for MetalFxPlugin {
@@ -91,6 +111,8 @@ impl Default for MetalFxPlugin {
             render_scale: 0.5,
             mode: MetalFxMode::Spatial,
             adaptive: false,
+            #[cfg(target_os = "macos")]
+            gpu_timing_sink: None,
         }
     }
 }
@@ -193,7 +215,19 @@ impl bevy::app::Plugin for MetalFxPlugin {
             use bevy::render::render_graph::{RenderGraphExt, ViewNodeRunner};
             use bevy::render::RenderApp;
 
+            // Shared GPU-timing sink: same Arc in main world (debug server reads)
+            // and render world (upscale node pushes). Phase 0 bound-ness bench.
+            // Reuse a host-provided sink if given (so the debug provider shares
+            // the exact Arc), else make our own.
+            let timing = GpuTimingDiag(
+                self.gpu_timing_sink
+                    .clone()
+                    .unwrap_or_else(GpuTimingSink::new),
+            );
+            app.insert_resource(timing.clone());
+
             if let Some(render_app) = app.get_sub_app_mut(RenderApp) {
+                render_app.insert_resource(timing);
                 render_app
                     .add_render_graph_node::<ViewNodeRunner<MetalFxUpscaleNode>>(
                         Core3d,

@@ -32,6 +32,8 @@ wgpu-hal = { version = "27", features = ["metal"] }
 # foreign-types for metal crate's ForeignType::as_ptr()
 foreign-types = "0.5"
 objc2 = "0.6"
+# block2 for MTLCommandBuffer addCompletedHandler: GPU-timing closure (Phase 0 bench)
+block2 = "0.6"
 objc2-foundation = { version = "0.3", features = ["NSObject"] }
 objc2-metal = { version = "0.3", features = [
   "MTLDevice",
