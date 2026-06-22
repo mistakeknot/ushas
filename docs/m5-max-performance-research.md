@@ -255,3 +255,34 @@ measurement above**, not yet actionable.
 rebuilds the scaler *every frame* (`needs_recreate` churn — the exact bug `6zit.12` targets), which prevents
 steady command-buffer completion. Spatial mode proves the capture mechanism works; temporal capture comes online
 once the rebuild churn is fixed.
+
+### Two-reviewer reconciliation (Codex + Sakana Fugu)
+
+Both reviewers independently assessed the Phase 0 result. Where they converge, confidence is high; where Fugu
+sharpened the read, the doc is updated accordingly.
+
+**Agreement (both reviewers):**
+- The timed MetalFX command buffer (~1.3ms) is **not** the bottleneck — well-supported.
+- It is **wrong** to claim the whole app is non-GPU-bound from this data alone (only one command buffer is timed).
+- `GPUStartTime/EndTime` is the right primitive for a *single* command buffer but is **not** total GPU-active
+  time; on Apple TBDR with overlapping command buffers, per-CB End−Start can over/under-count — invalid as a basis
+  for an app-level bound-ness claim (which the harness already concedes).
+
+**Where Fugu sharpened the analysis (adopted):**
+1. **The 16.67ms pin is ~90/10 a frame-cap artifact, not 50/50.** Fugu: "a dead-flat 16.67ms across a 4× input-
+   pixel change screams vsync/present cap… a genuinely CPU-bound app would show *some* variance and almost never
+   land on 16.670 exactly." → The "CPU-bound vs vsync-not-lifted" framing above was *underclaiming*; bet heavily
+   on `AutoNoVsync` not applying (`CAMetalLayer.displaySyncEnabled` / compositor forcing vsync). **Cheapest next
+   check is therefore confirming the present mode actually took effect — before the full all-buffer trace.**
+2. **Flatness across render scale is the NULL result, not evidence.** Fugu's sharpest point: MetalFX spatial writes
+   the full 3024×1800 output *regardless of input scale*, so its cost is **output-resolution-bound and is expected
+   to be flat**. The input-resolution-sensitive cost lives in the **untimed main globe render pass** — so this
+   benchmark is *structurally blind to exactly the component that should scale with `render_scale`*. (This corrects
+   statement (1) in the verdict above: "doesn't budge → not the limiter" is only valid for the output-bound upscale
+   pass; it says nothing about the input-bound main pass.)
+3. **Report stddev/percentiles** — the 1.25→1.30ms rise is likely noise at 240 samples without dispersion stats.
+
+**Net reviewed verdict:** the MetalFX pass is confirmed cheap; the *real* render-scale-sensitive cost is in the
+untimed main pass; and the frame is almost certainly present/vsync-capped, not CPU-bound. **Two follow-ups now
+gate the program, cheapest first:** (a) confirm `AutoNoVsync` actually applied (one-line check); (b) the all-
+command-buffer GPU timeline (`6zit.15`). Both must land before `6zit.12/13/14` are actionable as frame-rate work.
