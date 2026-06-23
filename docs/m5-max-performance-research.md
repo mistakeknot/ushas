@@ -286,3 +286,104 @@ sharpened the read, the doc is updated accordingly.
 untimed main pass; and the frame is almost certainly present/vsync-capped, not CPU-bound. **Two follow-ups now
 gate the program, cheapest first:** (a) confirm `AutoNoVsync` actually applied (one-line check); (b) the all-
 command-buffer GPU timeline (`6zit.15`). Both must land before `6zit.12/13/14` are actionable as frame-rate work.
+
+## Phase 0b RESULTS — frame rate is display/present-cadence bound, not render-work bound (`6zit.15`)
+
+Step (a), the cheap behavioral probe, turned out to be **decisive on its own** — it answered the gate question
+before the expensive Instruments trace was needed. Method: run the bench at the cheapest possible setting
+(`--metalfx=off --scale=0.25 --uncapped`, ~756×450 render, no upscale) and ask one question: *does mean frame
+time move when render cost collapses 4×?* It did not.
+
+**Measured (uncapped, cheap scene — `metalfx=off scale=0.25`):**
+
+| metric | value | reading |
+| --- | --- | --- |
+| mean frame time | **16.67 ms (60.0 fps)** | unchanged from `scale=1.0` despite 4× less render work |
+| frame count / 15 s window | **900 = 60.000 fps exactly** | locked to display vblank count, not work |
+| min frame time | **1.73 ms** | real per-frame work can be ~2 ms — huge masked headroom |
+| FPS during first ~2 s | **~120 fps** | `AutoNoVsync` *is* active — app can exceed 60 |
+| then settles to | **~60 fps, rock-steady** | display-link cadence drops 120→60 once slack is large |
+
+**Full frame-time distribution (1602 frames, startup trimmed) is BIMODAL:**
+
+| cluster | count | share |
+| --- | --- | --- |
+| ~8.33 ms (120 Hz beat) | 285 | 17.8% |
+| < 8.34 ms (>120 fps) | 153 | 9.6% |
+| ~16.67 ms (60 Hz beat) | 1253 | 78.2% |
+| **within ±1 ms of an 8.33 ms multiple** | **~96%** | — |
+
+**Verdict (closes the gate at the product-decision level; mechanism stated conservatively):** the observed frame
+rate is **dominated by display/present/frame-pacing cadence**, not by render-scale-sensitive GPU work, and **MetalFX
+cannot raise observed FPS at this scene/hardware.** Well-supported by the data:
+- A **bimodal distribution snapping to 8.33 ms / 16.67 ms** (integer display beats) shows the measured frame loop is
+  **paced by display/compositor/present cadence**. Free-running work produces a smooth unimodal curve at the true
+  work cost (~2-5 ms here), not ~96% of frames on integer vblank multiples.
+- **Mean frame time is invariant to a 4× render-cost change** — impossible if observed FPS were render-work-bound.
+- **The app hit 120 fps** during warmup, so it is *not* hard-clamped at 60 Hz and `AutoNoVsync` *did* apply; it
+  settles to a steady 60 fps once the renderer has large idle slack.
+
+**Reviewer-corrected scope (both Codex and Sakana Fugu flagged the same three overclaims — adopted):**
+1. **"Display-cadence quantized," not specifically "swapchain vsync."** The bimodal clustering does *not* uniquely
+   prove `CAMetalLayer` vsync blocking. A CPU-side wait that is *itself* display-synchronized — drawable/`SurfaceTexture`
+   acquisition, winit/CoreAnimation event-loop pacing, an internal frame limiter, or ProMotion downshift — produces
+   the same 8.33/16.67 ms clustering. (A *normal* CPU compute stall would *not* snap to vblank, so "not a plain
+   CPU-compute bottleneck" still holds; "the limiter is the swapchain present specifically" does not.) The "120→60 =
+   CoreAnimation lowering preferred frame rate" line is *one plausible mechanism*, not established.
+2. **`min=1.73 ms` does NOT bound whole-frame GPU+CPU work.** Bevy's `delta_secs` is CPU-side loop timing; GPU work
+   is asynchronous (the app can submit fast while prior GPU work is still running). A 1.73 ms sample can be a
+   catch-up frame, a nonblocking submit, or a cheap/skipped present. So it is evidence *against a constant CPU-side
+   bottleneck*, but it does **not** prove the untimed main render pass is ~2 ms. **The main-pass GPU cost remains
+   unmeasured** — the original Phase 0 gap is narrowed, not eliminated.
+3. **"Only lever is present cadence" → "for this probe, the next most likely intervention is present cadence."**
+   Stated as a universal it overreaches; stated for this scene/hardware it is the right call.
+
+**What this means for the gate.** The gate question — *"is there a MetalFX-solvable frame-rate problem here?"* — is
+answered **No** with high confidence, and that is enough to re-scope `6zit.12/13/14` (below). What is *not* yet
+proven is the stronger claim *"the app is not GPU-bound at all"* — that still needs the untimed main command buffer +
+present/acquire waits. The full **Metal System Trace (step b) is therefore demoted from blocker to optional**: it is
+*not* required to act on the product decision, but it *is* the only way to upgrade "not behaviorally FPS-bound by
+render scale" to "not GPU-bound," should that stronger claim ever matter.
+
+**Falsifiers (what would overturn the verdict):** GPU timestamps showing main+post+present consistently ≥ 8.33/16.67
+ms; frame rate rising with render-scale reduction after forcing true immediate/no-vsync present; sustained 120 fps
+after explicitly setting `CAMetalLayer.preferredFrameRateRange` / a `CADisplayLink`; or a heavier scene where
+MetalFX-on beats native at identical present settings.
+
+**Answer to "are (a) the present cap and (b) the main pass in scope, even though they're outside MetalFX?"** —
+Yes, and they were the whole game. The program's framing inverts:
+- **There is no frame-rate problem that MetalFX can solve here.** At this scene complexity on an M5 Max, observed FPS
+  is set by present/display cadence, not render-scale-sensitive work — a faster upscale or a lower render scale
+  recovers nothing the display will show. (The renderer *can* hit 120 fps, so the slack is real; whether it is
+  "parked on the vblank" specifically vs. another display-synchronized wait is the unresolved mechanism detail above.)
+- The **most likely** path to >60 fps is the **present/display-link cadence** (get and hold the 120 Hz `CAMetalLayer`
+  preferred-frame-rate, or drive presentation off a `CADisplayLink` at 120 Hz) — pure present-path work, no MetalFX.
+  This should be *tried and measured* (it is also a falsifier: if forcing 120 Hz present does **not** sustain 120 fps,
+  the bottleneck is elsewhere and the trace becomes necessary).
+- `6zit.12` (rebuild-hitch), `6zit.13` (quality bundle), `6zit.14` (120 fps governor) are **re-scoped**:
+  - `6zit.14` becomes the *primary* frame-rate lever but is **NOT a MetalFX governor** — it is a **present-cadence
+    fix** (lock ProMotion to 120 Hz). Retitle/refocus accordingly.
+  - `6zit.12`/`6zit.13` survive **only as correctness + quality work** (eliminate the per-frame scaler rebuild;
+    fix jitter/mipbias/exposure). Neither will move frame rate on this hardware/scene — that expectation is retired.
+
+**Caveat on generality:** this verdict is for the *current* scene (a single icosphere globe) on an *M5 Max*. A
+heavier scene (full simulation overlay, many meshes, higher output res, or a slower GPU) could re-enter a
+GPU-bound regime where MetalFX's render-cheap-upscale-to-native trade pays off. The harness + GPU-timing sink built
+in Phase 0 remain the tool to re-test that the moment scene complexity grows; the *gate* (`6zit.15`) is closed for
+now, not the *capability*.
+
+### Phase 0b two-reviewer reconciliation (Codex + Sakana Fugu)
+
+Both reviewers ran adversarially against the *first-draft* verdict (which asserted "vsync-quantized," "min=1.73 ms
+proves the whole frame is ~2 ms," and "only lever is present cadence"). Run independently, **they converged on the
+exact same three overclaims** — high signal that these were real, not stylistic:
+- **Codex:** "It does not uniquely prove swapchain vsync… a CPU wait on present infrastructure would [quantize too]";
+  "`min=1.73ms` overclaimed… frame diagnostics are usually CPU-side loop timing, GPU work is asynchronous";
+  "'only lever' overclaiming… safer: frame rate is dominated by display/present pacing *for this probe*."
+- **Fugu:** "clustering… is strong evidence [of] display-cadence quantized [pacing]… does **not** uniquely prove
+  CAMetalLayer vsync/present blocking"; "min=1.73 ms… is the weakest part… bounds only the measured CPU-side frame
+  loop interval, not full GPU completion"; agreed the direction is right but "several claims are overstrong."
+
+Both agreed the **product decision is sound**: display-beat quantization is established, observed FPS is
+render-scale-insensitive, and MetalFX does not explain the 60 fps plateau — enough to re-scope `6zit.12/13/14`. The
+verdict above was tightened to match exactly what the data supports (and no more), per their convergent feedback.
