@@ -387,3 +387,53 @@ exact same three overclaims** — high signal that these were real, not stylisti
 Both agreed the **product decision is sound**: display-beat quantization is established, observed FPS is
 render-scale-insensitive, and MetalFX does not explain the 60 fps plateau — enough to re-scope `6zit.12/13/14`. The
 verdict above was tightened to match exactly what the data supports (and no more), per their convergent feedback.
+
+---
+
+## `6zit.14` RESULT — the present-cadence lever works: 60 → 120 fps (2026-07-10)
+
+Phase 0b predicted the *only* remaining frame-rate lever was present cadence: get and **hold** the ProMotion 120 Hz
+cadence, which CoreAnimation was dropping 120 → 60 after warmup. That prediction was falsifiable and is now
+**confirmed** — the fix nearly doubled the frame rate.
+
+### The fix (present-path, not MetalFX)
+
+The bead's original note named `CAMetalLayer.preferredFrameRateRange`, but grounding in the actual objc2 bindings
+corrected the API: **`preferredFrameRateRange` is a property of `CADisplayLink`, not `CAMetalLayer`** (nor `CALayer`).
+The `CAMetalLayer` levers that exist are `displaySyncEnabled` / `maximumDrawableCount` — neither pins the ProMotion
+rate. The correct macOS-14+ lever is a `CADisplayLink` created on the Metal `NSView`
+(`NSView.displayLinkWithTarget:selector:`) with `preferredFrameRateRange` set to a 120/120/120 `CAFrameRateRange`,
+added to the main run loop. The link's callback does **no work** — it is a passive *demand* that advertises to
+CoreAnimation that this window wants a sustained 120 Hz cadence.
+
+Implementation: `crates/sw-renderer/src/present_pacing.rs` — a `PresentPacingPlugin` + `run_once` Update system
+modeled exactly on the existing `overlay/native_macos.rs` NSView seam (extract `NSView` from `RawHandleWrapper`,
+dispatch to the main thread via GCD, set up the link). macOS-only, always on. No MetalFX, no wgpu present-loop
+surgery, no change to `present_mode` (still `AutoNoVsync` under bench).
+
+### Measured A/B (same build, same machine, `--bench-quick --metalfx=off`)
+
+| Metric | Baseline (before) | With 120 Hz hint | Δ |
+|---|---|---|---|
+| Mean FPS | **60.0** | **118.5** (pass 2: 119.2) | **+97.5 %** |
+| Mean frame time | 16.67 ms | 8.44 ms | halved |
+| **P50 frame time** | **16.66 ms** (60 Hz beat) | **8.34 ms** (120 Hz beat) | snapped one ProMotion beat up |
+| P95 | 17.44 ms | 8.86 ms | tight at 120 Hz |
+| Frames rendered / 15 s | 900 | 1778 (pass 2: 1788) | ~2× |
+
+The **P50 landing exactly on 8.34 ms** — the 120 Hz ProMotion beat, versus the prior 16.66 ms = 60 Hz beat — is the
+decisive evidence: CoreAnimation granted the sustained 120 Hz cadence in direct response to the display-link hint.
+This closes the Phase 0b loop end-to-end: the frame rate *was* present-cadence bound, and this hint *is* the lever.
+
+### Smoke-test (normal run, MetalFX = Spatial default)
+
+A non-bench launch holds **~120 fps sustained** (119–122 fps across the whole run, no settle-back to 60), pacing hint
+fires, MetalFX plugin initializes, no panic. Confirms the fix is orthogonal to and compatible with the MetalFX path —
+120 Hz holds *with* MetalFX active, not only with it off.
+
+### Scope note
+
+This is a `sw-renderer` present-path fix, deliberately **outside** the `bevy_metalfx` crate the epic is named for —
+consistent with the Phase 0b re-scope (the frame-rate win was always going to be present-cadence, not MetalFX). The
+adaptive-scaling governor that `6zit.14` originally described remains deferred until/unless a heavier scene re-enters
+a GPU-bound regime (see the generality caveat above).
