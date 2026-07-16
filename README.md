@@ -21,7 +21,7 @@ to reconstruct a full-resolution image, improving performance on Apple Silicon M
 
 ```toml
 [dependencies]
-bevy_metalfx = "0.1"
+bevy_metalfx = "0.2"
 ```
 
 ```rust
@@ -32,12 +32,18 @@ fn main() {
     App::new()
         .add_plugins(DefaultPlugins)
         .add_plugins(MetalFxPlugin {
-            render_scale: 0.5,  // Render at half resolution
+            render_scale: 0.5, // Render at half resolution
             mode: MetalFxMode::Spatial,
+            ..default() // adaptive = false, and any platform-specific fields
         })
         .run();
 }
 ```
+
+`MetalFxPlugin` implements `Default` (`render_scale: 0.5`, `mode: Spatial`,
+`adaptive: false`), so `MetalFxPlugin::default()` or `..default()` picks up
+sensible defaults — including the macOS-only GPU-timing hook, which you never
+need to set by hand.
 
 On non-macOS platforms, the plugin detects that MetalFX is unavailable and
 gracefully disables itself — no `#[cfg]` guards needed in your app code.
@@ -71,15 +77,22 @@ bridges between them via raw `*mut c_void` casts.
 ## Feature Flags
 
 ```toml
-# Spatial only (default)
-bevy_metalfx = "0.1"
+# Spatial only (default) — stable
+bevy_metalfx = "0.2"
 
-# Temporal upscaling (adds motion vector + depth prepass)
-bevy_metalfx = { version = "0.1", features = ["temporal"] }
+# Temporal upscaling (adds motion vector + depth prepass) — stable
+bevy_metalfx = { version = "0.2", features = ["temporal"] }
 
-# Frame interpolation (requires macOS 26+)
-bevy_metalfx = { version = "0.1", features = ["frame-interpolation"] }
+# Frame interpolation (requires macOS 26+) — EXPERIMENTAL, see note below
+bevy_metalfx = { version = "0.2", features = ["frame-interpolation"] }
 ```
+
+> **Frame interpolation is experimental.** The `frame-interpolation` feature
+> compiles and wires an `MTLFXFrameInterpolator` into the render graph, but the
+> path is not yet production-ready: camera parameters are currently hardcoded
+> rather than extracted from Bevy's `Projection`, and the previous-frame color
+> copy is not yet implemented. Use `spatial` or `temporal` for shipping work;
+> treat `frame-interpolation` as a preview that will stabilize in a later release.
 
 ## API Reference
 
@@ -105,6 +118,15 @@ if bevy_metalfx::is_available() {
 // Probe whether a spatial scaler can be created (for integration tests)
 let ok = bevy_metalfx::probe_spatial_scaler(&render_device);
 ```
+
+### GPU Timing (diagnostics)
+
+The crate exposes an optional GPU-timing surface for measuring the per-command-buffer
+GPU-elapsed time of the MetalFX pass — useful for profiling whether a scene is
+GPU- or present-bound. Construct a `GpuTimingSink`, pass a clone into
+`MetalFxPlugin { gpu_timing_sink: Some(sink.clone()), .. }` (macOS only), and read
+`GpuTimingStats` from your own clone. This is a diagnostic/bench facility, not part
+of the upscaling pipeline — most apps leave `gpu_timing_sink` at its `None` default.
 
 ## Bevy Compatibility
 

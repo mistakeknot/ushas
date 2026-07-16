@@ -394,6 +394,9 @@ pub(crate) unsafe fn spawn_frame_interpolator_thread(
     color_fmt_raw: usize,
     tx: std::sync::mpsc::Sender<Option<super::node::SendScaler>>,
 ) {
+    // Wrapper to make the raw device pointer Send-able for thread transfer.
+    // SAFETY: the pointer is only dereferenced on the spawned thread, and the
+    // caller's `# Safety` contract guarantees it outlives that thread.
     struct SendablePtr(usize);
     unsafe impl Send for SendablePtr {}
 
