@@ -498,3 +498,62 @@ Two children are **genuinely incomplete and were spun out as standalone follow-u
 Plus one new pre-1.0 API-tightening follow-up (`shadow-work-3hvh`): feature-gate the temporal/frame-interp code at
 compile time (today the features gate runtime enablement but not the compiled surface) and narrow `pub` fields on
 internal render-world resources. Held out of 0.2.0 to keep the release additive and safe.
+
+---
+
+# `6zit.12` RESULT — the temporal scaler-rebuild hitch was a control-flow bug, not a scale-change cost (2026-07-16)
+
+The `6zit.13` temporal bench (above) surfaced this: even at a *fixed* render scale with adaptive off, the
+`MTLFXTemporalScaler` was being rebuilt roughly every 130 ms. The bead assumed the hitch came from *scale changes*
+triggering rebuilds and prescribed dynamic resolution as the fix. The real cause was more fundamental.
+
+## Root cause — a fall-through that discarded every scaler it built
+
+In `MetalFxUpscaleNode::run`, the background-thread scaler was received into `*cached = Some(..)`, but the
+`Ok(Some(scaler))` receive branch (unlike its sibling branches) had **no `return`/skip**. Because `needs_recreate`
+was still `true` (computed at function entry, when `cached` was `None`) and the creation guard had been weakened to
+`pending.is_none()`-only — now `true`, since the receive had just cleared `pending` — execution fell straight into
+the *create-new* block, nulled `cached`, and spawned another background thread. The freshly-built scaler was
+discarded on the very same frame and **never rendered once**. Diagnostics confirmed `cached=None, pending=true` on
+every frame, with the scaler received and instantly re-queued.
+
+**Fix:** restore the `cached.is_none() && pending.is_none()` creation guard, and null `cached` in the
+dimensions-changed branch so a genuine window resize still recreates.
+
+## Measured — the hitch is gone
+
+Temporal, `--scale=0.5 --uncapped`, before (with the bug) vs after:
+
+| Metric | Before (hitch) | After | Change |
+|--------|---------------|-------|--------|
+| scaler creations | ~hundreds (every ~130 ms) | **1** across 1798 frames | eliminated |
+| p50 | 1.40 ms (degenerate) | 8.33 ms (the 120 Hz beat) | — |
+| **p99** | **72.81 ms** | **9.10 ms** | **−87.5%** |
+| stdev | 14.62 ms | **0.46 ms** | −97% |
+| max | 85.84 ms | ~12 ms | −86% |
+| GPU samples | 0 | **240** | timing unblocked |
+
+The old `mean_fps` of 173.7 was an artifact of the bug (the temporal path skipped frames every rebuild cycle, so
+`delta_secs` measured degenerate loop timing). The honest, present-capped rate is ~120 fps. And `gpu_samples` going
+`0 → 240` matters beyond this bug: the rebuild had been *blocking temporal-mode GPU-timing capture* the whole time —
+now the temporal path reports `gpu_frame_fraction ≈ 0.04`, verdict "likely CPU/sim/present-bound", **re-confirming
+Phase 0b's thesis directly on the temporal path** (not just the spatial control).
+
+## True dynamic resolution (the bead's original prescription, still delivered)
+
+With the hitch fixed, dynamic resolution is now an *adaptive-path enhancement* rather than the hitch fix: it lets the
+governor flex render scale without recreating the scaler. Implemented via `setInputContentPropertiesEnabled` +
+`setInputContentMin/MaxScale` on the descriptor, plumbed through a `MetalFxConfig.dynamic_res_range` (`Some` only in
+adaptive mode). The scaler is created at output dimensions with dynamic res on, and the existing per-frame
+`setInputContentWidth/Height` selects the actual content size each frame.
+
+> **Gotcha worth recording:** MetalFX's `inputContentMin/MaxScale` are **upscale ratios** (`output/input`, always
+> ≥ 1.0), *not* the render-scale fractions the rest of the codebase uses. Passing a fraction < 1.0 makes
+> `newTemporalScalerWithDevice` return `nil` (silent creation failure). Convert by reciprocal, swapping min/max: a
+> render range of `0.5..=0.75` maps to a MetalFX scale range of `1.333..=2.0`.
+
+Verified: an adaptive run does **1 scaler creation** across a live `0.5 → 0.75` governor change — zero rebuilds. The
+non-adaptive path is byte-identical to before (`dynamic_res_range = None` ⇒ the scaler input equals the current
+input), so the common case is provably untouched.
+
+With `6zit.12` resolved, only `6zit.8` (frame-interpolation completion) remains open under the (closed) epic.
