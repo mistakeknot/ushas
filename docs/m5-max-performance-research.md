@@ -437,3 +437,64 @@ This is a `sw-renderer` present-path fix, deliberately **outside** the `bevy_met
 consistent with the Phase 0b re-scope (the frame-rate win was always going to be present-cadence, not MetalFX). The
 adaptive-scaling governor that `6zit.14` originally described remains deferred until/unless a heavier scene re-enters
 a GPU-bound regime (see the generality caveat above).
+
+---
+
+# Epic `6zit` wrap — quality bundle + crate extraction, then close (2026-07-16)
+
+The final two pieces of chartered work landed, and the epic is retired. Nothing here changes the frame-rate
+conclusion (Phase 0b + `6zit.14` already delivered that); this is quality, correctness, and packaging.
+
+## `6zit.13` — quality-fix bundle (correctness/quality only)
+
+Five fixes to the MetalFX **temporal** path in `bevy_metalfx`, each grounded in the actual Bevy 0.18 and
+objc2-metal(-fx) 0.3.2 source conventions rather than from memory:
+
+| # | Fix | Where | Why it was wrong / what it does |
+|---|-----|-------|--------------------------------|
+| 1 | **32-phase Halton(2,3) jitter** (was 8) | `jitter.rs` | 4× the sub-pixel sampling density for the temporal accumulator; first 8 samples still match Bevy's built-in TAA sequence exactly. |
+| 2 | **`MipBias(log2(render_scale))`** on the camera | `lib.rs` | Was **unset**. MetalFX renders below native res, so PBR textures sampled a coarser mip than the final image warrants. `MipBias` is a Bevy `Component` (there is **no** MetalFX API for it — a key correction), inserted alongside the resolution override and updated on adaptive scale changes. At scale 0.5 → `-1.0` (one mip sharper). Live log confirms `mip_bias -1.000`. |
+| 3 | **Exposure path validated** | `platform.rs` | `setAutoExposureEnabled(true)` was already set and is **correct** per Apple's temporal-scaler contract when no explicit exposure texture is supplied. No change — validation, documented. |
+| 4a | **Jitter-sign fix** | `node.rs` | Bevy stores `TemporalJitter.offset` in a clip-space convention that flips Y (`offset * vec2(2, -2)`); MetalFX's `jitterOffsetX/Y` wants pixel space. The code passed Y un-negated. Fixed: negate Y at both the Temporal and FrameInterpolation encode sites. |
+| 4b | **Safe format conversion** | `platform.rs`, `node.rs` | Three `std::mem::transmute` calls between `usize` and `MTLPixelFormat` replaced with safe newtype construction / field access (`MTLPixelFormat` is `#[repr(transparent)]`). transmute of an out-of-range discriminant would be UB. |
+
+Verified: 7/7 crate tests pass (added 5 locking in jitter length/centering/TAA-match and the mip-bias formula/clamp);
+clippy clean (no new warnings); and the **live release temporal bench ran end-to-end** — the temporal scaler builds
+and upscales 1512×900 → 3024×1800 with all fixes active, no panic.
+
+> **Note — the temporal bench independently reproduced `6zit.12`.** Even at a *fixed* scale with `adaptive=false`, the
+> `MTLFXTemporalScaler` is rebuilt roughly every ~130 ms (p50 1.4 ms vs p99 72 ms — the hitch). This is worse than
+> `6zit.12`'s original framing (which blamed scale *changes*): the rebuild fires without any scale change, so the
+> `needs_recreate` predicate is keying on something that flickers frame-to-frame. `6zit.12` remains a real, open bug
+> (correctness only — Phase 0b already established it is **not** a frame-rate lever at this scene).
+
+## `6zit.9` — open-source extraction: publish-ready `bevy_metalfx` 0.2.0
+
+Grounded in a full crates.io publication audit. Key finding: **mk already owns and published `bevy_metalfx` v0.1.0**
+(github.com/mistakeknot/bevy_metalfx, 25 downloads, since 2026-03-23). So this phase is *next-version prep*, not a
+first publish. Changes:
+
+- **Version 0.1.0 → 0.2.0** — additive (temporal, adaptive scale, gpu-timing, the `6zit.13` quality fixes); no breaking removals.
+- **README compile-fail fixed** — the flagship Quick Start `MetalFxPlugin { .. }` example was missing `adaptive` and the macOS-only `gpu_timing_sink` field with no `..default()`; it would not compile. Now uses `..default()` and documents the `Default` impl.
+- **Frame interpolation honestly labeled EXPERIMENTAL** — the `frame-interpolation` feature compiles and wires an `MTLFXFrameInterpolator`, but it is **not production-ready**: camera params are hardcoded (`node.rs:940`) and the current→previous color copy is unimplemented (`node.rs:982`), so the interpolator never sees a correct previous frame. The README now warns loudly; completion is tracked in `6zit.8`.
+- **GPU-timing diagnostics documented** — previously undocumented public API, now framed as an opt-in profiling facility.
+- Publication posture verified: **zero path/git deps** in the crate, all metadata present, non-macOS stub complete, `# Safety` docs on all `unsafe fn`. `cargo publish --dry-run` packages cleanly as 0.2.0.
+
+The **actual `cargo publish` is mk's credentialed, outward-facing step** — this phase makes the crate ready; it does
+not push it.
+
+## Epic close — what shipped, what's deferred
+
+The `6zit` epic delivered its charter: MetalFX spatial + temporal upscaling integrated into a Bevy render graph node
+and published as a reusable crate; the "why isn't it 120 fps" question answered empirically (Phase 0/0b: present-cadence
+bound, not GPU-bound at this scene); and the 120 fps headline delivered via the present path (`6zit.14`). 13 of 15
+children closed.
+
+Two children are **genuinely incomplete and were spun out as standalone follow-ups** rather than falsely marked done:
+
+- **`6zit.12`** — the scaler-rebuild hitch (real correctness bug, reproduced above; fix = `setInputContentPropertiesEnabled` + min/max scale for true dynamic resolution).
+- **`6zit.8`** — frame-interpolation completion (implement the prev-frame color blit + extract real camera params from Bevy's `Projection`; gate on macOS 26).
+
+Plus one new pre-1.0 API-tightening follow-up (`shadow-work-3hvh`): feature-gate the temporal/frame-interp code at
+compile time (today the features gate runtime enablement but not the compiled surface) and narrow `pub` fields on
+internal render-world resources. Held out of 0.2.0 to keep the release additive and safe.
