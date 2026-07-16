@@ -27,6 +27,7 @@ mod stub {
     pub struct MetalFxConfig {
         pub render_scale: f32,
         pub mode: MetalFxMode,
+        pub dynamic_res_range: Option<(f32, f32)>,
     }
 
     /// Render graph node (stub for non-macOS platforms — does nothing).
@@ -161,10 +162,18 @@ impl bevy::app::Plugin for MetalFxPlugin {
         // Main-world: insert render scale resource and resolution override systems.
         app.insert_resource(MetalFxRenderScale(self.render_scale));
         app.insert_resource(MetalFxModeResource(self.mode));
-        // Main-world MetalFxConfig for render-world extraction.
+        // Main-world MetalFxConfig for render-world extraction. In adaptive mode
+        // the temporal scaler is built with dynamic resolution spanning the
+        // governor's scale range, so scale changes flex without a scaler rebuild.
+        let dynamic_res_range = if self.adaptive {
+            Some((SCALE_STEPS[0], SCALE_STEPS[SCALE_STEPS.len() - 1]))
+        } else {
+            None
+        };
         app.insert_resource(MetalFxConfig {
             render_scale: self.render_scale,
             mode: self.mode,
+            dynamic_res_range,
         });
         app.add_systems(
             bevy::app::PostStartup,

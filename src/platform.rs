@@ -131,6 +131,7 @@ pub(crate) unsafe fn try_create_temporal_scaler_from_raw(
     output_format: MTLPixelFormat,
     depth_format: MTLPixelFormat,
     motion_format: MTLPixelFormat,
+    dynamic_res: Option<(f32, f32)>,
 ) -> Option<Retained<ProtocolObject<dyn MTLFXTemporalScaler>>> {
     if !is_available_impl() {
         return None;
@@ -153,6 +154,27 @@ pub(crate) unsafe fn try_create_temporal_scaler_from_raw(
         descriptor.setDepthTextureFormat(depth_format);
         descriptor.setMotionTextureFormat(motion_format);
         descriptor.setAutoExposureEnabled(true);
+
+        // True dynamic resolution: when enabled, the scaler accepts a *range*
+        // of input scales without recreation. The descriptor's input size (set
+        // above to the output size by the caller) is the maximum; the per-frame
+        // `setInputContentWidth/Height` in `encode_temporal_upscale` then selects
+        // the actual content size each frame, letting an adaptive governor flex
+        // render scale with zero scaler rebuilds. Apple requires the input/output
+        // aspect ratio to stay constant (our scaling is uniform, so this holds).
+        //
+        // `dynamic_res` is given as *render-scale fractions* (e.g. 0.5..=0.75 of
+        // native). MetalFX's InputContentMin/MaxScale are *upscale ratios*
+        // (output/input, always ≥ 1.0), so convert: a 0.5 render scale is a 2.0
+        // upscale, a 0.75 render scale is a ~1.33 upscale. Min and max swap under
+        // the reciprocal (smaller render fraction → larger upscale ratio).
+        if let Some((min_render_scale, max_render_scale)) = dynamic_res {
+            let metalfx_min_scale = 1.0 / max_render_scale;
+            let metalfx_max_scale = 1.0 / min_render_scale;
+            descriptor.setInputContentPropertiesEnabled(true);
+            descriptor.setInputContentMinScale(metalfx_min_scale);
+            descriptor.setInputContentMaxScale(metalfx_max_scale);
+        }
     }
 
     unsafe { descriptor.newTemporalScalerWithDevice(device) }
@@ -228,6 +250,7 @@ pub(crate) unsafe fn spawn_temporal_scaler_thread(
     device_ptr: *mut c_void,
     iw: usize, ih: usize, ow: usize, oh: usize,
     color_fmt_raw: usize,
+    dynamic_res: Option<(f32, f32)>,
     tx: std::sync::mpsc::Sender<Option<super::node::SendScaler>>,
 ) {
     // Wrapper to make raw pointer Send-able for thread transfer.
@@ -250,6 +273,7 @@ pub(crate) unsafe fn spawn_temporal_scaler_thread(
                 cfmt, cfmt,
                 MTLPixelFormat::Depth32Float,
                 MTLPixelFormat::RG16Float,
+                dynamic_res,
             )
         };
         log::info!("MetalFX: background thread done, scaler={}", scaler.is_some());

@@ -54,6 +54,11 @@ use crate::{GpuTimingDiag, MetalFxMode};
 pub struct MetalFxConfig {
     pub render_scale: f32,
     pub mode: MetalFxMode,
+    /// When `Some((min, max))`, the temporal scaler is created with true dynamic
+    /// resolution enabled spanning that render-scale range, so an adaptive
+    /// governor can flex `render_scale` within `[min, max]` without rebuilding
+    /// the scaler. `None` = fixed-scale scaler (recreated only on window resize).
+    pub dynamic_res_range: Option<(f32, f32)>,
 }
 
 /// Thread-safe wrapper for MetalFX scalers/interpolators.
@@ -168,6 +173,7 @@ impl ViewNode for MetalFxUpscaleNode {
         let config = world.get_resource::<MetalFxConfig>();
         let render_scale = config.map_or(0.5, |c| c.render_scale);
         let mode = config.map_or(MetalFxMode::Spatial, |c| c.mode);
+        let dynamic_res_range = config.and_then(|c| c.dynamic_res_range);
 
         // main_texture is full physical resolution (e.g., 3024x1800 on Retina).
         // MainPassResolutionOverride renders content at half-res in the top-left corner.
@@ -180,6 +186,7 @@ impl ViewNode for MetalFxUpscaleNode {
         //   - Scaler upscales input → output (2× ML upscale)
         let full_w = main_size.width;
         let full_h = main_size.height;
+        // Per-frame content dimensions follow the *current* render scale.
         let input_w = (full_w as f32 * render_scale).round() as u32;
         let input_h = (full_h as f32 * render_scale).round() as u32;
         let output_w = full_w;
@@ -187,13 +194,28 @@ impl ViewNode for MetalFxUpscaleNode {
         let content_w = input_w;
         let content_h = input_h;
 
+        // Dimensions the scaler is *created* at. With dynamic resolution enabled,
+        // MetalFX requires the descriptor's input size to equal the output size
+        // (the input texture is allocated full-size and the usable content region
+        // flexes within it via inputContentMin/MaxScale + the per-frame
+        // setInputContentWidth/Height). Without dynamic res, the scaler is created
+        // at the current fixed input size.
+        let (scaler_input_w, scaler_input_h) = match dynamic_res_range {
+            Some(_) => (output_w, output_h),
+            None => (input_w, input_h),
+        };
+
         // --- Phase A: Get or create scaler + output texture ---
         let device = render_context.render_device().clone();
         let mut cached = self.cached.lock().unwrap();
 
+        // Recreate only when the *scaler* input dimensions change (i.e. a window
+        // resize, or the dynamic-res max). Per-frame render-scale changes move
+        // `input_w/h` but not `scaler_input_w/h`, so under dynamic resolution they
+        // no longer force a rebuild — the scaler flexes via setInputContentWidth.
         let needs_recreate = cached.as_ref().is_none_or(|c| {
-            c.input_w != input_w
-                || c.input_h != input_h
+            c.input_w != scaler_input_w
+                || c.input_h != scaler_input_h
                 || c.output_w != output_w
                 || c.output_h != output_h
         });
@@ -202,8 +224,8 @@ impl ViewNode for MetalFxUpscaleNode {
             // Check if a background scaler creation is pending.
             let mut pending = self.pending.lock().unwrap();
             if let Some(p) = pending.as_ref() {
-                // Check if dimensions match what we need.
-                if p.input_w == input_w && p.input_h == input_h
+                // Check if dimensions match what we need (scaler-creation dims).
+                if p.input_w == scaler_input_w && p.input_h == scaler_input_h
                     && p.output_w == output_w && p.output_h == output_h
                 {
                     // Try to receive the scaler (non-blocking).
@@ -214,11 +236,14 @@ impl ViewNode for MetalFxUpscaleNode {
                             );
                             *pending = None;
 
+                            // Sized to the scaler's max input so the same textures
+                            // serve every frame under dynamic resolution (the
+                            // per-frame content copy fills only the top-left region).
                             let input_texture = device.create_texture(&TextureDescriptor {
                                 label: Some("metalfx_input"),
                                 size: Extent3d {
-                                    width: input_w,
-                                    height: input_h,
+                                    width: scaler_input_w,
+                                    height: scaler_input_h,
                                     depth_or_array_layers: 1,
                                 },
                                 mip_level_count: 1,
@@ -237,8 +262,8 @@ impl ViewNode for MetalFxUpscaleNode {
                                 let tex = device.create_texture(&TextureDescriptor {
                                     label: Some("metalfx_content_depth"),
                                     size: Extent3d {
-                                        width: input_w,
-                                        height: input_h,
+                                        width: scaler_input_w,
+                                        height: scaler_input_h,
                                         depth_or_array_layers: 1,
                                     },
                                     mip_level_count: 1,
@@ -264,8 +289,8 @@ impl ViewNode for MetalFxUpscaleNode {
                                 let tex = device.create_texture(&TextureDescriptor {
                                     label: Some("metalfx_content_motion"),
                                     size: Extent3d {
-                                        width: input_w,
-                                        height: input_h,
+                                        width: scaler_input_w,
+                                        height: scaler_input_h,
                                         depth_or_array_layers: 1,
                                     },
                                     mip_level_count: 1,
@@ -319,8 +344,8 @@ impl ViewNode for MetalFxUpscaleNode {
                                 content_depth_view,
                                 content_motion_texture,
                                 content_motion_view,
-                                input_w,
-                                input_h,
+                                input_w: scaler_input_w,
+                                input_h: scaler_input_h,
                                 output_w,
                                 output_h,
                                 frame_count: 0,
@@ -342,18 +367,23 @@ impl ViewNode for MetalFxUpscaleNode {
                         }
                     }
                 } else {
-                    // Dimensions changed, discard pending and start new.
+                    // Dimensions changed: discard the pending creation AND the
+                    // stale cached scaler so the block below starts a fresh one.
                     *pending = None;
+                    *cached = None;
                 }
             }
 
-            // If no pending creation, start one (clear stale cached scaler).
-            // The old guard `cached.is_none() && pending.is_none()` would block
-            // new scaler creation when a cached scaler existed at stale dimensions.
-            if pending.is_none() {
-                *cached = None;
+            // Start a new creation only when we have neither a usable scaler nor
+            // one in flight. Guarding on `cached.is_none()` is essential: the
+            // receive branch above sets `*cached = Some(..)` and `*pending = None`
+            // in the same frame, so a `pending.is_none()`-only guard would fall
+            // straight through here and immediately discard the scaler we just
+            // received — rebuilding forever (6zit.12). The dimensions-changed
+            // path nulls `cached` above so a genuine resize still recreates.
+            if cached.is_none() && pending.is_none() {
                 log::info!(
-                    "MetalFxUpscaleNode: creating {:?} scaler {input_w}x{input_h} -> {output_w}x{output_h}",
+                    "MetalFxUpscaleNode: creating {:?} scaler {scaler_input_w}x{scaler_input_h} -> {output_w}x{output_h} (dynamic_res={dynamic_res_range:?}, cur_input={input_w}x{input_h})",
                     mode
                 );
 
@@ -454,20 +484,23 @@ impl ViewNode for MetalFxUpscaleNode {
                         let color_fmt_raw: usize = color_mtl_fmt.0;
                         match mode {
                             MetalFxMode::Temporal => unsafe {
-                                // Create temporal scaler at content dimensions (not full-res).
-                                // Depth and motion vectors are resolved to content-sized
-                                // textures before being passed to MetalFX.
+                                // Create temporal scaler at the max input dimensions
+                                // (== current dims when dynamic res is off). Depth and
+                                // motion vectors are resolved to content-sized textures
+                                // before being passed to MetalFX. `dynamic_res_range`, if
+                                // set, enables true dynamic resolution so scale changes
+                                // flex without rebuilding this scaler.
                                 crate::platform::spawn_temporal_scaler_thread(
                                     device_ptr,
-                                    input_w as usize, input_h as usize,
+                                    scaler_input_w as usize, scaler_input_h as usize,
                                     output_w as usize, output_h as usize,
-                                    color_fmt_raw, tx,
+                                    color_fmt_raw, dynamic_res_range, tx,
                                 );
                             },
                             MetalFxMode::FrameInterpolation => unsafe {
                                 crate::platform::spawn_frame_interpolator_thread(
                                     device_ptr,
-                                    input_w as usize, input_h as usize,
+                                    scaler_input_w as usize, scaler_input_h as usize,
                                     output_w as usize, output_h as usize,
                                     color_fmt_raw, tx,
                                 );
@@ -477,8 +510,8 @@ impl ViewNode for MetalFxUpscaleNode {
 
                         *pending = Some(PendingScaler {
                             receiver: rx,
-                            input_w,
-                            input_h,
+                            input_w: scaler_input_w,
+                            input_h: scaler_input_h,
                             output_w,
                             output_h,
                         });
