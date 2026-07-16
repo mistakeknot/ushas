@@ -191,7 +191,7 @@ impl ViewNode for MetalFxUpscaleNode {
         let device = render_context.render_device().clone();
         let mut cached = self.cached.lock().unwrap();
 
-        let needs_recreate = cached.as_ref().map_or(true, |c| {
+        let needs_recreate = cached.as_ref().is_none_or(|c| {
             c.input_w != input_w
                 || c.input_h != input_h
                 || c.output_w != output_w
@@ -448,7 +448,10 @@ impl ViewNode for MetalFxUpscaleNode {
                         // Temporal + FrameInterpolation are slow — create on background thread.
                         let (tx, rx) = std::sync::mpsc::channel();
 
-                        let color_fmt_raw: usize = unsafe { std::mem::transmute(color_mtl_fmt) };
+                        // MTLPixelFormat is a #[repr(transparent)] newtype over
+                        // NSUInteger (= usize on 64-bit macOS); read its
+                        // discriminant via the field rather than transmuting.
+                        let color_fmt_raw: usize = color_mtl_fmt.0;
                         match mode {
                             MetalFxMode::Temporal => unsafe {
                                 // Create temporal scaler at content dimensions (not full-res).
@@ -922,8 +925,14 @@ impl ViewNode for MetalFxUpscaleNode {
             SendScaler::FrameInterpolator(interpolator) => {
                 let (depth_ptr, motion_ptr) = temporal_ptrs.unwrap();
                 let prev_color_ptr = prev_color_ptr.unwrap();
-                let jitter_offset = temporal_jitter
-                    .map(|j| j.offset)
+                // Bevy's `TemporalJitter.offset` is a pixel offset in [-0.5, 0.5]
+                // whose Y is flipped when it enters clip space (see
+                // `TemporalJitter::jitter_projection`: `offset * vec2(2, -2)`).
+                // MetalFX's `jitterOffsetX/Y` wants the pixel offset that returns
+                // the sample to the reference frame — the same X, but Y negated
+                // to match MetalFX's (un-flipped) pixel space.
+                let jitter = temporal_jitter
+                    .map(|j| Vec2::new(j.offset.x, -j.offset.y))
                     .unwrap_or(Vec2::ZERO);
                 let motion_scale_x = -(input_w as f32);
                 let motion_scale_y = -(input_h as f32);
@@ -950,8 +959,8 @@ impl ViewNode for MetalFxUpscaleNode {
                             motion_ptr,
                             out_tex_ptr,
                             cmd_buf_ptr,
-                            jitter_offset.x,
-                            jitter_offset.y,
+                            jitter.x,
+                            jitter.y,
                             motion_scale_x,
                             motion_scale_y,
                             delta_time,
@@ -974,8 +983,10 @@ impl ViewNode for MetalFxUpscaleNode {
             }
             SendScaler::Temporal(scaler) => {
                 let (depth_ptr, motion_ptr) = temporal_ptrs.unwrap();
-                let jitter_offset = temporal_jitter
-                    .map(|j| j.offset)
+                // Negate Y to convert Bevy's clip-space jitter convention to
+                // MetalFX's pixel-space one — see the FrameInterpolator branch.
+                let jitter = temporal_jitter
+                    .map(|j| Vec2::new(j.offset.x, -j.offset.y))
                     .unwrap_or(Vec2::ZERO);
 
                 let motion_scale_x = -(input_w as f32);
@@ -996,8 +1007,8 @@ impl ViewNode for MetalFxUpscaleNode {
                             cmd_buf_ptr,
                             content_w as usize,
                             content_h as usize,
-                            jitter_offset.x,
-                            jitter_offset.y,
+                            jitter.x,
+                            jitter.y,
                             motion_scale_x,
                             motion_scale_y,
                             is_first_frame,

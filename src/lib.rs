@@ -222,7 +222,7 @@ impl bevy::app::Plugin for MetalFxPlugin {
             let timing = GpuTimingDiag(
                 self.gpu_timing_sink
                     .clone()
-                    .unwrap_or_else(GpuTimingSink::new),
+                    .unwrap_or_default(),
             );
             app.insert_resource(timing.clone());
 
@@ -246,6 +246,19 @@ impl bevy::app::Plugin for MetalFxPlugin {
 
 use bevy::camera::MainPassResolutionOverride;
 use bevy::prelude::*;
+use bevy::render::camera::MipBias;
+
+/// Texture LOD bias to apply when rendering below native resolution.
+///
+/// MetalFX (and Bevy's bilinear fallback) render the scene at `render_scale`
+/// of the output resolution, so PBR textures are sampled at a coarser mip
+/// level than the final image warrants. Biasing sampling by `log2(scale)`
+/// (negative for `scale < 1.0`) pulls in a sharper mip, restoring texture
+/// detail the upscaler would otherwise have to hallucinate. At `scale = 0.5`
+/// this is `-1.0` — exactly one mip level sharper.
+fn mip_bias_for_scale(scale: f32) -> f32 {
+    scale.clamp(0.1, 1.0).log2()
+}
 
 #[cfg(feature = "temporal")]
 use bevy::core_pipeline::prepass::{DepthPrepass, MotionVectorPrepass};
@@ -337,16 +350,18 @@ fn apply_resolution_override(
     }
     let override_w = (w as f32 * scale.0).round() as u32;
     let override_h = (h as f32 * scale.0).round() as u32;
+    let mip_bias = mip_bias_for_scale(scale.0);
 
     for entity in cameras.iter() {
         log::info!(
             "MetalFX: setting MainPassResolutionOverride {override_w}x{override_h} \
-             (window {w}x{h}, scale {})",
+             (window {w}x{h}, scale {}, mip_bias {mip_bias:.3})",
             scale.0
         );
-        commands
-            .entity(entity)
-            .insert(MainPassResolutionOverride(UVec2::new(override_w, override_h)));
+        commands.entity(entity).insert((
+            MainPassResolutionOverride(UVec2::new(override_w, override_h)),
+            MipBias(mip_bias),
+        ));
     }
 }
 
@@ -464,7 +479,7 @@ fn adaptive_scale_system(
 
 /// Update resolution override when the render scale changes (adaptive mode).
 fn update_resolution_on_scale_change(
-    mut cameras: Query<&mut MainPassResolutionOverride, With<Camera3d>>,
+    mut cameras: Query<(&mut MainPassResolutionOverride, &mut MipBias), With<Camera3d>>,
     windows: Query<&Window>,
     scale: Res<MetalFxRenderScale>,
 ) {
@@ -481,13 +496,16 @@ fn update_resolution_on_scale_change(
     }
     let override_w = (w as f32 * scale.0).round() as u32;
     let override_h = (h as f32 * scale.0).round() as u32;
+    let mip_bias = mip_bias_for_scale(scale.0);
 
-    for mut res_override in cameras.iter_mut() {
+    for (mut res_override, mut bias) in cameras.iter_mut() {
         log::info!(
-            "MetalFX: scale change -> MainPassResolutionOverride {override_w}x{override_h} (scale={})",
+            "MetalFX: scale change -> MainPassResolutionOverride {override_w}x{override_h} \
+             (scale={}, mip_bias {mip_bias:.3})",
             scale.0
         );
         res_override.0 = UVec2::new(override_w, override_h);
+        bias.0 = mip_bias;
     }
 }
 
@@ -567,5 +585,28 @@ pub fn probe_spatial_scaler(_render_device: &bevy::render::renderer::RenderDevic
     #[cfg(not(target_os = "macos"))]
     {
         false
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn mip_bias_matches_log2_scale() {
+        // Half-res render → one mip level sharper.
+        assert!((mip_bias_for_scale(0.5) - (-1.0)).abs() < 1e-6);
+        // Quarter-res → two levels sharper.
+        assert!((mip_bias_for_scale(0.25) - (-2.0)).abs() < 1e-6);
+        // Native res → no bias.
+        assert!((mip_bias_for_scale(1.0) - 0.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn mip_bias_clamps_degenerate_scales() {
+        // Out-of-range scales must not produce NaN/±inf bias.
+        assert!(mip_bias_for_scale(0.0).is_finite());
+        assert!(mip_bias_for_scale(-1.0).is_finite());
+        assert!((mip_bias_for_scale(2.0) - 0.0).abs() < 1e-6);
     }
 }

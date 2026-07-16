@@ -237,7 +237,10 @@ pub(crate) unsafe fn spawn_temporal_scaler_thread(
     let dev = SendablePtr(device_ptr as usize);
 
     std::thread::spawn(move || {
-        let cfmt: MTLPixelFormat = unsafe { std::mem::transmute(color_fmt_raw) };
+        // MTLPixelFormat is a #[repr(transparent)] newtype over NSUInteger,
+        // so we can construct it directly from the raw discriminant instead
+        // of transmuting (which would be UB for out-of-range values).
+        let cfmt = MTLPixelFormat(color_fmt_raw as objc2_foundation::NSUInteger);
         let ptr = dev.0 as *mut c_void;
         log::info!("MetalFX: background thread starting temporal scaler creation");
         let scaler = unsafe {
@@ -397,7 +400,10 @@ pub(crate) unsafe fn spawn_frame_interpolator_thread(
     let dev = SendablePtr(device_ptr as usize);
 
     std::thread::spawn(move || {
-        let cfmt: MTLPixelFormat = unsafe { std::mem::transmute(color_fmt_raw) };
+        // MTLPixelFormat is a #[repr(transparent)] newtype over NSUInteger,
+        // so we can construct it directly from the raw discriminant instead
+        // of transmuting (which would be UB for out-of-range values).
+        let cfmt = MTLPixelFormat(color_fmt_raw as objc2_foundation::NSUInteger);
         let ptr = dev.0 as *mut c_void;
         log::info!("MetalFX: background thread starting frame interpolator creation");
         let interpolator = unsafe {
