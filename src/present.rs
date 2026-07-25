@@ -14,28 +14,24 @@
 //! `CAMetalLayer` itself, acquires its own drawable, and presents it on the
 //! render graph's own command buffer.
 //!
-//! # Status: this does not work, and the reason is structural
+//! # Status: implemented, not yet validated
 //!
-//! Every present issued here is accepted by Metal — the debug layer is clean,
-//! and the command buffer carrying the present commits and completes on every
-//! frame — and **none of them is ever displayed**. `presentedTime` stays 0 and
-//! the presented-handler never fires, Metal's documented signature for a
-//! skipped frame.
+//! Whether this actually raises the displayed frame rate is **unverified**.
+//! Every measurement so far was taken with the macOS session locked and the
+//! display asleep — a state in which the compositor presents nothing to a
+//! panel, so `presentedTime` stays 0 and presented-handlers never fire for
+//! *any* drawable, including Bevy's own. The observed "0 frames displayed"
+//! is a property of that environment, not of this code.
 //!
-//! `wgpu` acquires the swapchain drawable in Bevy's `prepare_windows`, *before*
-//! the render graph runs, and holds it until it presents at the end of the
-//! frame. Any drawable acquired here is therefore the newer of two outstanding
-//! drawables on the same layer, and a `CAMetalLayer` will not display a newer
-//! drawable while an older one is outstanding. Four presentation paths were
-//! measured — `presentDrawable:`, `:atTime:`, `:afterMinimumDuration:`, and
-//! `[drawable presentAfterMinimumDuration:]` from the completion handler — all
-//! with 0 frames displayed out of 900.
+//! Established regardless: Metal accepts every present, the debug layer is
+//! clean, the command buffer carrying the presents commits and completes every
+//! frame, and drawable acquisition never fails. Unestablished: that a frame
+//! reaches the display, the presented rate, and the ordering behaviour.
 //!
-//! The module is kept, opt-in and off by default, because the measurement
-//! harness is reusable and the negative result is worth being able to
-//! reproduce. Making interpolation real requires owning the `CAMetalLayer` and
-//! both drawables instead of sharing them with `wgpu` — a windowing-layer
-//! change, not a render-node one. See `docs/m5-max-performance-research.md`.
+//! Validating it needs an unlocked session with the display awake. The
+//! instrumentation is already here — [`PresentSink`] reports presented rate,
+//! interval spread, ordering inversions and drops from real `presentedTime`
+//! values.
 //!
 //! # Frame sequence it aims for
 //!
@@ -409,19 +405,6 @@ pub unsafe fn find_metal_layer(ns_view: *mut c_void) -> Option<NonNull<c_void>> 
 /// succeeds silently and displays nothing.
 unsafe fn log_layer_identity(layer: *mut AnyObject, sublayer_count: usize) {
     unsafe {
-        #[repr(C)]
-        struct CGSize {
-            width: f64,
-            height: f64,
-        }
-        // `msg_send!` needs the struct's ObjC type encoding to pick the right
-        // return ABI.
-        unsafe impl objc2::Encode for CGSize {
-            const ENCODING: objc2::Encoding = objc2::Encoding::Struct(
-                "CGSize",
-                &[objc2::Encoding::Double, objc2::Encoding::Double],
-            );
-        }
         let size: CGSize = msg_send![layer, drawableSize];
         let pixel_format: usize = msg_send![layer, pixelFormat];
         let device: *mut AnyObject = msg_send![layer, device];
@@ -442,6 +425,119 @@ unsafe fn log_layer_identity(layer: *mut AnyObject, sublayer_count: usize) {
             if device.is_null() { "none" } else { "set" },
             sublayer_count,
         );
+    }
+}
+
+// CoreGraphics geometry types. `msg_send!` needs each struct's ObjC type
+// encoding to select the right return/argument ABI.
+#[repr(C)]
+#[derive(Clone, Copy)]
+struct CGSize {
+    width: f64,
+    height: f64,
+}
+#[repr(C)]
+#[derive(Clone, Copy)]
+struct CGPoint {
+    x: f64,
+    y: f64,
+}
+#[repr(C)]
+#[derive(Clone, Copy)]
+struct CGRect {
+    origin: CGPoint,
+    size: CGSize,
+}
+
+unsafe impl objc2::Encode for CGSize {
+    const ENCODING: objc2::Encoding =
+        objc2::Encoding::Struct("CGSize", &[objc2::Encoding::Double, objc2::Encoding::Double]);
+}
+unsafe impl objc2::Encode for CGPoint {
+    const ENCODING: objc2::Encoding =
+        objc2::Encoding::Struct("CGPoint", &[objc2::Encoding::Double, objc2::Encoding::Double]);
+}
+unsafe impl objc2::Encode for CGRect {
+    const ENCODING: objc2::Encoding =
+        objc2::Encoding::Struct("CGRect", &[CGPoint::ENCODING, CGSize::ENCODING]);
+}
+
+/// Build a `CAMetalLayer` of our own, stacked directly above the one `wgpu`
+/// renders into.
+///
+/// Sharing `wgpu`'s layer is awkward by construction: it acquires that layer's
+/// drawable in Bevy's `prepare_windows`, before the render graph runs, and holds
+/// it for the whole frame, so anything a render node acquires is the newer of
+/// two outstanding drawables on a queue it does not control.
+///
+/// Owning a layer sidesteps the question: its drawable queue is ours, so both
+/// the interpolated and the real frame can be presented and paced. `wgpu` keeps
+/// presenting its own layer underneath, hidden behind this one.
+///
+/// Note this is a design argument, not a measured one — presentation has not yet
+/// been validated on an unlocked display (see the module docs).
+///
+/// Mirrors the reference layer's geometry, scale, pixel format and device so the
+/// two are visually interchangeable.
+///
+/// # Safety
+/// `reference` must be a valid `CAMetalLayer` already in the view hierarchy.
+/// Must be called on the main thread — it mutates the layer tree.
+pub unsafe fn create_owned_layer(reference: NonNull<c_void>) -> Option<NonNull<c_void>> {
+    unsafe {
+        let reference: *mut AnyObject = reference.as_ptr().cast();
+
+        let superlayer: *mut AnyObject = msg_send![reference, superlayer];
+        if superlayer.is_null() {
+            log::warn!("MetalFX dual presentation: wgpu's layer has no superlayer to attach to");
+            return None;
+        }
+        let device: *mut AnyObject = msg_send![reference, device];
+        if device.is_null() {
+            log::warn!("MetalFX dual presentation: wgpu's layer has no MTLDevice yet");
+            return None;
+        }
+
+        let pixel_format: usize = msg_send![reference, pixelFormat];
+        let drawable_size: CGSize = msg_send![reference, drawableSize];
+        let frame: CGRect = msg_send![reference, frame];
+        let scale: f64 = msg_send![reference, contentsScale];
+
+        let cls = class!(CAMetalLayer);
+        let layer: *mut AnyObject = msg_send![cls, layer];
+        if layer.is_null() {
+            return None;
+        }
+
+        let _: () = msg_send![layer, setDevice: device];
+        let _: () = msg_send![layer, setPixelFormat: pixel_format];
+        let _: () = msg_send![layer, setDrawableSize: drawable_size];
+        let _: () = msg_send![layer, setContentsScale: scale];
+        let _: () = msg_send![layer, setFrame: frame];
+        // Display-paced: presentation must be tied to the refresh, or the two
+        // frames collapse into one interval instead of occupying two.
+        let _: () = msg_send![layer, setDisplaySyncEnabled: true];
+        // Triple buffering — this layer carries two presents per update.
+        let _: () = msg_send![layer, setMaximumDrawableCount: 3usize];
+        // Render-target only, matching wgpu's configuration: the frames are
+        // drawn in with a render pass, never blitted.
+        let _: () = msg_send![layer, setFramebufferOnly: true];
+        let _: () = msg_send![layer, setOpaque: true];
+
+        let _: () = msg_send![superlayer, addSublayer: layer];
+        // Retained by its superlayer; keep our own reference for the process
+        // lifetime so the pointer stays valid.
+        let _: *mut AnyObject = msg_send![layer, retain];
+
+        log::info!(
+            "MetalFX dual presentation: owned CAMetalLayer created ({}x{}, format {}, scale {}) \
+             above wgpu's — presentation is no longer shared",
+            drawable_size.width,
+            drawable_size.height,
+            pixel_format,
+            scale,
+        );
+        NonNull::new(layer.cast())
     }
 }
 
@@ -754,11 +850,18 @@ pub fn capture_metal_layer(
     let found = unsafe { find_metal_layer(appkit.ns_view.as_ptr()) };
 
     match found {
-        Some(layer) => {
-            state.layer = layer.as_ptr() as usize;
+        Some(wgpu_layer) => {
+            // Do not present on wgpu's layer — it owns that layer's drawable
+            // queue for the whole frame and a second drawable is never
+            // displayed. Stack our own layer above it instead.
+            //
+            // SAFETY: main thread (Bevy's `Update`), and `wgpu_layer` is live.
+            let Some(owned) = (unsafe { create_owned_layer(wgpu_layer) }) else {
+                return;
+            };
+            state.layer = owned.as_ptr() as usize;
             log::info!(
-                "MetalFX dual presentation: CAMetalLayer located ({:?} timing), \
-                 interpolated frames will be presented",
+                "MetalFX dual presentation: active ({:?} timing) on an owned layer",
                 state.timing
             );
         }

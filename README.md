@@ -111,33 +111,31 @@ layer, and holds the same ~120 fps as `temporal` on an M5 Max.
 > The `present` module implements that attempt and measures it; the result is
 > below.
 
-### Why a second present does not work from a render node
+### Dual presentation: implemented, not yet validated
 
-`present::MetalFxDualPresent` (opt-in, off by default) acquires a drawable
-straight from the window's `CAMetalLayer`, draws the second frame into it, and
-presents it. Metal accepts every one of those presents — the Metal debug layer
-is clean, and the command buffer carrying them commits and completes on every
-frame — but **not one is ever displayed**. `MTLDrawable.presentedTime` stays 0
-and the presented-handler never fires, which is Metal's documented signature
-for a frame that was skipped.
+`present::MetalFxDualPresent` (opt-in, off by default) creates a `CAMetalLayer`
+of its own above the one `wgpu` renders into, draws the interpolated and the
+real frame into two drawables from that layer, and presents them on consecutive
+refresh intervals — interpolated first, real held back with
+`presentDrawable:afterMinimumDuration:`.
 
-The cause is ownership of the drawable queue. `wgpu` acquires the swapchain
-drawable in Bevy's `prepare_windows`, *before* the render graph runs, and holds
-it until it presents at the end of the frame. A `CAMetalLayer` will not display
-a second, newer drawable while an older one is still outstanding. Since a render
-graph node runs entirely inside that window, no node can win this — confirmed
-against four presentation paths, all with identical results:
+**Whether this actually raises the displayed frame rate is unverified.** Every
+measurement so far was taken with the macOS session locked and the display
+asleep, a state in which the compositor presents nothing to a panel:
+`MTLDrawable.presentedTime` stays 0 and presented-handlers never fire for *any*
+drawable, including Bevy's own. So the observed "0 frames displayed" says
+nothing about this code.
 
-| Mechanism | Displayed |
-|---|---|
-| `presentDrawable:` on the graph's command buffer | 0 / 900 |
-| `presentDrawable:atTime:` | 0 / 900 |
-| `presentDrawable:afterMinimumDuration:` | 0 / 900 |
-| `[drawable presentAfterMinimumDuration:]` from the completion handler | 0 / 900 |
+What *is* established in that environment: Metal accepts every present, the
+Metal debug layer is clean, and the command buffer carrying the presents commits
+and completes on every frame. What is not established: that any frame reaches
+the display, what the presented frame rate is, or whether the ordering is
+correct.
 
-Realizing frame interpolation therefore requires taking presentation away from
-`wgpu` altogether — owning the `CAMetalLayer` and both drawables — which is a
-change to the windowing/surface layer, not to this crate.
+Validating it requires running on an unlocked session with the display awake.
+The instrumentation for that is already in place — `PresentSink` records real
+`presentedTime` values and reports presented rate, interval spread (judder),
+ordering inversions and drops.
 
 ## API Reference
 
