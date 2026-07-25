@@ -613,9 +613,11 @@ pub unsafe fn create_owned_layer(
         let _: () = msg_send![layer, setDisplaySyncEnabled: true];
         // Triple buffering — this layer carries two presents per update.
         let _: () = msg_send![layer, setMaximumDrawableCount: 3usize];
-        // Render-target only, matching wgpu's configuration: the frames are
-        // drawn in with a render pass, never blitted.
-        let _: () = msg_send![layer, setFramebufferOnly: true];
+        // NOT framebuffer-only: we own this layer, and allowing its drawables
+        // to be blit destinations lets the whole present sequence happen on one
+        // command buffer we control — acquire, copy, present, commit — which is
+        // the only shape measured to actually work (see examples/present_repro.rs).
+        let _: () = msg_send![layer, setFramebufferOnly: false];
         let _: () = msg_send![layer, setOpaque: true];
 
         // Host the layer on an NSView of our own, rather than adding it as a
@@ -1137,5 +1139,129 @@ mod tests {
     fn null_pointers_are_rejected_rather_than_dereferenced() {
         // SAFETY: passing null is exactly the case under test.
         assert!(unsafe { find_metal_layer(std::ptr::null_mut()) }.is_none());
+    }
+}
+
+/// Present the interpolated and real frames from the render graph command
+/// buffer's *completion* handler, on a command buffer of our own.
+///
+/// This is the only sequence measured to work. `examples/present_repro.rs`
+/// establishes the shape: acquire the drawable, write it, present it, and commit
+/// — all on one buffer we own, committed immediately. Every variant that
+/// acquired a drawable mid-graph and then either rode wgpu's command buffer or
+/// deferred the commit measured zero presentation callbacks, because by the time
+/// the commit happened the drawable had been recycled.
+///
+/// Running at completion time also removes the need for any synchronisation: the
+/// graph's work is finished, so `interp_tex` and `real_tex` hold final data, and
+/// the drawables are acquired fresh rather than held across the frame.
+///
+/// # Safety
+/// `cmd_buf_ptr` must be the live, uncommitted graph command buffer; `layer` and
+/// `queue` ours; the textures live `id<MTLTexture>` at the layer's drawable size.
+#[allow(clippy::too_many_arguments)]
+pub unsafe fn present_pair_deferred(
+    cmd_buf_ptr: *mut c_void,
+    layer: NonNull<c_void>,
+    queue: NonNull<c_void>,
+    interp_tex: *mut c_void,
+    real_tex: *mut c_void,
+    refresh_interval: f64,
+    sink: &Arc<PresentSink>,
+) {
+    if cmd_buf_ptr.is_null() || interp_tex.is_null() || real_tex.is_null() {
+        return;
+    }
+    unsafe {
+        let cmd_buf: &ProtocolObject<dyn MTLCommandBuffer> =
+            &*(cmd_buf_ptr as *const ProtocolObject<dyn MTLCommandBuffer>);
+
+        // A blit copy demands identical pixel formats, and Bevy's view target may
+        // be HDR (Rgba16Float) while wgpu's layer is BGRA8Unorm_sRGB. Take the
+        // format from the source rather than assuming.
+        static FORMAT_SET: std::sync::Once = std::sync::Once::new();
+        FORMAT_SET.call_once(|| {
+            let src: *mut AnyObject = real_tex.cast();
+            let fmt: usize = msg_send![src, pixelFormat];
+            let layer_obj: *mut AnyObject = layer.as_ptr().cast();
+            let _: () = msg_send![layer_obj, setPixelFormat: fmt];
+            log::info!("MetalFX dual presentation: owned layer pixelFormat set to {fmt} (from source texture)");
+        });
+
+        // Retain the sources so they survive until the handler runs.
+        let _: *mut AnyObject = msg_send![interp_tex.cast::<AnyObject>(), retain];
+        let _: *mut AnyObject = msg_send![real_tex.cast::<AnyObject>(), retain];
+
+        let layer_addr = layer.as_ptr() as usize;
+        let queue_addr = queue.as_ptr() as usize;
+        let interp_addr = interp_tex as usize;
+        let real_addr = real_tex as usize;
+        let sink = Arc::clone(sink);
+
+        let handler = RcBlock::new(
+            move |_done: NonNull<ProtocolObject<dyn MTLCommandBuffer>>| {
+                let layer_obj = layer_addr as *mut AnyObject;
+
+                let Some(interp_drawable) =
+                    acquire_drawable(NonNull::new_unchecked(layer_addr as *mut c_void))
+                else {
+                    sink.push_dropped();
+                    return;
+                };
+                let Some(real_drawable) =
+                    acquire_drawable(NonNull::new_unchecked(layer_addr as *mut c_void))
+                else {
+                    sink.push_dropped();
+                    return;
+                };
+                let _ = layer_obj;
+
+                let queue_obj = queue_addr as *mut AnyObject;
+                let cb: *mut AnyObject = msg_send![queue_obj, commandBuffer];
+                if cb.is_null() {
+                    sink.push_dropped();
+                    return;
+                }
+                let blit: *mut AnyObject = msg_send![cb, blitCommandEncoder];
+                if blit.is_null() {
+                    sink.push_dropped();
+                    return;
+                }
+                let _: () = msg_send![
+                    blit,
+                    copyFromTexture: interp_addr as *mut AnyObject,
+                    toTexture: interp_drawable.texture.as_ptr()
+                ];
+                let _: () = msg_send![
+                    blit,
+                    copyFromTexture: real_addr as *mut AnyObject,
+                    toTexture: real_drawable.texture.as_ptr()
+                ];
+                let _: () = msg_send![blit, endEncoding];
+
+                let block_ptr = sink.presented_handler_block() as *mut _;
+                interp_drawable.drawable.addPresentedHandler(block_ptr);
+                real_drawable.drawable.addPresentedHandler(block_ptr);
+
+                let cb_obj: &ProtocolObject<dyn MTLCommandBuffer> =
+                    &*(cb as *const ProtocolObject<dyn MTLCommandBuffer>);
+                // Interpolated frame first — it depicts the earlier moment — and
+                // the real frame one refresh later, so the two occupy
+                // consecutive intervals instead of collapsing into one.
+                cb_obj.presentDrawable(&interp_drawable.drawable);
+                cb_obj.presentDrawable_afterMinimumDuration(
+                    &real_drawable.drawable,
+                    refresh_interval,
+                );
+                cb_obj.commit();
+                sink.push_encoded();
+                sink.push_encoded();
+            },
+        );
+        cmd_buf.addCompletedHandler(&*handler as *const _ as *mut _);
+        // The handler must outlive this call; Metal copies it, but the block is
+        // cheap and leaking one per frame would not be, so hold it via the
+        // completion registration only.
+        core::mem::forget(handler);
     }
 }

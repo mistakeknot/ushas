@@ -1368,20 +1368,44 @@ impl ViewNode for MetalFxUpscaleNode {
         // image and will present it untimed. This second present carries the
         // real frame and is held back a refresh interval, so the two land on
         // consecutive vsyncs in the order they depict.
+        // --- Phase D: present both frames from our own layer ---
+        //
+        // The presents are registered here but performed in the graph command
+        // buffer's completion handler, on a command buffer of our own. That
+        // shape — acquire, copy, present, commit on one buffer we control — is
+        // the only one measured to work; acquiring a drawable mid-graph and
+        // committing later presents a recycled drawable that is silently
+        // discarded. See examples/present_repro.rs.
         #[cfg(feature = "frame-interpolation")]
         if dual_active {
-            self.present_dual_frames(
-                world,
-                render_context,
-                interp_view_for_present.as_ref().unwrap(),
-                &real_view_for_present,
-                pipeline,
-                blit_pipeline,
-                pipeline_cache,
-                target.out_texture_view_format(),
-                output_w,
-                output_h,
-            );
+            if let (Some(dual), Some((_, interp_ptr))) = (
+                world.get_resource::<crate::present::MetalFxDualPresent>(),
+                interp_ptrs,
+            ) {
+                if let (Some(layer), Some(queue)) = (dual.layer(), dual.queue()) {
+                    // SAFETY: the encoder's command buffer is live and
+                    // uncommitted; the textures are this frame's MetalFX output.
+                    unsafe {
+                        render_context
+                            .command_encoder()
+                            .as_hal_mut::<wgpu_hal::metal::Api, _, ()>(|hal_encoder| {
+                                let Some(enc) = hal_encoder else { return };
+                                let Some(cmd_buf) = enc.raw_command_buffer() else {
+                                    return;
+                                };
+                                crate::present::present_pair_deferred(
+                                    cmd_buf.as_ptr() as *mut c_void,
+                                    layer,
+                                    queue,
+                                    interp_ptr,
+                                    out_tex_ptr,
+                                    dual.refresh_interval,
+                                    &dual.sink,
+                                );
+                            });
+                    }
+                }
+            }
         }
 
         Ok(())
