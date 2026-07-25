@@ -1531,6 +1531,7 @@ impl ViewNode for MetalFxUpscaleNode {
                                         real_ptr,
                                         dual.refresh_interval,
                                         &dual.sink,
+                                        dual.single_present,
                                     );
                                 });
                         }

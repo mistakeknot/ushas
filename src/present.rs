@@ -934,6 +934,14 @@ pub struct MetalFxDualPresent {
     /// Assumed display refresh interval, in seconds. Only consulted by
     /// [`PresentTiming::Scheduled`].
     pub refresh_interval: f64,
+    /// Present only the real frame, skipping the interpolated one.
+    ///
+    /// The measurement control. It routes the baseline through the exact same
+    /// present path — same layer, same instrument — so an A/B differs only in
+    /// the number of frames presented. Without it the baseline has no
+    /// presentation telemetry at all and its rate has to be inferred, which is
+    /// not a sound comparison.
+    pub single_present: bool,
 }
 
 impl Default for MetalFxDualPresent {
@@ -951,6 +959,7 @@ impl Default for MetalFxDualPresent {
             // ProMotion. Wrong only for non-120Hz panels, and only affects
             // `Scheduled` pacing.
             refresh_interval: 1.0 / 120.0,
+            single_present: false,
         }
     }
 }
@@ -967,6 +976,12 @@ impl MetalFxDualPresent {
             enabled,
             ..Default::default()
         }
+    }
+
+    /// Present only the real frame — the instrumented baseline.
+    pub fn with_single_present(mut self, single: bool) -> Self {
+        self.single_present = single;
+        self
     }
 
     /// Override the assumed display refresh interval (default: 120Hz).
@@ -1170,6 +1185,7 @@ pub unsafe fn present_pair_deferred(
     real_tex: *mut c_void,
     refresh_interval: f64,
     sink: &Arc<PresentSink>,
+    single: bool,
 ) {
     if cmd_buf_ptr.is_null() || interp_tex.is_null() || real_tex.is_null() {
         return;
@@ -1204,11 +1220,19 @@ pub unsafe fn present_pair_deferred(
             move |_done: NonNull<ProtocolObject<dyn MTLCommandBuffer>>| {
                 let layer_obj = layer_addr as *mut AnyObject;
 
-                let Some(interp_drawable) =
-                    acquire_drawable(NonNull::new_unchecked(layer_addr as *mut c_void))
-                else {
-                    sink.push_dropped();
-                    return;
+                // In single-present mode only the real frame is shown; the
+                // interpolated one is still computed, so the GPU cost is
+                // identical and the A/B isolates presentation alone.
+                let interp_drawable = if single {
+                    None
+                } else {
+                    match acquire_drawable(NonNull::new_unchecked(layer_addr as *mut c_void)) {
+                        Some(d) => Some(d),
+                        None => {
+                            sink.push_dropped();
+                            return;
+                        }
+                    }
                 };
                 let Some(real_drawable) =
                     acquire_drawable(NonNull::new_unchecked(layer_addr as *mut c_void))
@@ -1229,11 +1253,13 @@ pub unsafe fn present_pair_deferred(
                     sink.push_dropped();
                     return;
                 }
-                let _: () = msg_send![
-                    blit,
-                    copyFromTexture: interp_addr as *mut AnyObject,
-                    toTexture: interp_drawable.texture.as_ptr()
-                ];
+                if let Some(d) = &interp_drawable {
+                    let _: () = msg_send![
+                        blit,
+                        copyFromTexture: interp_addr as *mut AnyObject,
+                        toTexture: d.texture.as_ptr()
+                    ];
+                }
                 let _: () = msg_send![
                     blit,
                     copyFromTexture: real_addr as *mut AnyObject,
@@ -1242,7 +1268,9 @@ pub unsafe fn present_pair_deferred(
                 let _: () = msg_send![blit, endEncoding];
 
                 let block_ptr = sink.presented_handler_block() as *mut _;
-                interp_drawable.drawable.addPresentedHandler(block_ptr);
+                if let Some(d) = &interp_drawable {
+                    d.drawable.addPresentedHandler(block_ptr);
+                }
                 real_drawable.drawable.addPresentedHandler(block_ptr);
 
                 let cb_obj: &ProtocolObject<dyn MTLCommandBuffer> =
@@ -1250,13 +1278,17 @@ pub unsafe fn present_pair_deferred(
                 // Interpolated frame first — it depicts the earlier moment — and
                 // the real frame one refresh later, so the two occupy
                 // consecutive intervals instead of collapsing into one.
-                cb_obj.presentDrawable(&interp_drawable.drawable);
-                cb_obj.presentDrawable_afterMinimumDuration(
-                    &real_drawable.drawable,
-                    refresh_interval,
-                );
+                if let Some(d) = &interp_drawable {
+                    cb_obj.presentDrawable(&d.drawable);
+                    cb_obj.presentDrawable_afterMinimumDuration(
+                        &real_drawable.drawable,
+                        refresh_interval,
+                    );
+                    sink.push_encoded();
+                } else {
+                    cb_obj.presentDrawable(&real_drawable.drawable);
+                }
                 cb_obj.commit();
-                sink.push_encoded();
                 sink.push_encoded();
             },
         );
