@@ -696,6 +696,17 @@ pub unsafe fn acquire_drawable(layer: NonNull<c_void>) -> Option<AcquiredDrawabl
         let drawable: Retained<ProtocolObject<dyn MTLDrawable>> =
             Retained::retain(raw.cast())?;
 
+        // Validate the cast once, with the single cheapest MTLDrawable call.
+        // If the ProtocolObject cast is wrong this throws, and a throwing
+        // selector is indistinguishable at a distance from a present that was
+        // accepted and skipped — the ambiguity that cost this investigation
+        // the most time.
+        static CHECKED: std::sync::Once = std::sync::Once::new();
+        CHECKED.call_once(|| {
+            let id = drawable.drawableID();
+            log::info!("MetalFX dual presentation: drawable cast OK — drawableID {id}");
+        });
+
         Some(AcquiredDrawable { drawable, texture })
     }
 }
