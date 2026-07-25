@@ -517,6 +517,7 @@ unsafe impl objc2::Encode for CGRect {
 /// Must be called on the main thread — it mutates the layer tree.
 pub unsafe fn create_owned_layer(
     reference: NonNull<c_void>,
+    ns_view: *mut c_void,
 ) -> Option<(NonNull<c_void>, NonNull<c_void>)> {
     unsafe {
         let reference: *mut AnyObject = reference.as_ptr().cast();
@@ -588,7 +589,33 @@ pub unsafe fn create_owned_layer(
         let _: () = msg_send![layer, setFramebufferOnly: true];
         let _: () = msg_send![layer, setOpaque: true];
 
-        let _: () = msg_send![superlayer, addSublayer: layer];
+        // Host the layer on an NSView of our own, rather than adding it as a
+        // bare sibling sublayer.
+        //
+        // This is the last structural difference from the known-good control,
+        // which is view-backed. A bare sublayer still vends drawables while
+        // rejecting every present against them, which is exactly the observed
+        // failure; a view-backed layer is what AppKit actually wires up for
+        // display.
+        let mut hosted = false;
+        if !ns_view.is_null() {
+            let parent: *mut AnyObject = ns_view.cast();
+            let view_alloc: *mut AnyObject = msg_send![class!(NSView), alloc];
+            let sub_view: *mut AnyObject = msg_send![view_alloc, initWithFrame: frame];
+            if !sub_view.is_null() {
+                let _: () = msg_send![sub_view, setWantsLayer: true];
+                let _: () = msg_send![sub_view, setLayer: layer];
+                let _: () = msg_send![parent, addSubview: sub_view];
+                hosted = true;
+            }
+        }
+        if !hosted {
+            let _: () = msg_send![superlayer, addSublayer: layer];
+        }
+        log::info!(
+            "MetalFX dual presentation: layer hosted on {}",
+            if hosted { "its own NSView" } else { "a bare sublayer (fallback)" }
+        );
 
         let _: () = msg_send![transaction, commit];
         // Force the transaction out now rather than at the end of the current
@@ -967,7 +994,9 @@ pub fn capture_metal_layer(
             // displayed. Stack our own layer above it instead.
             //
             // SAFETY: main thread (Bevy's `Update`), and `wgpu_layer` is live.
-            let Some((owned, queue)) = (unsafe { create_owned_layer(wgpu_layer) }) else {
+            let Some((owned, queue)) =
+                (unsafe { create_owned_layer(wgpu_layer, appkit.ns_view.as_ptr()) })
+            else {
                 return;
             };
             state.layer = owned.as_ptr() as usize;
