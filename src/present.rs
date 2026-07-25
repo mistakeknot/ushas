@@ -130,6 +130,11 @@ pub enum PresentTiming {
     /// vsync. With `displaySyncEnabled` this already yields exactly one
     /// refresh interval of spacing when the app renders at half the refresh
     /// rate.
+    ///
+    /// The default: cheapest of the options, and no worse than the others —
+    /// none of them has yet been shown to present on this machine, and
+    /// `OwnCommandBuffer` measurably halves throughput.
+    #[default]
     Vsync,
     /// `presentDrawable:atTime:`, scheduled one refresh interval after the
     /// last frame we saw presented. Spaces frames evenly when the render rate
@@ -152,8 +157,14 @@ pub enum PresentTiming {
     /// Needed because `wgpu` acquires the swapchain drawable before the render
     /// graph runs: any drawable this node acquires is newer, and a newer
     /// drawable presented ahead of an older outstanding one is discarded.
-    #[default]
     Deferred,
+    /// Present on a command buffer from our own queue rather than the render
+    /// graph's.
+    ///
+    /// The known-good control does exactly this, and it is the last structural
+    /// difference between it and this crate's path. Ordering with the graph's
+    /// work is preserved by committing only after the graph's buffer completes.
+    OwnCommandBuffer,
 }
 
 /// Thread-safe ring of drawable presentation samples.
@@ -504,7 +515,9 @@ unsafe impl objc2::Encode for CGRect {
 /// # Safety
 /// `reference` must be a valid `CAMetalLayer` already in the view hierarchy.
 /// Must be called on the main thread — it mutates the layer tree.
-pub unsafe fn create_owned_layer(reference: NonNull<c_void>) -> Option<NonNull<c_void>> {
+pub unsafe fn create_owned_layer(
+    reference: NonNull<c_void>,
+) -> Option<(NonNull<c_void>, NonNull<c_void>)> {
     unsafe {
         let reference: *mut AnyObject = reference.as_ptr().cast();
 
@@ -521,8 +534,30 @@ pub unsafe fn create_owned_layer(reference: NonNull<c_void>) -> Option<NonNull<c
 
         let pixel_format: usize = msg_send![reference, pixelFormat];
         let drawable_size: CGSize = msg_send![reference, drawableSize];
-        let frame: CGRect = msg_send![reference, frame];
         let scale: f64 = msg_send![reference, contentsScale];
+
+        // Geometry comes from the superlayer's bounds, not the reference
+        // layer's frame. wgpu's observer layer leaves its own frame at zero and
+        // tracks the superlayer's bounds through an observer, so copying its
+        // frame yields a zero-sized layer — which is never composited, and a
+        // layer that is never composited never has its presents take effect.
+        let ref_frame: CGRect = msg_send![reference, frame];
+        let super_bounds: CGRect = msg_send![superlayer, bounds];
+        let frame = if ref_frame.size.width > 0.0 && ref_frame.size.height > 0.0 {
+            ref_frame
+        } else {
+            super_bounds
+        };
+        log::info!(
+            "MetalFX dual presentation: geometry — wgpu layer frame {}x{}, \
+             superlayer bounds {}x{}, using {}x{}",
+            ref_frame.size.width,
+            ref_frame.size.height,
+            super_bounds.size.width,
+            super_bounds.size.height,
+            frame.size.width,
+            frame.size.height,
+        );
 
         let cls = class!(CAMetalLayer);
         let layer: *mut AnyObject = msg_send![cls, layer];
@@ -558,7 +593,13 @@ pub unsafe fn create_owned_layer(reference: NonNull<c_void>) -> Option<NonNull<c
             pixel_format,
             scale,
         );
-        NonNull::new(layer.cast())
+        // A command queue of our own. Presenting on wgpu's graph command buffer
+        // is the remaining suspect for presents that never take effect, and the
+        // known-good control uses its own queue and buffer.
+        let queue: *mut AnyObject = msg_send![device, newCommandQueue];
+        let queue = NonNull::new(queue.cast::<c_void>())?;
+
+        Some((NonNull::new(layer.cast())?, queue))
     }
 }
 
@@ -678,6 +719,7 @@ pub unsafe fn present_drawable(
     timing: PresentTiming,
     refresh_interval: f64,
     sink: &Arc<PresentSink>,
+    queue_ptr: Option<NonNull<c_void>>,
 ) {
     if cmd_buf_ptr.is_null() {
         return;
@@ -724,11 +766,28 @@ pub unsafe fn present_drawable(
         // handler, which Metal does copy, so it lives until the buffer is done.
         let keep_presented_block = handler.clone();
         let deferred = timing == PresentTiming::Deferred;
+        let own_buffer = timing == PresentTiming::OwnCommandBuffer;
+        let queue_addr = queue_ptr.map(|q| q.as_ptr() as usize);
         let refresh = refresh_interval;
         let done = RcBlock::new(
             move |_finished: NonNull<ProtocolObject<dyn MTLCommandBuffer>>| {
                 let _hold = &keep_presented_block;
                 sink_for_commit.push_committed();
+                if own_buffer {
+                    // The graph's work is done, so a present committed now is
+                    // correctly ordered behind the passes that filled this
+                    // drawable — while still coming from our own queue.
+                    if let Some(addr) = queue_addr {
+                        let queue: *mut AnyObject = addr as *mut AnyObject;
+                        let cb: *mut AnyObject = msg_send![queue, commandBuffer];
+                        if !cb.is_null() {
+                            let cb_obj: &ProtocolObject<dyn MTLCommandBuffer> =
+                                &*(cb as *const ProtocolObject<dyn MTLCommandBuffer>);
+                            cb_obj.presentDrawable(&*keep_alive);
+                            cb_obj.commit();
+                        }
+                    }
+                }
                 if deferred {
                     // Present from the completion handler rather than from the
                     // command buffer.
@@ -749,8 +808,8 @@ pub unsafe fn present_drawable(
         sink.push_encoded();
 
         match timing {
-            // Handled in the completion handler registered above.
-            PresentTiming::Deferred => {}
+            // Both handled in the completion handler registered above.
+            PresentTiming::Deferred | PresentTiming::OwnCommandBuffer => {}
             PresentTiming::MinimumDuration => {
                 cmd_buf.presentDrawable_afterMinimumDuration(drawable, refresh_interval);
             }
@@ -790,6 +849,9 @@ pub struct MetalFxDualPresent {
     /// `CAMetalLayer` pointer as a `usize` so the resource stays `Send`. Zero
     /// until the surface exists — the window is created after the plugin.
     layer: usize,
+    /// `MTLCommandQueue` of our own, for presents that must not ride on wgpu's
+    /// command buffer. Zero until the layer is created.
+    queue: usize,
     /// Presentation telemetry, shared with whoever wants to read it.
     pub sink: Arc<PresentSink>,
     /// How the interpolated frame's presentation time is chosen.
@@ -806,6 +868,7 @@ impl Default for MetalFxDualPresent {
     fn default() -> Self {
         Self {
             layer: 0,
+            queue: 0,
             sink: PresentSink::new(),
             timing: PresentTiming::default(),
             // Off by default: on this Bevy/wgpu stack the second present is
@@ -850,6 +913,11 @@ impl MetalFxDualPresent {
         NonNull::new(self.layer as *mut c_void)
     }
 
+    /// Our own command queue, once the layer exists.
+    pub fn queue(&self) -> Option<NonNull<c_void>> {
+        NonNull::new(self.queue as *mut c_void)
+    }
+
     /// Whether a layer has been located yet.
     pub fn has_layer(&self) -> bool {
         self.layer != 0
@@ -886,10 +954,11 @@ pub fn capture_metal_layer(
             // displayed. Stack our own layer above it instead.
             //
             // SAFETY: main thread (Bevy's `Update`), and `wgpu_layer` is live.
-            let Some(owned) = (unsafe { create_owned_layer(wgpu_layer) }) else {
+            let Some((owned, queue)) = (unsafe { create_owned_layer(wgpu_layer) }) else {
                 return;
             };
             state.layer = owned.as_ptr() as usize;
+            state.queue = queue.as_ptr() as usize;
             log::info!(
                 "MetalFX dual presentation: active ({:?} timing) on an owned layer",
                 state.timing

@@ -1422,7 +1422,7 @@ impl MetalFxUpscaleNode {
         output_w: u32,
         output_h: u32,
     ) {
-        use crate::present::{acquire_drawable, present_drawable, PresentTiming};
+        use crate::present::{acquire_drawable, present_drawable};
 
         let Some(dual) = world.get_resource::<crate::present::MetalFxDualPresent>() else {
             return;
@@ -1474,18 +1474,20 @@ impl MetalFxUpscaleNode {
                     present_drawable(
                         ptr,
                         interp_drawable,
-                        PresentTiming::Vsync,
+                        dual.timing,
                         dual.refresh_interval,
                         &dual.sink,
+                        dual.queue(),
                     );
                     // Real frame one refresh later, so the two occupy
                     // consecutive intervals instead of collapsing into one.
                     present_drawable(
                         ptr,
                         real_drawable,
-                        PresentTiming::MinimumDuration,
+                        dual.timing,
                         dual.refresh_interval,
                         &dual.sink,
+                        dual.queue(),
                     );
                 });
         }
