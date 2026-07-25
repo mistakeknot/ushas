@@ -613,7 +613,7 @@ Fixing the staging removed a pathology that had been read as noise:
 The old triple-digit p99 was not thermal noise or CPU contention: it was MetalFX being handed size-mismatched colour
 textures every frame.
 
-## Why it still ships behind an EXPERIMENTAL warning
+## Complete, stable — and still not useful
 
 Frame interpolation only buys frame rate if you present the interpolated frame **and** the real one, paced to the
 display refresh — two presents per simulated frame. A Bevy render graph presents its swapchain once per
@@ -625,8 +625,11 @@ against well under 1 ms for `temporal` alone on the same scene. That is a real c
 amount of work *inside* the render-graph node changes it. Display-timed dual presentation lives below Bevy's render
 graph, in the same layer as the `CAMetalLayer` work from `6zit.14`.
 
-So the honest state is: **the MetalFX usage is correct and validated; the feature is unrealized.** The README says
-exactly that rather than claiming a working feature, and the presentation work is tracked separately.
+So the honest state is: **the MetalFX usage is correct and validated; the feature is unrealized.** The path is no
+longer *experimental* — it is debug-layer clean, tested, correctly gated, and holds 120 fps — so the README no longer
+labels it that way. What it carries instead is a known-limitation note telling callers not to enable the feature
+unless they are also building the presentation half, since `temporal` gives the same picture far more cheaply. The
+presentation work is tracked separately.
 
 The useful research finding is the cost figure itself — MetalFX frame interpolation is roughly a 5–7 ms/frame GPU
 tax at 3024×1800 on an M5 Max. Against this project's measured ~120 fps present-capped ceiling (8.3 ms/frame), that

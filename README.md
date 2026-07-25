@@ -83,29 +83,31 @@ bevy_metalfx = "0.2"
 # Temporal upscaling (adds motion vector + depth prepass) — stable
 bevy_metalfx = { version = "0.2", features = ["temporal"] }
 
-# Frame interpolation (requires macOS 26+) — EXPERIMENTAL, see note below
+# Frame interpolation (requires macOS 26+) — see the limitation below
 bevy_metalfx = { version = "0.2", features = ["frame-interpolation"] }
 ```
 
-> **Frame interpolation is experimental — it computes a frame it cannot show.**
-> The MetalFX side is now correct and passes the Metal debug layer: the mode runs
-> a temporal upscale, then feeds two consecutive *upscaled* frames plus the
-> content-sized depth/motion pair to an `MTLFXFrameInterpolator`, with real
-> camera parameters from Bevy's `Projection` and a real frame delta.
->
-> What it does **not** do is present the synthesized frame. Interpolation only
-> buys frame rate if you display the interpolated frame *and* the real one, paced
-> to the display's refresh — two presents per simulated frame. A Bevy render
+The `frame-interpolation` path is complete and stable: it runs a temporal
+upscale, then feeds two consecutive *upscaled* frames plus the content-sized
+depth/motion pair to an `MTLFXFrameInterpolator`, using real camera parameters
+from Bevy's `Projection` and a real frame delta. It passes the Metal debug
+layer, and holds the same ~120 fps as `temporal` on an M5 Max.
+
+> **Known limitation — the synthesized frame is not presented.** Interpolation
+> only buys frame rate if you display the interpolated frame *and* the real one,
+> paced to the display's refresh: two presents per simulated frame. A Bevy render
 > graph presents its swapchain once per `App::update()`, so this node presents
 > the genuine upscaled frame and leaves the interpolated one in an offscreen
-> texture. Net effect today: identical visuals to `temporal`, plus the GPU cost
-> of the interpolation pass (measured at roughly 5–7 ms/frame at 3024×1800 on an
-> M5 Max, versus well under 1 ms for `temporal` alone).
+> texture.
 >
-> Realizing the benefit requires display-timed dual presentation below the Bevy
-> render graph — a renderer-architecture change, not a node change. Until that
-> lands, use `spatial` or `temporal` for shipping work and treat
-> `frame-interpolation` as a correct-but-unrealized building block.
+> Net effect today: visuals identical to `temporal`, plus the GPU cost of the
+> interpolation pass — roughly 5–7 ms/frame at 3024×1800 on an M5 Max, against
+> well under 1 ms for `temporal` alone. **Enable this feature only if you are
+> building the presentation half**; otherwise prefer `temporal`, which gives the
+> same picture for a fraction of the GPU time.
+>
+> Lifting the limitation requires display-timed dual presentation *below* the
+> Bevy render graph — a renderer-architecture change rather than a node change.
 
 ## API Reference
 
