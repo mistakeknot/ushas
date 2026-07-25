@@ -477,6 +477,7 @@ first publish. Changes:
 - **Version 0.1.0 → 0.2.0** — additive (temporal, adaptive scale, gpu-timing, the `6zit.13` quality fixes); no breaking removals.
 - **README compile-fail fixed** — the flagship Quick Start `MetalFxPlugin { .. }` example was missing `adaptive` and the macOS-only `gpu_timing_sink` field with no `..default()`; it would not compile. Now uses `..default()` and documents the `Default` impl.
 - **Frame interpolation honestly labeled EXPERIMENTAL** — the `frame-interpolation` feature compiles and wires an `MTLFXFrameInterpolator`, but it is **not production-ready**: camera params are hardcoded (`node.rs:940`) and the current→previous color copy is unimplemented (`node.rs:982`), so the interpolator never sees a correct previous frame. The README now warns loudly; completion is tracked in `6zit.8`.
+  > **Superseded by `6zit.8`** (see the final section): both TODOs are fixed, and a third defect — the interpolator was at the wrong pipeline stage — was found and fixed. The EXPERIMENTAL label has been dropped; what remains is a documented limitation, not an instability.
 - **GPU-timing diagnostics documented** — previously undocumented public API, now framed as an opt-in profiling facility.
 - Publication posture verified: **zero path/git deps** in the crate, all metadata present, non-macOS stub complete, `# Safety` docs on all `unsafe fn`. `cargo publish --dry-run` packages cleanly as 0.2.0.
 
