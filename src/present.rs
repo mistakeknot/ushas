@@ -1178,46 +1178,16 @@ pub unsafe fn present_pair_deferred(
         let cmd_buf: &ProtocolObject<dyn MTLCommandBuffer> =
             &*(cmd_buf_ptr as *const ProtocolObject<dyn MTLCommandBuffer>);
 
-        // A blit copy demands identical pixel formats, so the layer takes the
-        // source texture's format.
-        //
-        // KNOWN DEFECT: on this scene the source is MTLPixelFormat 71 =
-        // RGBA8Unorm_sRGB, and `CAMetalLayer` does not support RGBA channel
-        // order — its integer formats are BGRA8Unorm / BGRA8Unorm_sRGB. Setting
-        // an unsupported format makes CoreAnimation accept presents and then
-        // skip them, which is exactly the observed signature (callbacks fire,
-        // presentedTime stays 0, nothing displayed).
-        //
-        // Fixing it needs a channel-order conversion, which a blit copy cannot
-        // do — copyFromTexture: requires identical formats. See the e5h3 bead
-        // for the two candidate designs.
+        // The layer is pinned to BGRA8Unorm_sRGB (81) and the sources are BGRA
+        // staging textures, so the blit copy is format-identical. Taking the
+        // format from the source instead would adopt the view's RGBA order,
+        // which CAMetalLayer does not support — it accepts such presents and
+        // then silently skips them.
         static FORMAT_SET: std::sync::Once = std::sync::Once::new();
         FORMAT_SET.call_once(|| {
-            let src: *mut AnyObject = real_tex.cast();
-            let fmt: usize = msg_send![src, pixelFormat];
             let layer_obj: *mut AnyObject = layer.as_ptr().cast();
-            let _: () = msg_send![layer_obj, setPixelFormat: fmt];
-
-            // A half-float layer is EDR content. CoreAnimation will accept
-            // presents against an rgba16Float layer and then skip them unless
-            // the layer opts into extended dynamic range and names an
-            // extended-range colorspace — which looks exactly like a working
-            // present that never reaches the panel (callbacks fire,
-            // presentedTime stays 0).
-            //
-            // 115 = MTLPixelFormatRGBA16Float. (71 is RGBA8Unorm_sRGB — an
-            // integer format, and deliberately NOT matched here.)
-            if fmt == 115 {
-                let _: () = msg_send![layer_obj, setWantsExtendedDynamicRangeContent: true];
-                let cs = CGColorSpaceCreateWithName(kCGColorSpaceExtendedLinearSRGB);
-                if !cs.is_null() {
-                    let _: () = msg_send![layer_obj, setColorspace: cs];
-                }
-                log::info!(
-                    "MetalFX dual presentation: layer opted into EDR (extended linear sRGB) for float format {fmt}"
-                );
-            }
-            log::info!("MetalFX dual presentation: owned layer pixelFormat set to {fmt} (from source texture)");
+            let _: () = msg_send![layer_obj, setPixelFormat: 81usize];
+            log::info!("MetalFX dual presentation: owned layer pinned to BGRA8Unorm_sRGB");
         });
 
         // Retain the sources so they survive until the handler runs.

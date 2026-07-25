@@ -130,6 +130,14 @@ pub(crate) enum SendScaler {
 unsafe impl Send for SendScaler {}
 unsafe impl Sync for SendScaler {}
 
+/// Pixel format for the owned presentation layer and its staging textures.
+///
+/// `CAMetalLayer` accepts BGRA channel order only — setting it to the view's
+/// RGBA format makes CoreAnimation accept presents and then silently skip them.
+#[cfg(feature = "frame-interpolation")]
+const PRESENT_FORMAT: bevy::render::render_resource::TextureFormat =
+    bevy::render::render_resource::TextureFormat::Bgra8UnormSrgb;
+
 /// Cached state for the MetalFX upscale node.
 struct CachedState {
     scaler: SendScaler,
@@ -147,6 +155,17 @@ struct CachedState {
     /// Stable view of the synthesised frame, used as the blit source when it is
     /// drawn into its own drawable for presentation.
     interp_output_view: Option<TextureView>,
+    /// BGRA staging copies of the two frames, for the owned-layer present.
+    ///
+    /// `CAMetalLayer` supports BGRA channel order only, while MetalFX writes in
+    /// the view's format (RGBA here). A blit copy cannot convert channel order,
+    /// so each frame is first drawn into a BGRA texture by the same fullscreen
+    /// blit pass Bevy uses for its own swapchain — which does the conversion for
+    /// free — and the drawable copy is then format-identical.
+    interp_bgra: Option<bevy::render::render_resource::Texture>,
+    interp_bgra_view: Option<TextureView>,
+    real_bgra: Option<bevy::render::render_resource::Texture>,
+    real_bgra_view: Option<TextureView>,
     /// Content-sized Depth32Float texture for temporal mode (written by depth resolve pass).
     content_depth_texture: Option<bevy::render::render_resource::Texture>,
     /// Stable view for the content depth texture (avoids per-frame view creation).
@@ -199,6 +218,9 @@ pub struct MetalFxUpscaleNode {
     /// Separate from `cached_bind_group`, which serves Bevy's swapchain blit.
     #[cfg(feature = "frame-interpolation")]
     cached_real_present_bind_group: Mutex<Option<(TextureViewId, BindGroup)>>,
+    /// Blit pipeline specialised for [`PRESENT_FORMAT`].
+    #[cfg(feature = "frame-interpolation")]
+    cached_present_pipeline: Mutex<Option<CachedRenderPipelineId>>,
 }
 
 impl Default for MetalFxUpscaleNode {
@@ -216,6 +238,8 @@ impl Default for MetalFxUpscaleNode {
             cached_interp_bind_group: Mutex::new(None),
             #[cfg(feature = "frame-interpolation")]
             cached_real_present_bind_group: Mutex::new(None),
+            #[cfg(feature = "frame-interpolation")]
+            cached_present_pipeline: Mutex::new(None),
         }
     }
 }
@@ -426,6 +450,10 @@ impl ViewNode for MetalFxUpscaleNode {
                                 prev_color_texture: None,
                             interp_output_texture: None,
                             interp_output_view: None,
+                            interp_bgra: None,
+                            interp_bgra_view: None,
+                            real_bgra: None,
+                            real_bgra_view: None,
                                 content_depth_texture,
                                 content_depth_view,
                                 content_motion_texture,
@@ -553,6 +581,10 @@ impl ViewNode for MetalFxUpscaleNode {
                             prev_color_texture: None,
                             interp_output_texture: None,
                             interp_output_view: None,
+                            interp_bgra: None,
+                            interp_bgra_view: None,
+                            real_bgra: None,
+                            real_bgra_view: None,
                             content_depth_texture: None,
                             content_depth_view: None,
                             content_motion_texture: None,
@@ -1026,6 +1058,34 @@ impl ViewNode for MetalFxUpscaleNode {
                         &bevy::render::render_resource::TextureViewDescriptor::default(),
                     ));
                     state.interp_output_texture = Some(tex);
+
+                    let mut stage = |label: &'static str| {
+                        let t = device.create_texture(&TextureDescriptor {
+                            label: Some(label),
+                            size: Extent3d {
+                                width: output_w,
+                                height: output_h,
+                                depth_or_array_layers: 1,
+                            },
+                            mip_level_count: 1,
+                            sample_count: 1,
+                            dimension: TextureDimension::D2,
+                            format: PRESENT_FORMAT,
+                            usage: TextureUsages::RENDER_ATTACHMENT
+                                | TextureUsages::COPY_SRC,
+                            view_formats: &[],
+                        });
+                        let v = t.create_view(
+                            &bevy::render::render_resource::TextureViewDescriptor::default(),
+                        );
+                        (t, v)
+                    };
+                    let (t, v) = stage("metalfx_interp_bgra");
+                    state.interp_bgra = Some(t);
+                    state.interp_bgra_view = Some(v);
+                    let (t, v) = stage("metalfx_real_bgra");
+                    state.real_bgra = Some(t);
+                    state.real_bgra_view = Some(v);
                 }
 
                 let prev_tex = state.prev_color_texture.as_ref().unwrap();
@@ -1297,6 +1357,16 @@ impl ViewNode for MetalFxUpscaleNode {
         let interp_view_for_present = state.interp_output_view.clone();
         #[cfg(feature = "frame-interpolation")]
         let real_view_for_present = state.output_view.clone();
+        #[cfg(feature = "frame-interpolation")]
+        let staging = match (
+            state.interp_bgra_view.clone(),
+            state.real_bgra_view.clone(),
+            state.interp_bgra.clone(),
+            state.real_bgra.clone(),
+        ) {
+            (Some(iv), Some(rv), Some(it), Some(rt)) => Some((iv, rv, it, rt)),
+            _ => None,
+        };
 
         // Which frame goes into Bevy's swapchain image?
         //
@@ -1370,39 +1440,100 @@ impl ViewNode for MetalFxUpscaleNode {
         // consecutive vsyncs in the order they depict.
         // --- Phase D: present both frames from our own layer ---
         //
-        // The presents are registered here but performed in the graph command
-        // buffer's completion handler, on a command buffer of our own. That
-        // shape — acquire, copy, present, commit on one buffer we control — is
-        // the only one measured to work; acquiring a drawable mid-graph and
-        // committing later presents a recycled drawable that is silently
-        // discarded. See examples/present_repro.rs.
+        // Two steps, and the split is forced by Metal's rules. First each frame
+        // is drawn into a BGRA staging texture with the same fullscreen blit
+        // pass Bevy uses for its swapchain: `CAMetalLayer` accepts BGRA channel
+        // order only, MetalFX writes the view's RGBA format, and a blit copy
+        // cannot convert between them. Then the presents themselves happen in
+        // the graph command buffer's completion handler, on a command buffer we
+        // own — acquiring the drawables fresh at that moment, because a drawable
+        // acquired mid-graph has been recycled by the time a later commit lands
+        // and its present is silently discarded.
         #[cfg(feature = "frame-interpolation")]
         if dual_active {
-            if let (Some(dual), Some((_, interp_ptr))) = (
+            if let (Some(dual), Some((interp_src, real_src, interp_tex, real_tex))) = (
                 world.get_resource::<crate::present::MetalFxDualPresent>(),
-                interp_ptrs,
+                staging,
             ) {
-                if let (Some(layer), Some(queue)) = (dual.layer(), dual.queue()) {
-                    // SAFETY: the encoder's command buffer is live and
-                    // uncommitted; the textures are this frame's MetalFX output.
-                    unsafe {
-                        render_context
-                            .command_encoder()
-                            .as_hal_mut::<wgpu_hal::metal::Api, _, ()>(|hal_encoder| {
-                                let Some(enc) = hal_encoder else { return };
-                                let Some(cmd_buf) = enc.raw_command_buffer() else {
-                                    return;
-                                };
-                                crate::present::present_pair_deferred(
-                                    cmd_buf.as_ptr() as *mut c_void,
-                                    layer,
-                                    queue,
-                                    interp_ptr,
-                                    out_tex_ptr,
-                                    dual.refresh_interval,
-                                    &dual.sink,
-                                );
-                            });
+                let mut present_pipeline = self.cached_present_pipeline.lock().unwrap();
+                let present_id = match *present_pipeline {
+                    Some(id) => id,
+                    None => {
+                        let id = pipeline_cache.queue_render_pipeline(blit_pipeline.specialize(
+                            BlitPipelineKey {
+                                texture_format: PRESENT_FORMAT,
+                                blend_state: None,
+                                samples: 1,
+                            },
+                        ));
+                        *present_pipeline = Some(id);
+                        id
+                    }
+                };
+                drop(present_pipeline);
+
+                if let (Some(present_pipe), Some(layer), Some(queue)) = (
+                    pipeline_cache.get_render_pipeline(present_id),
+                    dual.layer(),
+                    dual.queue(),
+                ) {
+                    self.convert_for_present(
+                        render_context,
+                        blit_pipeline,
+                        pipeline_cache,
+                        present_pipe,
+                        interp_view_for_present.as_ref().unwrap(),
+                        &interp_src,
+                        true,
+                    );
+                    self.convert_for_present(
+                        render_context,
+                        blit_pipeline,
+                        pipeline_cache,
+                        present_pipe,
+                        &real_view_for_present,
+                        &real_src,
+                        false,
+                    );
+
+                    // Raw handles must be taken before `as_hal_mut` — wgpu's
+                    // snatch lock forbids overlapping texture and encoder access.
+                    let ptrs = unsafe {
+                        let i = interp_tex.as_hal::<wgpu_hal::metal::Api>();
+                        let r = real_tex.as_hal::<wgpu_hal::metal::Api>();
+                        match (i, r) {
+                            (Some(i), Some(r)) => Some((
+                                i.raw_handle().as_ptr() as *mut c_void,
+                                r.raw_handle().as_ptr() as *mut c_void,
+                            )),
+                            _ => None,
+                        }
+                    };
+
+                    if let Some((interp_ptr, real_ptr)) = ptrs {
+                        // SAFETY: the encoder's command buffer is live and
+                        // uncommitted, and both conversion passes are encoded on
+                        // it, so the staging textures are final by the time the
+                        // completion handler copies them.
+                        unsafe {
+                            render_context
+                                .command_encoder()
+                                .as_hal_mut::<wgpu_hal::metal::Api, _, ()>(|hal_encoder| {
+                                    let Some(enc) = hal_encoder else { return };
+                                    let Some(cmd_buf) = enc.raw_command_buffer() else {
+                                        return;
+                                    };
+                                    crate::present::present_pair_deferred(
+                                        cmd_buf.as_ptr() as *mut c_void,
+                                        layer,
+                                        queue,
+                                        interp_ptr,
+                                        real_ptr,
+                                        dual.refresh_interval,
+                                        &dual.sink,
+                                    );
+                                });
+                        }
                     }
                 }
             }
@@ -1604,5 +1735,74 @@ impl MetalFxUpscaleNode {
         }
 
         true
+    }
+}
+
+#[cfg(feature = "frame-interpolation")]
+impl MetalFxUpscaleNode {
+    /// Draw `source` into `target` with the fullscreen blit pipeline,
+    /// converting RGBA to the layer's BGRA channel order on the way.
+    #[allow(clippy::too_many_arguments)]
+    fn convert_for_present(
+        &self,
+        render_context: &mut RenderContext,
+        blit_pipeline: &BlitPipeline,
+        pipeline_cache: &PipelineCache,
+        pipeline: &bevy::render::render_resource::RenderPipeline,
+        source: &TextureView,
+        target: &TextureView,
+        is_interpolated: bool,
+    ) {
+        // Two caches, one per source, so alternating between the interpolated
+        // and the real frame each frame does not thrash a single slot.
+        let mut slot = if is_interpolated {
+            self.cached_interp_bind_group.lock().unwrap()
+        } else {
+            self.cached_real_present_bind_group.lock().unwrap()
+        };
+        let bind_group = match &mut *slot {
+            Some((id, bg)) if source.id() == *id => bg,
+            s => {
+                let bg = blit_pipeline.create_bind_group(
+                    render_context.render_device(),
+                    source,
+                    pipeline_cache,
+                );
+                let (_, bg) = s.insert((source.id(), bg));
+                bg
+            }
+        };
+
+        let mut pass = render_context
+            .command_encoder()
+            .begin_render_pass(&RenderPassDescriptor {
+                label: Some(if is_interpolated {
+                    "metalfx_present_convert_interp"
+                } else {
+                    "metalfx_present_convert_real"
+                }),
+                color_attachments: &[Some(
+                    bevy::render::render_resource::RenderPassColorAttachment {
+                        view: target,
+                        resolve_target: None,
+                        depth_slice: None,
+                        ops: bevy::render::render_resource::Operations {
+                            // The fullscreen triangle covers every pixel, and a
+                            // clear load action is free on a tile-based GPU.
+                            load: bevy::render::render_resource::LoadOp::Clear(
+                                bevy::color::LinearRgba::BLACK.into(),
+                            ),
+                            store: bevy::render::render_resource::StoreOp::Store,
+                        },
+                    },
+                )],
+                depth_stencil_attachment: None,
+                timestamp_writes: None,
+                occlusion_query_set: None,
+            });
+
+        pass.set_pipeline(pipeline);
+        pass.set_bind_group(0, bind_group, &[]);
+        pass.draw(0..3, 0..1);
     }
 }
