@@ -15,7 +15,7 @@ mod platform;
 mod node;
 
 #[cfg(target_os = "macos")]
-pub use node::{MetalFxConfig, MetalFxUpscaleNode};
+pub use node::{MetalFxConfig, MetalFxFrameTiming, MetalFxUpscaleNode};
 
 #[cfg(not(target_os = "macos"))]
 mod stub {
@@ -217,6 +217,18 @@ impl bevy::app::Plugin for MetalFxPlugin {
         app.add_plugins(
             bevy::render::extract_resource::ExtractResourcePlugin::<MetalFxConfig>::default(),
         );
+
+        // Frame interpolation needs the real inter-frame interval; mirror the
+        // main world's `Time` delta into the render world (which has no `Time`).
+        #[cfg(target_os = "macos")]
+        if self.mode == MetalFxMode::FrameInterpolation {
+            app.insert_resource(MetalFxFrameTiming::default());
+            app.add_systems(bevy::app::Update, update_frame_timing);
+            app.add_plugins(
+                bevy::render::extract_resource::ExtractResourcePlugin::<MetalFxFrameTiming>::default(
+                ),
+            );
+        }
 
         #[cfg(target_os = "macos")]
         {
@@ -526,6 +538,17 @@ fn sync_config_scale(
     if scale.is_changed() && !scale.is_added() {
         config.render_scale = scale.0;
     }
+}
+
+/// Mirror the main-world frame delta into [`MetalFxFrameTiming`] for extraction.
+///
+/// Clamped to a sane interval: MetalFX divides by `deltaTime` internally, so a
+/// zero (first frame, or a paused clock) would poison the interpolation, and a
+/// multi-second hitch would extrapolate motion absurdly far. The bounds span
+/// ~1000 Hz down to ~5 Hz.
+#[cfg(target_os = "macos")]
+fn update_frame_timing(time: Res<Time>, mut timing: ResMut<MetalFxFrameTiming>) {
+    timing.delta_seconds = time.delta_secs().clamp(0.001, 0.2);
 }
 
 /// Insert prepass components and jitter on Camera3d for temporal mode.

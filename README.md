@@ -87,12 +87,25 @@ bevy_metalfx = { version = "0.2", features = ["temporal"] }
 bevy_metalfx = { version = "0.2", features = ["frame-interpolation"] }
 ```
 
-> **Frame interpolation is experimental.** The `frame-interpolation` feature
-> compiles and wires an `MTLFXFrameInterpolator` into the render graph, but the
-> path is not yet production-ready: camera parameters are currently hardcoded
-> rather than extracted from Bevy's `Projection`, and the previous-frame color
-> copy is not yet implemented. Use `spatial` or `temporal` for shipping work;
-> treat `frame-interpolation` as a preview that will stabilize in a later release.
+> **Frame interpolation is experimental — it computes a frame it cannot show.**
+> The MetalFX side is now correct and passes the Metal debug layer: the mode runs
+> a temporal upscale, then feeds two consecutive *upscaled* frames plus the
+> content-sized depth/motion pair to an `MTLFXFrameInterpolator`, with real
+> camera parameters from Bevy's `Projection` and a real frame delta.
+>
+> What it does **not** do is present the synthesized frame. Interpolation only
+> buys frame rate if you display the interpolated frame *and* the real one, paced
+> to the display's refresh — two presents per simulated frame. A Bevy render
+> graph presents its swapchain once per `App::update()`, so this node presents
+> the genuine upscaled frame and leaves the interpolated one in an offscreen
+> texture. Net effect today: identical visuals to `temporal`, plus the GPU cost
+> of the interpolation pass (measured at roughly 5–7 ms/frame at 3024×1800 on an
+> M5 Max, versus well under 1 ms for `temporal` alone).
+>
+> Realizing the benefit requires display-timed dual presentation below the Bevy
+> render graph — a renderer-architecture change, not a node change. Until that
+> lands, use `spatial` or `temporal` for shipping work and treat
+> `frame-interpolation` as a correct-but-unrealized building block.
 
 ## API Reference
 

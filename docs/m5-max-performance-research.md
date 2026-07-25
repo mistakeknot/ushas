@@ -557,3 +557,78 @@ non-adaptive path is byte-identical to before (`dynamic_res_range = None` ⇒ th
 input), so the common case is provably untouched.
 
 With `6zit.12` resolved, only `6zit.8` (frame-interpolation completion) remains open under the (closed) epic.
+
+---
+
+# 6zit.8 — frame interpolation: correct, and still not useful
+
+`6zit.8` was filed as a two-item cleanup: implement the missing current→previous colour blit, and replace the
+hardcoded camera parameters with real ones from Bevy. Both are done. But grounding the work in Apple's headers and
+the Metal debug layer turned up a third problem the bead did not know about, and that problem is the one that
+actually decides whether the feature is worth shipping.
+
+## What the bead asked for (done)
+
+| Fix | Before | After |
+|---|---|---|
+| Previous-frame colour history | never written — `prevColorTexture` held uninitialised memory for the life of the process | `copy_texture_to_texture` from the upscaled frame, encoded *after* the interpolation pass so the pass still reads the genuine previous frame |
+| Camera parameters | hardcoded `1/60`, `45°`, `0.1`, `1000` | read from the `Projection` component that `extract_cameras` clones into the render world; delta from a `Time` mirror resource |
+| FOV units | Bevy radians passed straight into a degrees API | `fov.to_degrees()` — a silent ~57× error otherwise |
+| Reverse-Z | relied on an undocumented default | `setDepthReversed(true)` stated explicitly, matching Bevy's infinite reverse-Z projection |
+| Device gating | already correct | unchanged — `MTLFXFrameInterpolatorDescriptor::supportsDevice` |
+
+`Time` needs the mirror because the render world genuinely has no `Time` resource — `bevy_time` only plumbs an
+`Instant` channel between the worlds — whereas `Projection` needs nothing, because `extract_cameras` already does
+`commands.insert(projection.clone())` onto the view entity.
+
+## The problem the bead missed: wrong pipeline stage
+
+The mode was wired as an *alternative* to upscaling — low-res colour in, full-res interpolated frame out. Running
+under `MTL_DEBUG_LAYER=1` says otherwise, immediately and unambiguously:
+
+```
+MetalFXDebugError.h:29: failed assertion `Color texture width mismatch from descriptor'
+```
+
+Reading the headers explains it. `MTLFXFrameInterpolatorDescriptor.inputWidth` is documented as "the width of the
+input **motion and depth** texture"; `outputWidth` is "the width of the **output colour** texture". The colour
+textures — both `colorTexture` and `prevColorTexture` — live at *output* resolution. The interpolator belongs
+**after** the upscaler, not in place of it, and `MTLFXTemporalScaler` conforms to `MTLFXFrameInterpolatableScaler`
+precisely so it can be attached to the descriptor and chained.
+
+So `FrameInterpolation` now holds *both* objects and encodes two stages per frame: temporal upscale to full res,
+then interpolate between that and the previous full-res frame using content-sized depth/motion.
+
+## Result
+
+Fixing the staging removed a pathology that had been read as noise:
+
+| Metric (bench-quick, 3024×1800, scale 0.5) | Before | After |
+|---|---|---|
+| Frame p99 | 126–148 ms | **17.9 ms** |
+| GPU p99 | 131.9 ms | **5.8–8.7 ms** |
+| Metal debug layer | assertion failure | **clean** |
+| Normal (vsync) run | erratic, 6–200 fps | **~120 fps, stable** |
+
+The old triple-digit p99 was not thermal noise or CPU contention: it was MetalFX being handed size-mismatched colour
+textures every frame.
+
+## Why it still ships behind an EXPERIMENTAL warning
+
+Frame interpolation only buys frame rate if you present the interpolated frame **and** the real one, paced to the
+display refresh — two presents per simulated frame. A Bevy render graph presents its swapchain once per
+`App::update()`. This node therefore presents the genuine upscaled frame and leaves the interpolated frame in an
+offscreen texture.
+
+Net effect today: visually identical to `temporal`, plus the cost of the interpolation pass — GPU mean ~5.5–7.1 ms
+against well under 1 ms for `temporal` alone on the same scene. That is a real cost for no visible benefit, and no
+amount of work *inside* the render-graph node changes it. Display-timed dual presentation lives below Bevy's render
+graph, in the same layer as the `CAMetalLayer` work from `6zit.14`.
+
+So the honest state is: **the MetalFX usage is correct and validated; the feature is unrealized.** The README says
+exactly that rather than claiming a working feature, and the presentation work is tracked separately.
+
+The useful research finding is the cost figure itself — MetalFX frame interpolation is roughly a 5–7 ms/frame GPU
+tax at 3024×1800 on an M5 Max. Against this project's measured ~120 fps present-capped ceiling (8.3 ms/frame), that
+tax only pays for itself if dual presentation actually doubles the presented rate. That is a real question, and now
+a measurable one.

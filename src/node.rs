@@ -13,6 +13,29 @@
 //!       → blit render pass → out_texture (swapchain)
 //! ```
 //!
+//! ## Frame Interpolation
+//!
+//! `FrameInterpolation` is *additive* to temporal upscaling, not an alternative
+//! to it. `MTLFXFrameInterpolator` consumes two consecutive **upscaled** frames,
+//! so the mode holds both objects and encodes two stages per frame:
+//!
+//! ```text
+//! main_texture (low-res) ─┬→ temporal upscale ──→ metalfx_output (full-res)
+//!                         │                          │        │
+//!   content depth+motion ─┴──────────────→ interpolate│        └→ swapchain
+//!                                              ↑      ↓
+//!                     metalfx_prev_color ──────┘  metalfx_interp_output
+//!                            ↖───────── copy ────────┘  (computed, unpresented)
+//! ```
+//!
+//! The descriptor's `inputWidth`/`inputHeight` describe only the depth and
+//! motion textures; the color textures are at **output** size. Sizing them to
+//! the render resolution trips a MetalFX debug-layer assertion ("Color texture
+//! width mismatch from descriptor").
+//!
+//! The interpolated frame is currently computed but never presented — see the
+//! crate README for why realizing it needs display-timed dual presentation.
+//!
 //! ## Temporal Scaler Threading
 //!
 //! The temporal scaler's `newTemporalScalerWithDevice:` compiles ML pipelines
@@ -61,11 +84,42 @@ pub struct MetalFxConfig {
     pub dynamic_res_range: Option<(f32, f32)>,
 }
 
+/// Per-frame wall-clock delta, mirrored into the render world.
+///
+/// `MTLFXFrameInterpolator::setDeltaTime` wants "the length of the time
+/// interval, in seconds, between time of current and previous frame". The
+/// render world has no `Time` resource of its own (`bevy_time` only plumbs an
+/// `Instant` channel between the worlds), so the main world copies its delta
+/// into this resource and `ExtractResourcePlugin` carries it across.
+///
+/// Only the frame-interpolation path reads it; other modes ignore it.
+#[derive(Resource, Clone, Copy, bevy::render::extract_resource::ExtractResource)]
+pub struct MetalFxFrameTiming {
+    /// Seconds elapsed since the previous frame.
+    pub delta_seconds: f32,
+}
+
+impl Default for MetalFxFrameTiming {
+    fn default() -> Self {
+        // 60 Hz until the first real frame delta arrives.
+        Self {
+            delta_seconds: 1.0 / 60.0,
+        }
+    }
+}
+
 /// Thread-safe wrapper for MetalFX scalers/interpolators.
 pub(crate) enum SendScaler {
     Spatial(Retained<ProtocolObject<dyn MTLFXSpatialScaler>>),
     Temporal(Retained<ProtocolObject<dyn MTLFXTemporalScaler>>),
-    FrameInterpolator(Retained<ProtocolObject<dyn MTLFXFrameInterpolator>>),
+    /// Frame interpolation is a *two-stage* pipeline, not an alternative to
+    /// upscaling: the temporal scaler produces the full-res frame, and the
+    /// interpolator synthesises an intermediate frame from two consecutive
+    /// full-res frames. Both objects are held together for the life of the node.
+    FrameInterpolator {
+        scaler: Retained<ProtocolObject<dyn MTLFXTemporalScaler>>,
+        interpolator: Retained<ProtocolObject<dyn MTLFXFrameInterpolator>>,
+    },
 }
 
 // Safety: Metal framework objects are thread-safe per Apple's Metal Best
@@ -80,8 +134,13 @@ struct CachedState {
     input_texture: bevy::render::render_resource::Texture,
     output_texture: bevy::render::render_resource::Texture,
     output_view: TextureView,
-    /// Previous frame color texture for frame interpolation (ring buffer A).
+    /// Previous frame's *upscaled* color, at output resolution — the history
+    /// input for frame interpolation.
     prev_color_texture: Option<bevy::render::render_resource::Texture>,
+    /// Destination for the synthesised intermediate frame (frame interpolation
+    /// only), at output resolution. Kept separate from `output_texture` so the
+    /// real upscaled frame survives for presentation and for the history copy.
+    interp_output_texture: Option<bevy::render::render_resource::Texture>,
     /// Content-sized Depth32Float texture for temporal mode (written by depth resolve pass).
     content_depth_texture: Option<bevy::render::render_resource::Texture>,
     /// Stable view for the content depth texture (avoids per-frame view creation).
@@ -148,13 +207,17 @@ impl ViewNode for MetalFxUpscaleNode {
         &'static ViewTarget,
         Option<&'static ViewPrepassTextures>,
         Option<&'static TemporalJitter>,
+        // `extract_cameras` clones `Projection` onto the render-world view
+        // entity, so the camera frustum is readable here without a bespoke
+        // extract system. Frame interpolation needs FOV/near/far from it.
+        Option<&'static Projection>,
     );
 
     fn run<'w>(
         &self,
         _graph: &mut RenderGraphContext,
         render_context: &mut RenderContext<'w>,
-        (target, prepass_textures, temporal_jitter): bevy::ecs::query::QueryItem<
+        (target, prepass_textures, temporal_jitter, projection): bevy::ecs::query::QueryItem<
             'w,
             '_,
             Self::ViewQuery,
@@ -258,7 +321,7 @@ impl ViewNode for MetalFxUpscaleNode {
                             // Content-sized depth texture for temporal mode.
                             // Depth32Float — matches scaler's setDepthTextureFormat.
                             // Written via depth resolve render pass (@builtin(frag_depth)).
-                            let (content_depth_texture, content_depth_view) = if matches!(scaler, SendScaler::Temporal(_) | SendScaler::FrameInterpolator(_)) {
+                            let (content_depth_texture, content_depth_view) = if matches!(scaler, SendScaler::Temporal(_) | SendScaler::FrameInterpolator { .. }) {
                                 let tex = device.create_texture(&TextureDescriptor {
                                     label: Some("metalfx_content_depth"),
                                     size: Extent3d {
@@ -285,7 +348,7 @@ impl ViewNode for MetalFxUpscaleNode {
                             // Content-sized motion vector texture for temporal mode.
                             // Written via motion resolve render pass (Bevy's prepass
                             // textures lack COPY_SRC, so copy_texture_to_texture fails).
-                            let (content_motion_texture, content_motion_view) = if matches!(scaler, SendScaler::Temporal(_) | SendScaler::FrameInterpolator(_)) {
+                            let (content_motion_texture, content_motion_view) = if matches!(scaler, SendScaler::Temporal(_) | SendScaler::FrameInterpolator { .. }) {
                                 let tex = device.create_texture(&TextureDescriptor {
                                     label: Some("metalfx_content_motion"),
                                     size: Extent3d {
@@ -320,9 +383,12 @@ impl ViewNode for MetalFxUpscaleNode {
                                 sample_count: 1,
                                 dimension: TextureDimension::D2,
                                 format: main_format,
+                                // COPY_SRC: frame interpolation snapshots the upscaled
+                                // frame into `metalfx_prev_color` as history.
                                 usage: TextureUsages::RENDER_ATTACHMENT
                                     | TextureUsages::TEXTURE_BINDING
-                                    | TextureUsages::STORAGE_BINDING,
+                                    | TextureUsages::STORAGE_BINDING
+                                    | TextureUsages::COPY_SRC,
                                 view_formats: &[],
                             });
                             let output_view = output_texture.create_view(
@@ -340,6 +406,7 @@ impl ViewNode for MetalFxUpscaleNode {
                                 output_texture,
                                 output_view,
                                 prev_color_texture: None,
+                            interp_output_texture: None,
                                 content_depth_texture,
                                 content_depth_view,
                                 content_motion_texture,
@@ -445,9 +512,11 @@ impl ViewNode for MetalFxUpscaleNode {
                             sample_count: 1,
                             dimension: TextureDimension::D2,
                             format: main_format,
+                            // COPY_SRC: see the sibling `metalfx_output` above.
                             usage: TextureUsages::RENDER_ATTACHMENT
                                 | TextureUsages::TEXTURE_BINDING
-                                | TextureUsages::STORAGE_BINDING,
+                                | TextureUsages::STORAGE_BINDING
+                                | TextureUsages::COPY_SRC,
                             view_formats: &[],
                         });
                         let output_view = output_texture.create_view(
@@ -463,6 +532,7 @@ impl ViewNode for MetalFxUpscaleNode {
                             output_texture,
                             output_view,
                             prev_color_texture: None,
+                            interp_output_texture: None,
                             content_depth_texture: None,
                             content_depth_view: None,
                             content_motion_texture: None,
@@ -551,7 +621,7 @@ impl ViewNode for MetalFxUpscaleNode {
         // them into content-sized textures before passing to MetalFX.
         let is_temporal_like = matches!(
             state.scaler,
-            SendScaler::Temporal(_) | SendScaler::FrameInterpolator(_)
+            SendScaler::Temporal(_) | SendScaler::FrameInterpolator { .. }
         );
 
         if is_temporal_like {
@@ -891,10 +961,16 @@ impl ViewNode for MetalFxUpscaleNode {
         };
 
         // For frame interpolation, extract prev color ptr (must be before as_hal_mut).
-        let prev_color_ptr = match &state.scaler {
-            SendScaler::FrameInterpolator(_) => {
+        // Frame interpolation needs two extra full-resolution textures: the
+        // previous upscaled frame (history) and somewhere to put the synthesised
+        // frame. Both sit at *output* size — the interpolator consumes upscaled
+        // color, so `inputWidth/Height` on its descriptor describe only the
+        // depth/motion textures. Sizing these to the input instead trips
+        // MetalFX's "Color texture width mismatch from descriptor" assertion.
+        let interp_ptrs = match &state.scaler {
+            SendScaler::FrameInterpolator { .. } => {
                 if state.prev_color_texture.is_none() {
-                    let prev_tex = device.create_texture(&TextureDescriptor {
+                    state.prev_color_texture = Some(device.create_texture(&TextureDescriptor {
                         label: Some("metalfx_prev_color"),
                         size: Extent3d {
                             width: output_w,
@@ -905,19 +981,46 @@ impl ViewNode for MetalFxUpscaleNode {
                         sample_count: 1,
                         dimension: TextureDimension::D2,
                         format: main_format,
-                        usage: TextureUsages::RENDER_ATTACHMENT
-                            | TextureUsages::TEXTURE_BINDING
-                            | TextureUsages::COPY_DST,
+                        usage: TextureUsages::TEXTURE_BINDING | TextureUsages::COPY_DST,
                         view_formats: &[],
-                    });
-                    state.prev_color_texture = Some(prev_tex);
+                    }));
                 }
+                if state.interp_output_texture.is_none() {
+                    state.interp_output_texture =
+                        Some(device.create_texture(&TextureDescriptor {
+                            label: Some("metalfx_interp_output"),
+                            size: Extent3d {
+                                width: output_w,
+                                height: output_h,
+                                depth_or_array_layers: 1,
+                            },
+                            mip_level_count: 1,
+                            sample_count: 1,
+                            dimension: TextureDimension::D2,
+                            format: main_format,
+                            usage: TextureUsages::TEXTURE_BINDING
+                                | TextureUsages::STORAGE_BINDING
+                                | TextureUsages::COPY_SRC,
+                            view_formats: &[],
+                        }));
+                }
+
                 let prev_tex = state.prev_color_texture.as_ref().unwrap();
                 let Some(hal) = (unsafe { prev_tex.as_hal::<wgpu_hal::metal::Api>() }) else {
                     log::error!("MetalFxUpscaleNode: no Metal HAL for prev color texture");
                     return Ok(());
                 };
-                Some(unsafe { hal.raw_handle().as_ptr() as *mut c_void })
+                let prev_ptr = unsafe { hal.raw_handle().as_ptr() as *mut c_void };
+                drop(hal);
+
+                let interp_tex = state.interp_output_texture.as_ref().unwrap();
+                let Some(hal) = (unsafe { interp_tex.as_hal::<wgpu_hal::metal::Api>() }) else {
+                    log::error!("MetalFxUpscaleNode: no Metal HAL for interp output texture");
+                    return Ok(());
+                };
+                let interp_ptr = unsafe { hal.raw_handle().as_ptr() as *mut c_void };
+
+                Some((prev_ptr, interp_ptr))
             }
             _ => None,
         };
@@ -955,9 +1058,12 @@ impl ViewNode for MetalFxUpscaleNode {
                     });
                 }
             }
-            SendScaler::FrameInterpolator(interpolator) => {
+            SendScaler::FrameInterpolator {
+                scaler,
+                interpolator,
+            } => {
                 let (depth_ptr, motion_ptr) = temporal_ptrs.unwrap();
-                let prev_color_ptr = prev_color_ptr.unwrap();
+                let (prev_color_ptr, interp_out_ptr) = interp_ptrs.unwrap();
                 // Bevy's `TemporalJitter.offset` is a pixel offset in [-0.5, 0.5]
                 // whose Y is flipped when it enters clip space (see
                 // `TemporalJitter::jitter_projection`: `offset * vec2(2, -2)`).
@@ -970,13 +1076,51 @@ impl ViewNode for MetalFxUpscaleNode {
                 let motion_scale_x = -(input_w as f32);
                 let motion_scale_y = -(input_h as f32);
 
-                // Camera params — use defaults for strategy game.
-                // TODO: Extract from Bevy Projection component when available in ViewQuery.
-                let delta_time = 1.0 / 60.0; // Approximate
-                let field_of_view = 45.0_f32; // Degrees
-                let aspect_ratio = output_w as f32 / output_h as f32;
-                let near_plane = 0.1_f32;
-                let far_plane = 1000.0_f32;
+                // Camera params, read from the render world rather than guessed.
+                //
+                // `MTLFXFrameInterpolator` uses these to unproject depth when it
+                // synthesises the intermediate frame, so wrong values distort
+                // the motion field rather than failing loudly.
+                //
+                // Unit trap: MetalFX documents `fieldOfView` as the *vertical*
+                // FOV in DEGREES; Bevy's `PerspectiveProjection::fov` is
+                // vertical FOV in RADIANS. Passing it through unconverted is a
+                // silent ~57x error.
+                let (field_of_view, aspect_ratio, near_plane, far_plane) = match projection {
+                    Some(Projection::Perspective(p)) => (
+                        p.fov.to_degrees(),
+                        p.aspect_ratio,
+                        p.near,
+                        p.far,
+                    ),
+                    // Orthographic/custom projections have no meaningful FOV.
+                    // MetalFX frame interpolation assumes a perspective frustum,
+                    // so fall back to a neutral one and let the caller know.
+                    _ => {
+                        // Once, not per-frame — this runs in the render loop.
+                        static WARNED: std::sync::Once = std::sync::Once::new();
+                        WARNED.call_once(|| {
+                            log::warn!(
+                                "MetalFxUpscaleNode: frame interpolation expects a perspective \
+                                 Projection on the view; falling back to 45deg/0.1/1000"
+                            );
+                        });
+                        (
+                            45.0_f32,
+                            output_w as f32 / output_h as f32,
+                            0.1_f32,
+                            1000.0_f32,
+                        )
+                    }
+                };
+
+                // Real inter-frame interval, mirrored from the main world's
+                // `Time` (the render world has none). Defaults to 60Hz if the
+                // resource is missing, which only happens when the plugin was
+                // built in a non-interpolation mode.
+                let delta_time = world
+                    .get_resource::<MetalFxFrameTiming>()
+                    .map_or(1.0 / 60.0, |t| t.delta_seconds);
 
                 unsafe {
                     encoder.as_hal_mut::<wgpu_hal::metal::Api, _, ()>(|hal_encoder| {
@@ -984,13 +1128,35 @@ impl ViewNode for MetalFxUpscaleNode {
                         let Some(cmd_buf) = enc.raw_command_buffer() else { return };
                         let cmd_buf_ptr = cmd_buf.as_ptr() as *mut c_void;
 
-                        crate::platform::encode_frame_interpolation(
-                            interpolator,
+                        // Stage 1 — upscale the low-res render to output size.
+                        // This is the *real* frame, and it is what gets
+                        // presented; it also becomes next frame's history.
+                        encode_temporal_upscale(
+                            scaler,
                             input_tex_ptr,
-                            prev_color_ptr,
                             depth_ptr,
                             motion_ptr,
                             out_tex_ptr,
+                            cmd_buf_ptr,
+                            content_w as usize,
+                            content_h as usize,
+                            jitter.x,
+                            jitter.y,
+                            motion_scale_x,
+                            motion_scale_y,
+                            is_first_frame,
+                        );
+
+                        // Stage 2 — synthesise the intermediate frame between
+                        // the previous upscaled frame and this one. Both color
+                        // inputs are full-res; depth/motion stay content-sized.
+                        crate::platform::encode_frame_interpolation(
+                            interpolator,
+                            out_tex_ptr,
+                            prev_color_ptr,
+                            depth_ptr,
+                            motion_ptr,
+                            interp_out_ptr,
                             cmd_buf_ptr,
                             jitter.x,
                             jitter.y,
@@ -1010,9 +1176,29 @@ impl ViewNode for MetalFxUpscaleNode {
                     });
                 }
 
-                // After encoding, copy current color to prev for next frame.
-                // The encoder will handle this as a GPU copy.
-                // TODO: Implement GPU blit from main_texture to prev_color_texture.
+                // Snapshot this frame's upscaled color into the history buffer.
+                //
+                // MetalFX's contract: whenever `shouldResetHistory` is false,
+                // `prevColorTexture` must contain the data that was in
+                // `colorTexture` during the *previous* `encodeToCommandBuffer:`.
+                // Without this copy the history buffer stayed uninitialised for
+                // the life of the process, so every frame after the first was
+                // interpolated against garbage (6zit.8).
+                //
+                // Encoded *after* the interpolation pass on purpose: Metal
+                // executes commands in encode order within a command buffer, so
+                // the pass above still reads the genuine previous frame and this
+                // copy only lands afterwards.
+                let prev_tex = state.prev_color_texture.as_ref().unwrap();
+                encoder.copy_texture_to_texture(
+                    state.output_texture.as_image_copy(),
+                    prev_tex.as_image_copy(),
+                    Extent3d {
+                        width: output_w,
+                        height: output_h,
+                        depth_or_array_layers: 1,
+                    },
+                );
             }
             SendScaler::Temporal(scaler) => {
                 let (depth_ptr, motion_ptr) = temporal_ptrs.unwrap();

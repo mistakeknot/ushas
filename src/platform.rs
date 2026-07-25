@@ -15,7 +15,8 @@ use objc2::rc::Retained;
 use objc2::runtime::{AnyClass, ProtocolObject};
 use objc2_metal::{MTLCommandBuffer, MTLDevice, MTLPixelFormat, MTLTexture};
 use objc2_metal_fx::{
-    MTLFXFrameInterpolator, MTLFXFrameInterpolatorBase, MTLFXFrameInterpolatorDescriptor,
+    MTLFXFrameInterpolatableScaler, MTLFXFrameInterpolator, MTLFXFrameInterpolatorBase,
+    MTLFXFrameInterpolatorDescriptor,
     MTLFXSpatialScaler, MTLFXSpatialScalerBase, MTLFXSpatialScalerDescriptor,
     MTLFXTemporalScaler, MTLFXTemporalScalerBase, MTLFXTemporalScalerDescriptor,
 };
@@ -301,6 +302,17 @@ pub(crate) unsafe fn is_frame_interpolation_supported(device_ptr: *mut c_void) -
 ///
 /// # Safety
 /// `device_ptr` must be a valid `id<MTLDevice>` pointer.
+/// `input_width`/`input_height` describe the **motion and depth** textures (the
+/// low-res render size); `output_width`/`output_height` describe the **color**
+/// textures *and* the output. Both `colorTexture` and `prevColorTexture` must
+/// therefore be allocated at output size — the interpolator sits *after* the
+/// upscaler in the pipeline, not in place of it. Getting this wrong trips a
+/// MetalFX debug-layer assertion: "Color texture width mismatch from
+/// descriptor".
+///
+/// `scaler` is the upscaler whose output feeds `colorTexture`. Attaching it
+/// lets the interpolator reuse the scaler's internal history instead of
+/// re-deriving it.
 pub(crate) unsafe fn try_create_frame_interpolator_from_raw(
     device_ptr: *mut c_void,
     input_width: usize,
@@ -311,6 +323,7 @@ pub(crate) unsafe fn try_create_frame_interpolator_from_raw(
     output_format: MTLPixelFormat,
     depth_format: MTLPixelFormat,
     motion_format: MTLPixelFormat,
+    scaler: Option<&ProtocolObject<dyn MTLFXFrameInterpolatableScaler>>,
 ) -> Option<Retained<ProtocolObject<dyn MTLFXFrameInterpolator>>> {
     if device_ptr.is_null() {
         return None;
@@ -334,6 +347,9 @@ pub(crate) unsafe fn try_create_frame_interpolator_from_raw(
         descriptor.setOutputTextureFormat(output_format);
         descriptor.setDepthTextureFormat(depth_format);
         descriptor.setMotionTextureFormat(motion_format);
+        if let Some(scaler) = scaler {
+            descriptor.setScaler(Some(scaler));
+        }
     }
 
     unsafe { descriptor.newFrameInterpolatorWithDevice(device) }
@@ -402,6 +418,13 @@ pub(crate) unsafe fn encode_frame_interpolation(
         interpolator.setNearPlane(near_plane);
         interpolator.setFarPlane(far_plane);
 
+        // Bevy renders with an infinite *reverse-Z* projection: the near plane
+        // maps to depth 1.0 and the far plane to 0.0. MetalFX's
+        // `isDepthReversed` means "zero represents the farthest distance",
+        // which matches. It already defaults to true, but state it explicitly
+        // so the assumption is visible at the call site rather than inherited.
+        interpolator.setDepthReversed(true);
+
         interpolator.setShouldResetHistory(reset_history);
 
         interpolator.encodeToCommandBuffer(cmd_buf);
@@ -433,17 +456,46 @@ pub(crate) unsafe fn spawn_frame_interpolator_thread(
         let cfmt = MTLPixelFormat(color_fmt_raw as objc2_foundation::NSUInteger);
         let ptr = dev.0 as *mut c_void;
         log::info!("MetalFX: background thread starting frame interpolator creation");
-        let interpolator = unsafe {
-            try_create_frame_interpolator_from_raw(
+
+        // Frame interpolation is a two-stage pipeline: the temporal scaler
+        // upscales the low-res render to output size, then the interpolator
+        // synthesises an intermediate frame from consecutive *upscaled* frames.
+        // Both objects are built here so the render thread never blocks on
+        // MetalFX's (multi-second) pipeline compilation.
+        let scaler = unsafe {
+            try_create_temporal_scaler_from_raw(
                 ptr,
                 iw, ih, ow, oh,
                 cfmt, cfmt,
                 MTLPixelFormat::Depth32Float,
                 MTLPixelFormat::RG16Float,
+                None,
+            )
+        };
+        let Some(scaler) = scaler else {
+            log::warn!("MetalFX: frame interpolation needs a temporal scaler, but creation failed");
+            let _ = tx.send(None);
+            return;
+        };
+
+        let interpolator = unsafe {
+            try_create_frame_interpolator_from_raw(
+                ptr,
+                iw, ih, ow, oh,
+                // Color textures live at *output* size (see the fn's doc).
+                cfmt, cfmt,
+                MTLPixelFormat::Depth32Float,
+                MTLPixelFormat::RG16Float,
+                Some(ProtocolObject::from_ref(&*scaler)),
             )
         };
         log::info!("MetalFX: background thread done, interpolator={}", interpolator.is_some());
-        let _ = tx.send(interpolator.map(super::node::SendScaler::FrameInterpolator));
+        let _ = tx.send(
+            interpolator.map(|interpolator| super::node::SendScaler::FrameInterpolator {
+                scaler,
+                interpolator,
+            }),
+        );
     });
 }
 
