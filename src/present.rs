@@ -175,6 +175,14 @@ pub enum PresentTiming {
 #[derive(Debug, Default)]
 pub struct PresentSink {
     inner: Mutex<Ring>,
+    /// The presented-handler block, created once and reused for every drawable.
+    ///
+    /// A per-frame `RcBlock` does not survive long enough: the presented
+    /// callback fires *after* the command buffer completes, so any lifetime
+    /// tied to that buffer has already ended. The block only captures this
+    /// sink, so one instance serves every drawable — created once, leaked
+    /// deliberately, and handed to Metal by raw pointer.
+    handler_block: std::sync::OnceLock<usize>,
 }
 
 #[derive(Debug, Default)]
@@ -211,6 +219,7 @@ impl PresentSink {
                 presented: Vec::with_capacity(RING_CAPACITY),
                 ..Default::default()
             }),
+            handler_block: std::sync::OnceLock::new(),
         })
     }
 
@@ -272,6 +281,26 @@ impl PresentSink {
             .lock()
             .map(|r| (r.encoded, r.dropped, r.presented.len(), r.callbacks, r.committed))
             .unwrap_or((0, 0, 0, 0, 0))
+    }
+
+    /// Raw pointer to the shared presented-handler block, creating it on first
+    /// use. Leaked on purpose — it must outlive every drawable it is attached
+    /// to, and there is exactly one per sink.
+    fn presented_handler_block(self: &Arc<Self>) -> usize {
+        *self.handler_block.get_or_init(|| {
+            let sink = Arc::clone(self);
+            let block = RcBlock::new(
+                move |presented: NonNull<ProtocolObject<dyn MTLDrawable>>| {
+                    sink.push_callback();
+                    // SAFETY: Metal hands us a live drawable for the call.
+                    let t = unsafe { presented.as_ref() }.presentedTime();
+                    if t.is_finite() && t > 0.0 {
+                        sink.push_presented(t);
+                    }
+                },
+            );
+            RcBlock::into_raw(block) as usize
+        })
     }
 
     /// Last presentation time seen, or 0.0 if none yet.
@@ -774,17 +803,7 @@ pub unsafe fn present_drawable(
         // render loop, which cannot observe drops or compositor scheduling.
         // `presentedTime` is documented to stay 0 for a frame that was skipped,
         // so a frame that never makes it to the panel is simply absent here.
-        let sink_for_block = Arc::clone(sink);
-        let handler = RcBlock::new(
-            move |presented: NonNull<ProtocolObject<dyn MTLDrawable>>| {
-                sink_for_block.push_callback();
-                let t = presented.as_ref().presentedTime();
-                if t.is_finite() && t > 0.0 {
-                    sink_for_block.push_presented(t);
-                }
-            },
-        );
-        drawable.addPresentedHandler(&*handler as *const _ as *mut _);
+        drawable.addPresentedHandler(sink.presented_handler_block() as *mut _);
 
         // Keep the drawable alive until the command buffer that presents it has
         // completed.
@@ -804,14 +823,12 @@ pub unsafe fn present_drawable(
         // (plain CAMetalLayer, no Bevy) gets a callback for every present, so
         // the block must outlive registration — park it in the completion
         // handler, which Metal does copy, so it lives until the buffer is done.
-        let keep_presented_block = handler.clone();
         let deferred = timing == PresentTiming::Deferred;
         let own_buffer = timing == PresentTiming::OwnCommandBuffer;
         let queue_addr = queue_ptr.map(|q| q.as_ptr() as usize);
         let refresh = refresh_interval;
         let done = RcBlock::new(
             move |_finished: NonNull<ProtocolObject<dyn MTLCommandBuffer>>| {
-                let _hold = &keep_presented_block;
                 sink_for_commit.push_committed();
                 if own_buffer {
                     // The graph's work is done, so a present committed now is
