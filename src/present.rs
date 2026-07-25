@@ -715,10 +715,19 @@ pub unsafe fn present_drawable(
         // completion handler ties its lifetime to the work that uses it.
         let sink_for_commit = Arc::clone(sink);
         let keep_alive = acquired.drawable.clone();
+        // Keep the *presented* handler's block alive too.
+        //
+        // `RcBlock` is dropped when this function returns, and empirically that
+        // is too early: the handler then never fires. A minimal control app
+        // (plain CAMetalLayer, no Bevy) gets a callback for every present, so
+        // the block must outlive registration — park it in the completion
+        // handler, which Metal does copy, so it lives until the buffer is done.
+        let keep_presented_block = handler.clone();
         let deferred = timing == PresentTiming::Deferred;
         let refresh = refresh_interval;
         let done = RcBlock::new(
             move |_finished: NonNull<ProtocolObject<dyn MTLCommandBuffer>>| {
+                let _hold = &keep_presented_block;
                 sink_for_commit.push_committed();
                 if deferred {
                     // Present from the completion handler rather than from the

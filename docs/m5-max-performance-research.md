@@ -721,7 +721,40 @@ Not established, pending an unlocked display:
   rate, not a presented one. Distinguishing those two is precisely what the new
   telemetry is for.
 
-## Next step
+## Positive control: the environment cannot present, proven
+
+Rather than keep inferring the environment's role, a minimal known-good
+presentation loop was written as a control — plain `CAMetalLayer`, no Bevy, no
+`wgpu`, no MetalFX, ~60 lines of Swift
+(`crates/sw-renderer/scripts/present-probe.swift`):
+
+```
+RESULT encoded=843 callbacks=843 presented=0
+```
+
+`presentedTime` is 0 for **every** drawable in a textbook presentation path. No
+renderer can score above zero in this state, so the null results measured for
+dual presentation say nothing about the dual-presentation code. The environment
+is the cause; this is now established rather than assumed.
+
+## A real defect the control exposed
+
+The control gets a presentation callback for every present (843/843). The Rust
+path gets **zero** callbacks while encoding the same number of presents. So
+`addPresentedHandler` works, and this crate's registration of it does not.
+
+This matters beyond the sleeping display: with the handler never firing,
+`PresentSink` would report zero presented frames *even on a working display*,
+and `validate-dual-present.sh` would emit a false FAIL. Keeping the `RcBlock`
+alive past registration (parking it in the command buffer's completion handler,
+which Metal does copy) was tried and did **not** fix it, so the cause is
+elsewhere — most likely the block's type encoding at the
+`MTLDrawablePresentedHandler` boundary.
+
+**Fix this before trusting any validation run.** The control is the oracle:
+match its behaviour, then re-run.
+
+## Next step## Next step
 
 Re-run on an unlocked session with the display awake:
 
@@ -735,3 +768,8 @@ Re-run on an unlocked session with the display awake:
 The `Presented:` line reports total presented fps, the real/interpolated split,
 interval percentiles, judder and inversions. The acceptance criteria are met if
 presented fps exceeds the temporal baseline with inversions at 0.
+
+Order of work: fix the presented-handler registration first (compare against
+`present-probe.swift`, which must be run on the same unlocked session to confirm
+it reports `presented>0` there), then run the validation script. Without that
+fix the script cannot report a pass under any circumstances.
