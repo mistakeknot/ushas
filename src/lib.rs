@@ -53,7 +53,7 @@ pub use gpu_timing::{GpuTimingSink, GpuTimingStats};
 pub mod present;
 
 #[cfg(all(target_os = "macos", feature = "frame-interpolation"))]
-pub use present::{PresentSink, PresentStats, PresentTiming};
+pub use present::{display_awake, PresentSink, PresentStats, PresentTiming};
 
 /// Shared GPU-timing sink, cloned into both the main world (for the debug
 /// server to read) and the render world (for the upscale node to push into).

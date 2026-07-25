@@ -94,6 +94,27 @@ extern "C" {
     fn CACurrentMediaTime() -> f64;
 }
 
+#[link(name = "CoreGraphics", kind = "framework")]
+extern "C" {
+    fn CGMainDisplayID() -> u32;
+    fn CGDisplayIsAsleep(display: u32) -> i32;
+}
+
+/// Whether the main display is awake enough for presentation to mean anything.
+///
+/// This exists because presentation telemetry is silently meaningless on a
+/// sleeping or locked machine: the compositor sends nothing to a panel, so
+/// `MTLDrawable.presentedTime` stays 0 and presented-handlers never fire for
+/// *any* drawable — the engine's own included. Every configuration then measures
+/// identically zero, which reads exactly like a code defect and is not one.
+///
+/// Uniform null results across independent mechanisms are the tell. Check this
+/// before believing any of them.
+pub fn display_awake() -> bool {
+    // SAFETY: both are pure CoreGraphics queries over a valid display ID.
+    unsafe { CGDisplayIsAsleep(CGMainDisplayID()) == 0 }
+}
+
 /// How many recent presentation samples to retain.
 const RING_CAPACITY: usize = 480;
 
