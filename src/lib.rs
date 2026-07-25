@@ -47,6 +47,14 @@ pub mod gpu_timing;
 #[cfg(target_os = "macos")]
 pub use gpu_timing::{GpuTimingSink, GpuTimingStats};
 
+/// Display-timed dual presentation — the half of frame interpolation that
+/// lives below the render graph. Only meaningful when interpolation is built.
+#[cfg(all(target_os = "macos", feature = "frame-interpolation"))]
+pub mod present;
+
+#[cfg(all(target_os = "macos", feature = "frame-interpolation"))]
+pub use present::{PresentSink, PresentStats, PresentTiming};
+
 /// Shared GPU-timing sink, cloned into both the main world (for the debug
 /// server to read) and the render world (for the upscale node to push into).
 /// Holds recent per-command-buffer GPU-elapsed samples for Phase 0 bound-ness
@@ -104,6 +112,15 @@ pub struct MetalFxPlugin {
     /// provider — avoiding a process-global. `None` ⇒ the plugin makes its own.
     #[cfg(target_os = "macos")]
     pub gpu_timing_sink: Option<std::sync::Arc<GpuTimingSink>>,
+    /// Dual presentation for `FrameInterpolation`: present the synthesised
+    /// frame on its own drawable, ahead of the real one, so interpolation
+    /// actually raises the displayed frame rate.
+    ///
+    /// Ignored in every other mode. Turning it off keeps the interpolated frame
+    /// computed-but-unpresented, which is only useful as a measurement control
+    /// — it costs the full interpolation pass and shows nothing for it.
+    #[cfg(all(target_os = "macos", feature = "frame-interpolation"))]
+    pub dual_present: Option<present::MetalFxDualPresent>,
 }
 
 impl Default for MetalFxPlugin {
@@ -114,6 +131,8 @@ impl Default for MetalFxPlugin {
             adaptive: false,
             #[cfg(target_os = "macos")]
             gpu_timing_sink: None,
+            #[cfg(all(target_os = "macos", feature = "frame-interpolation"))]
+            dual_present: None,
         }
     }
 }
@@ -227,6 +246,21 @@ impl bevy::app::Plugin for MetalFxPlugin {
             app.add_plugins(
                 bevy::render::extract_resource::ExtractResourcePlugin::<MetalFxFrameTiming>::default(
                 ),
+            );
+        }
+
+        // Dual presentation — the half of interpolation that lives below the
+        // render graph. The layer can only be found on the main thread, and the
+        // extra present is encoded in the render world, so the pointer is
+        // captured here and extracted across.
+        #[cfg(all(target_os = "macos", feature = "frame-interpolation"))]
+        if self.mode == MetalFxMode::FrameInterpolation {
+            app.insert_resource(self.dual_present.clone().unwrap_or_default());
+            app.add_systems(bevy::app::Update, present::capture_metal_layer);
+            app.add_plugins(
+                bevy::render::extract_resource::ExtractResourcePlugin::<
+                    present::MetalFxDualPresent,
+                >::default(),
             );
         }
 

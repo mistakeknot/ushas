@@ -31,6 +31,11 @@ wgpu = "27"
 wgpu-hal = { version = "27", features = ["metal"] }
 # foreign-types for metal crate's ForeignType::as_ptr()
 foreign-types = "0.5"
+# Same version wgpu-hal uses, so `metal::Texture` unifies with its types. Needed
+# to wrap a CAMetalDrawable's texture back into wgpu via `texture_from_raw`.
+metal = "0.32"
+# Matches bevy_window's, so `RawWindowHandle` unifies with Bevy's handle type.
+raw-window-handle = "0.6"
 objc2 = "0.6"
 # block2 for MTLCommandBuffer addCompletedHandler: GPU-timing closure (Phase 0 bench)
 block2 = "0.6"
@@ -40,6 +45,11 @@ objc2-metal = { version = "0.3", features = [
   "MTLTexture",
   "MTLCommandBuffer",
   "MTLPixelFormat",
+  # Dual presentation: typed presentDrawable:/atTime: and addPresentedHandler:.
+  # Hand-rolled msg_send for these is easy to get subtly wrong at the block ABI.
+  "MTLDrawable",
+  "block2",
+  "objc2-core-foundation",
 ] }
 objc2-metal-fx = { version = "0.3", features = [
   "MTLFXSpatialScaler",

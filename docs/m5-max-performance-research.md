@@ -636,3 +636,107 @@ The useful research finding is the cost figure itself — MetalFX frame interpol
 tax at 3024×1800 on an M5 Max. Against this project's measured ~120 fps present-capped ceiling (8.3 ms/frame), that
 tax only pays for itself if dual presentation actually doubles the presented rate. That is a real question, and now
 a measurable one.
+
+---
+
+# e5h3 — display-timed dual presentation: a bounded negative result
+
+Frame interpolation was left correct-but-invisible by 6zit.8: the synthesised
+frame is computed and never shown. This bead attempted the other half —
+presenting it — and established that **it cannot be done from a render graph
+node on this stack**. The reason is specific, measured, and not a tuning
+problem.
+
+## What was built
+
+`crates/bevy_metalfx/src/present.rs`, opt-in via `MetalFxPlugin.dual_present`
+and `sw-renderer --dual-present`:
+
+- **Layer discovery** — walks the winit `NSView`'s root layer for the
+  `CAMetalLayer`. `wgpu` installs it as a *sublayer* for an ordinary window
+  (it only adopts the root layer for an `MTKView` or a custom `layerClass`),
+  so `[view layer]` is the wrong answer.
+- **Drawable acquisition + wrapping** — the layer is `framebufferOnly`, so a
+  drawable is not a legal blit destination. The frame is drawn in with the
+  `BlitPipeline` render pass the node already uses, targeting a `wgpu::Texture`
+  wrapped around the drawable's raw `MTLTexture` via `texture_from_raw`.
+- **Presentation telemetry** — `MTLDrawable.addPresentedHandler:` records real
+  `presentedTime` values, giving presented frame rate, interval spread
+  (judder), ordering inversions, and drops. This is the only honest instrument
+  here: render-loop timing cannot see a frame the compositor discarded.
+
+## The result
+
+| | |
+|---|---|
+| Presents encoded | 900 / 900 frames |
+| Command buffers committed and completed | 900 |
+| Drawable acquisition failures | 0 |
+| Presentation callbacks received | **0** |
+| Frames displayed | **0** |
+
+Metal accepts every present. The debug layer is clean under `MTL_DEBUG_LAYER=1`.
+The command buffer carrying the present provably reaches the GPU — an
+`addCompletedHandler` on that same buffer fires 900 times. And nothing is ever
+displayed.
+
+`MTLDrawable.presentedTime` is documented to stay 0 "if a frame has not been
+presented **or has been skipped**", so the counters say the frames are being
+skipped, not lost on the way to Metal.
+
+## Why
+
+`wgpu` acquires the swapchain drawable in Bevy's `prepare_windows`, which runs
+**before** the render graph, and holds it until it presents at the end of the
+frame. Any drawable a node acquires is therefore the newer of two outstanding
+drawables on the same layer, and `CAMetalLayer` will not display a newer
+drawable ahead of an older outstanding one.
+
+Four presentation paths were tried, and all four produce `displayed 0`:
+
+| Mechanism | Result |
+|---|---|
+| `presentDrawable:` on the graph's command buffer | superseded, never shown |
+| `presentDrawable:atTime:` | never shown |
+| `presentDrawable:afterMinimumDuration:` | never shown |
+| `[drawable presentAfterMinimumDuration:]` from the completion handler | never shown |
+
+Two designs were also ruled out on ordering grounds before measurement:
+
+- **Ours first, Bevy's second.** Two untimed presents issued microseconds apart
+  target the same vsync, so CoreAnimation keeps only the later one.
+- **Ours delayed to separate them.** Any delay places our frame *after* Bevy's,
+  which would display the interpolated frame after the real frame it was built
+  from — a backwards step in time, i.e. the ordering inversion the acceptance
+  criteria forbid.
+
+The only remaining arrangement — hand Bevy the interpolated frame so its
+untimed present takes the earlier vsync, and present the real frame ourselves
+one refresh later — is implemented, and fails for the drawable-ownership reason
+above rather than for a timing reason.
+
+## Measurements (M5 Max, 3024×1800, `--bench-quick`, vsync)
+
+| Config | Render fps | GPU mean | Presented |
+|---|---|---|---|
+| `temporal` (baseline) | 60.0 | 1.02 ms | 60 |
+| `interpolate`, no dual present | 60.0 | 6.15 ms | 60 |
+| `interpolate`, `--dual-present` | 60.0 | 6.26 ms | 60 (second present discarded) |
+
+Note the display settles to **60 Hz under vsync** despite the ProMotion 120 Hz
+`CADisplayLink` hint from 6zit.14 — that hint only takes effect under
+`AutoNoVsync`. So even a working dual present would have had to clear a 60 Hz
+bar on this configuration, not 120.
+
+## What would actually fix it
+
+Presentation has to be taken away from `wgpu`: own the `CAMetalLayer`, acquire
+both drawables, and present both with explicit times, with Bevy's own present
+suppressed. That is a change to the windowing/surface layer — genuinely
+"below the render graph", as the 6zit.8 note predicted — and is well outside a
+render-node change.
+
+**Acceptance criteria not met**: the interpolated frame is still not presented,
+and presented frame rate does not exceed the temporal baseline. The value
+delivered here is the elimination of the node-level approach, with evidence, and
+a reusable presented-time measurement harness.
