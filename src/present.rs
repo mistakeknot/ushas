@@ -565,6 +565,14 @@ pub unsafe fn create_owned_layer(
             return None;
         }
 
+        // Layer-tree mutations must land in a committed CATransaction, or
+        // CoreAnimation may never give the layer a display association — and a
+        // layer with no display association still vends drawables while
+        // rejecting every present against them, which is exactly the observed
+        // failure (nextDrawable succeeds, presentation callbacks never fire).
+        let transaction = class!(CATransaction);
+        let _: () = msg_send![transaction, begin];
+
         let _: () = msg_send![layer, setDevice: device];
         let _: () = msg_send![layer, setPixelFormat: pixel_format];
         let _: () = msg_send![layer, setDrawableSize: drawable_size];
@@ -581,6 +589,11 @@ pub unsafe fn create_owned_layer(
         let _: () = msg_send![layer, setOpaque: true];
 
         let _: () = msg_send![superlayer, addSublayer: layer];
+
+        let _: () = msg_send![transaction, commit];
+        // Force the transaction out now rather than at the end of the current
+        // run-loop turn, so the layer is live before the first present.
+        let _: () = msg_send![transaction, flush];
         // Retained by its superlayer; keep our own reference for the process
         // lifetime so the pointer stays valid.
         let _: *mut AnyObject = msg_send![layer, retain];
