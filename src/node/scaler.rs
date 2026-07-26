@@ -261,11 +261,15 @@ impl MetalFxUpscaleNode {
         );
 
                 let wgpu_dev = device.wgpu_device();
+                // SAFETY: the render device outlives the node, and this runs before
+                // any encoder `as_hal_mut` for the frame, so the snatch lock is free.
                 let Some(hal_dev) = (unsafe { wgpu_dev.as_hal::<wgpu_hal::metal::Api>() }) else {
                     log::error!("MetalFxUpscaleNode: no Metal HAL device");
                     return false;
                 };
                 let device_ptr = {
+                    // SAFETY: read while the lock is held and handed straight to scaler
+                    // creation, which retains whatever it needs from it.
                     let dev_lock = hal_dev.raw_device().lock();
                     dev_lock.as_ptr() as *mut c_void
                 };

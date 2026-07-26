@@ -634,10 +634,14 @@ pub fn probe_spatial_scaler(_render_device: &bevy::render::renderer::RenderDevic
         }
 
         let wgpu_dev = _render_device.wgpu_device();
+        // SAFETY: a probe on a live render device, outside the render graph, so
+        // no encoder `as_hal_mut` can be in flight to contend for the snatch lock.
         let Some(hal_dev) = (unsafe { wgpu_dev.as_hal::<wgpu_hal::metal::Api>() }) else {
             return false;
         };
         let device_ptr = {
+            // SAFETY: read while the lock is held; scaler creation retains what
+            // it needs, and the pointer does not outlive this function.
             let dev_lock = hal_dev.raw_device().lock();
             dev_lock.as_ptr() as *mut c_void
         };

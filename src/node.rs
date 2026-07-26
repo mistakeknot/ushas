@@ -642,6 +642,9 @@ impl ViewNode for MetalFxUpscaleNode {
                     // Raw handles must be taken before `as_hal_mut` — wgpu's
                     // snatch lock forbids overlapping texture and encoder access.
                     let ptrs = unsafe {
+                        // SAFETY: both staging textures are owned by CachedState and live for
+                        // the frame. Taken here, before the `as_hal_mut` below, because the
+                        // two cannot overlap (snatch lock).
                         let i = interp_tex.as_hal::<wgpu_hal::metal::Api>();
                         let r = real_tex.as_hal::<wgpu_hal::metal::Api>();
                         match (i, r) {

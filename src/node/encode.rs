@@ -60,6 +60,9 @@ impl MetalFxUpscaleNode {
         // versa) causes a recursive lock panic.
 
         let input_tex_ptr = {
+            // SAFETY: the texture is owned by CachedState and alive for the whole
+            // frame, and no `as_hal_mut` is live on the encoder at this point — the
+            // guard drops at the end of this scope, before the encode below.
             let Some(hal) = (unsafe { state.input_texture.as_hal::<wgpu_hal::metal::Api>() })
             else {
                 log::error!("MetalFxUpscaleNode: no Metal HAL for input texture");
@@ -69,6 +72,9 @@ impl MetalFxUpscaleNode {
         };
 
         let out_tex_ptr = {
+            // SAFETY: the texture is owned by CachedState and alive for the whole
+            // frame, and no `as_hal_mut` is live on the encoder at this point — the
+            // guard drops at the end of this scope, before the encode below.
             let Some(hal) = (unsafe { state.output_texture.as_hal::<wgpu_hal::metal::Api>() })
             else {
                 log::error!("MetalFxUpscaleNode: no Metal HAL for output texture");
@@ -86,6 +92,9 @@ impl MetalFxUpscaleNode {
             let content_motion = state.content_motion_texture.as_ref().unwrap();
 
             let depth_ptr = {
+                // SAFETY: the texture is owned by CachedState and alive for the whole
+                // frame, and no `as_hal_mut` is live on the encoder at this point — the
+                // guard drops at the end of this scope, before the encode below.
                 let Some(hal) = (unsafe { content_depth.as_hal::<wgpu_hal::metal::Api>() }) else {
                     log::error!("MetalFxUpscaleNode: no Metal HAL for content depth texture");
                     return false;
@@ -94,6 +103,9 @@ impl MetalFxUpscaleNode {
             };
 
             let motion_ptr = {
+                // SAFETY: the texture is owned by CachedState and alive for the whole
+                // frame, and no `as_hal_mut` is live on the encoder at this point — the
+                // guard drops at the end of this scope, before the encode below.
                 let Some(hal) = (unsafe { content_motion.as_hal::<wgpu_hal::metal::Api>() }) else {
                     log::error!("MetalFxUpscaleNode: no Metal HAL for content motion texture");
                     return false;
@@ -185,6 +197,9 @@ impl MetalFxUpscaleNode {
                 }
 
                 let prev_tex = state.prev_color_texture.as_ref().unwrap();
+                // SAFETY: the texture is owned by CachedState and alive for the whole
+                // frame, and no `as_hal_mut` is live on the encoder at this point — the
+                // guard drops at the end of this scope, before the encode below.
                 let Some(hal) = (unsafe { prev_tex.as_hal::<wgpu_hal::metal::Api>() }) else {
                     log::error!("MetalFxUpscaleNode: no Metal HAL for prev color texture");
                     return false;
@@ -193,6 +208,9 @@ impl MetalFxUpscaleNode {
                 drop(hal);
 
                 let interp_tex = state.interp_output_texture.as_ref().unwrap();
+                // SAFETY: the texture is owned by CachedState and alive for the whole
+                // frame, and no `as_hal_mut` is live on the encoder at this point — the
+                // guard drops at the end of this scope, before the encode below.
                 let Some(hal) = (unsafe { interp_tex.as_hal::<wgpu_hal::metal::Api>() }) else {
                     log::error!("MetalFxUpscaleNode: no Metal HAL for interp output texture");
                     return false;
@@ -214,6 +232,9 @@ impl MetalFxUpscaleNode {
         match &state.scaler {
             SendScaler::Spatial(scaler) => {
                 unsafe {
+                    // SAFETY: every raw pointer above was taken in a scope that has already
+                    // closed, so no texture guard is live. wgpu's snatch lock is not
+                    // reentrant — overlapping the two is a panic, not a recoverable error.
                     encoder.as_hal_mut::<wgpu_hal::metal::Api, _, ()>(|hal_encoder| {
                         let Some(enc) = hal_encoder else { return };
                         let Some(cmd_buf) = enc.raw_command_buffer() else {
@@ -300,6 +321,9 @@ impl MetalFxUpscaleNode {
                     .map_or(1.0 / 60.0, |t| t.delta_seconds);
 
                 unsafe {
+                    // SAFETY: every raw pointer above was taken in a scope that has already
+                    // closed, so no texture guard is live. wgpu's snatch lock is not
+                    // reentrant — overlapping the two is a panic, not a recoverable error.
                     encoder.as_hal_mut::<wgpu_hal::metal::Api, _, ()>(|hal_encoder| {
                         let Some(enc) = hal_encoder else { return };
                         let Some(cmd_buf) = enc.raw_command_buffer() else {
@@ -392,6 +416,9 @@ impl MetalFxUpscaleNode {
                 let motion_scale_y = -(input_h as f32);
 
                 unsafe {
+                    // SAFETY: every raw pointer above was taken in a scope that has already
+                    // closed, so no texture guard is live. wgpu's snatch lock is not
+                    // reentrant — overlapping the two is a panic, not a recoverable error.
                     encoder.as_hal_mut::<wgpu_hal::metal::Api, _, ()>(|hal_encoder| {
                         let Some(enc) = hal_encoder else { return };
                         let Some(cmd_buf) = enc.raw_command_buffer() else {
