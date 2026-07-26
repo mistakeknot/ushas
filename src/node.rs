@@ -65,12 +65,17 @@ use bevy::render::view::ViewTarget;
 use foreign_types::ForeignType;
 use objc2::rc::Retained;
 use objc2::runtime::ProtocolObject;
-use objc2_metal_fx::{MTLFXFrameInterpolator, MTLFXSpatialScaler, MTLFXTemporalScaler};
+use objc2_metal_fx::MTLFXSpatialScaler;
+#[cfg(feature = "temporal")]
+use objc2_metal_fx::MTLFXTemporalScaler;
+#[cfg(feature = "frame-interpolation")]
+use objc2_metal_fx::MTLFXFrameInterpolator;
 
 use crate::platform::{
-    encode_spatial_upscale, encode_temporal_upscale, try_create_spatial_scaler_from_raw,
-    wgpu_format_to_mtl,
+    encode_spatial_upscale, try_create_spatial_scaler_from_raw, wgpu_format_to_mtl,
 };
+#[cfg(feature = "temporal")]
+use crate::platform::encode_temporal_upscale;
 use crate::gpu_timing::add_gpu_timing_handler;
 use crate::{GpuTimingDiag, MetalFxMode};
 
@@ -114,11 +119,13 @@ impl Default for MetalFxFrameTiming {
 /// Thread-safe wrapper for MetalFX scalers/interpolators.
 pub(crate) enum SendScaler {
     Spatial(Retained<ProtocolObject<dyn MTLFXSpatialScaler>>),
+    #[cfg(feature = "temporal")]
     Temporal(Retained<ProtocolObject<dyn MTLFXTemporalScaler>>),
     /// Frame interpolation is a *two-stage* pipeline, not an alternative to
     /// upscaling: the temporal scaler produces the full-res frame, and the
     /// interpolator synthesises an intermediate frame from two consecutive
     /// full-res frames. Both objects are held together for the life of the node.
+    #[cfg(feature = "frame-interpolation")]
     FrameInterpolator {
         scaler: Retained<ProtocolObject<dyn MTLFXTemporalScaler>>,
         interpolator: Retained<ProtocolObject<dyn MTLFXFrameInterpolator>>,
@@ -129,6 +136,21 @@ pub(crate) enum SendScaler {
 // Practices Guide § "Metal and Multithread Safety".
 unsafe impl Send for SendScaler {}
 unsafe impl Sync for SendScaler {}
+
+impl SendScaler {
+    /// Whether this scaler consumes depth and motion vectors, and so needs the
+    /// prepass resolve passes. False on a `spatial`-only build, where neither
+    /// variant that answers true is compiled in.
+    fn is_temporal_like(&self) -> bool {
+        match self {
+            SendScaler::Spatial(_) => false,
+            #[cfg(feature = "temporal")]
+            SendScaler::Temporal(_) => true,
+            #[cfg(feature = "frame-interpolation")]
+            SendScaler::FrameInterpolator { .. } => true,
+        }
+    }
+}
 
 /// Pixel format for the owned presentation layer and its staging textures.
 ///
@@ -147,13 +169,16 @@ struct CachedState {
     output_view: TextureView,
     /// Previous frame's *upscaled* color, at output resolution — the history
     /// input for frame interpolation.
+    #[cfg(feature = "frame-interpolation")]
     prev_color_texture: Option<bevy::render::render_resource::Texture>,
     /// Destination for the synthesised intermediate frame (frame interpolation
     /// only), at output resolution. Kept separate from `output_texture` so the
     /// real upscaled frame survives for presentation and for the history copy.
+    #[cfg(feature = "frame-interpolation")]
     interp_output_texture: Option<bevy::render::render_resource::Texture>,
     /// Stable view of the synthesised frame, used as the blit source when it is
     /// drawn into its own drawable for presentation.
+    #[cfg(feature = "frame-interpolation")]
     interp_output_view: Option<TextureView>,
     /// BGRA staging copies of the two frames, for the owned-layer present.
     ///
@@ -162,9 +187,13 @@ struct CachedState {
     /// so each frame is first drawn into a BGRA texture by the same fullscreen
     /// blit pass Bevy uses for its own swapchain — which does the conversion for
     /// free — and the drawable copy is then format-identical.
+    #[cfg(feature = "frame-interpolation")]
     interp_bgra: Option<bevy::render::render_resource::Texture>,
+    #[cfg(feature = "frame-interpolation")]
     interp_bgra_view: Option<TextureView>,
+    #[cfg(feature = "frame-interpolation")]
     real_bgra: Option<bevy::render::render_resource::Texture>,
+    #[cfg(feature = "frame-interpolation")]
     real_bgra_view: Option<TextureView>,
     /// Content-sized Depth32Float texture for temporal mode (written by depth resolve pass).
     content_depth_texture: Option<bevy::render::render_resource::Texture>,
@@ -255,6 +284,14 @@ impl ViewNode for MetalFxUpscaleNode {
         Option<&'static Projection>,
     );
 
+    // Reduced builds legitimately compute values whose only consumers are
+    // gated out — jitter, projection, the prepass pointers. The
+    // `frame-interpolation` build compiles every path and is *not* excepted
+    // here, so it stays the one that catches a genuinely unused binding.
+    #[cfg_attr(
+        not(feature = "frame-interpolation"),
+        allow(unused_variables)
+    )]
     fn run<'w>(
         &self,
         _graph: &mut RenderGraphContext,
@@ -363,7 +400,7 @@ impl ViewNode for MetalFxUpscaleNode {
                             // Content-sized depth texture for temporal mode.
                             // Depth32Float — matches scaler's setDepthTextureFormat.
                             // Written via depth resolve render pass (@builtin(frag_depth)).
-                            let (content_depth_texture, content_depth_view) = if matches!(scaler, SendScaler::Temporal(_) | SendScaler::FrameInterpolator { .. }) {
+                            let (content_depth_texture, content_depth_view) = if scaler.is_temporal_like() {
                                 let tex = device.create_texture(&TextureDescriptor {
                                     label: Some("metalfx_content_depth"),
                                     size: Extent3d {
@@ -390,7 +427,7 @@ impl ViewNode for MetalFxUpscaleNode {
                             // Content-sized motion vector texture for temporal mode.
                             // Written via motion resolve render pass (Bevy's prepass
                             // textures lack COPY_SRC, so copy_texture_to_texture fails).
-                            let (content_motion_texture, content_motion_view) = if matches!(scaler, SendScaler::Temporal(_) | SendScaler::FrameInterpolator { .. }) {
+                            let (content_motion_texture, content_motion_view) = if scaler.is_temporal_like() {
                                 let tex = device.create_texture(&TextureDescriptor {
                                     label: Some("metalfx_content_motion"),
                                     size: Extent3d {
@@ -447,12 +484,19 @@ impl ViewNode for MetalFxUpscaleNode {
                                 input_texture,
                                 output_texture,
                                 output_view,
+                                #[cfg(feature = "frame-interpolation")]
                                 prev_color_texture: None,
+                            #[cfg(feature = "frame-interpolation")]
                             interp_output_texture: None,
+                            #[cfg(feature = "frame-interpolation")]
                             interp_output_view: None,
+                            #[cfg(feature = "frame-interpolation")]
                             interp_bgra: None,
+                            #[cfg(feature = "frame-interpolation")]
                             interp_bgra_view: None,
+                            #[cfg(feature = "frame-interpolation")]
                             real_bgra: None,
+                            #[cfg(feature = "frame-interpolation")]
                             real_bgra_view: None,
                                 content_depth_texture,
                                 content_depth_view,
@@ -578,12 +622,19 @@ impl ViewNode for MetalFxUpscaleNode {
                             input_texture,
                             output_texture,
                             output_view,
+                            #[cfg(feature = "frame-interpolation")]
                             prev_color_texture: None,
+                            #[cfg(feature = "frame-interpolation")]
                             interp_output_texture: None,
+                            #[cfg(feature = "frame-interpolation")]
                             interp_output_view: None,
+                            #[cfg(feature = "frame-interpolation")]
                             interp_bgra: None,
+                            #[cfg(feature = "frame-interpolation")]
                             interp_bgra_view: None,
+                            #[cfg(feature = "frame-interpolation")]
                             real_bgra: None,
+                            #[cfg(feature = "frame-interpolation")]
                             real_bgra_view: None,
                             content_depth_texture: None,
                             content_depth_view: None,
@@ -596,6 +647,7 @@ impl ViewNode for MetalFxUpscaleNode {
                             frame_count: 0,
                         });
                     }
+                    #[cfg(feature = "temporal")]
                     MetalFxMode::Temporal | MetalFxMode::FrameInterpolation => {
                         // Temporal + FrameInterpolation are slow — create on background thread.
                         let (tx, rx) = std::sync::mpsc::channel();
@@ -619,6 +671,7 @@ impl ViewNode for MetalFxUpscaleNode {
                                     color_fmt_raw, dynamic_res_range, tx,
                                 );
                             },
+                            #[cfg(feature = "frame-interpolation")]
                             MetalFxMode::FrameInterpolation => unsafe {
                                 crate::platform::spawn_frame_interpolator_thread(
                                     device_ptr,
@@ -671,10 +724,7 @@ impl ViewNode for MetalFxUpscaleNode {
         // --- Phase B0.5: Temporal/FrameInterp — resolve depth + copy motion vectors ---
         // Bevy's prepass renders depth/motion at full physical resolution. We resolve
         // them into content-sized textures before passing to MetalFX.
-        let is_temporal_like = matches!(
-            state.scaler,
-            SendScaler::Temporal(_) | SendScaler::FrameInterpolator { .. }
-        );
+        let is_temporal_like = state.scaler.is_temporal_like();
 
         if is_temporal_like {
             let Some(prepass) = prepass_textures else {
@@ -1019,7 +1069,10 @@ impl ViewNode for MetalFxUpscaleNode {
         // color, so `inputWidth/Height` on its descriptor describe only the
         // depth/motion textures. Sizing these to the input instead trips
         // MetalFX's "Color texture width mismatch from descriptor" assertion.
-        let interp_ptrs = match &state.scaler {
+        // Annotated because the only arm producing `Some` is gated out of a
+        // spatial-only build, leaving nothing to infer the payload from.
+        let interp_ptrs: Option<(*mut c_void, *mut c_void)> = match &state.scaler {
+            #[cfg(feature = "frame-interpolation")]
             SendScaler::FrameInterpolator { .. } => {
                 if state.prev_color_texture.is_none() {
                     state.prev_color_texture = Some(device.create_texture(&TextureDescriptor {
@@ -1141,6 +1194,7 @@ impl ViewNode for MetalFxUpscaleNode {
                     });
                 }
             }
+            #[cfg(feature = "frame-interpolation")]
             SendScaler::FrameInterpolator {
                 scaler,
                 interpolator,
@@ -1283,6 +1337,7 @@ impl ViewNode for MetalFxUpscaleNode {
                     },
                 );
             }
+            #[cfg(feature = "temporal")]
             SendScaler::Temporal(scaler) => {
                 let (depth_ptr, motion_ptr) = temporal_ptrs.unwrap();
                 // Negate Y to convert Bevy's clip-space jitter convention to

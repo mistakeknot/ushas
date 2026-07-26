@@ -13,8 +13,8 @@ readme = "README.md"
 [features]
 default = ["spatial"]
 spatial = []
-temporal = ["spatial"]
-frame-interpolation = ["temporal"]
+temporal = ["spatial", "objc2-metal-fx/MTLFXTemporalScaler"]
+frame-interpolation = ["temporal", "objc2-metal-fx/MTLFXFrameInterpolator"]
 
 [dependencies]
 bevy = { version = "0.18", default-features = false, features = [
@@ -48,8 +48,12 @@ objc2-metal = { version = "0.3", features = [
   "block2",
   "objc2-core-foundation",
 ] }
-objc2-metal-fx = { version = "0.3", features = [
+# `default-features = false` is load-bearing: objc2-metal-fx's default feature
+# enables every binding it ships, including four MTL4FX* families this crate
+# never touches, which would make the per-feature gating below a no-op.
+# Only the spatial bindings are unconditional; `temporal` and
+# `frame-interpolation` add theirs through this crate's own features, so
+# `--no-default-features --features spatial` really does compile less.
+objc2-metal-fx = { version = "0.3", default-features = false, features = [
   "MTLFXSpatialScaler",
-  "MTLFXTemporalScaler",
-  "MTLFXFrameInterpolator",
 ] }

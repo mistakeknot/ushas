@@ -14,11 +14,13 @@ use std::ffi::c_void;
 use objc2::rc::Retained;
 use objc2::runtime::{AnyClass, ProtocolObject};
 use objc2_metal::{MTLCommandBuffer, MTLDevice, MTLPixelFormat, MTLTexture};
+use objc2_metal_fx::{MTLFXSpatialScaler, MTLFXSpatialScalerBase, MTLFXSpatialScalerDescriptor};
+#[cfg(feature = "temporal")]
+use objc2_metal_fx::{MTLFXTemporalScaler, MTLFXTemporalScalerBase, MTLFXTemporalScalerDescriptor};
+#[cfg(feature = "frame-interpolation")]
 use objc2_metal_fx::{
     MTLFXFrameInterpolatableScaler, MTLFXFrameInterpolator, MTLFXFrameInterpolatorBase,
     MTLFXFrameInterpolatorDescriptor,
-    MTLFXSpatialScaler, MTLFXSpatialScalerBase, MTLFXSpatialScalerDescriptor,
-    MTLFXTemporalScaler, MTLFXTemporalScalerBase, MTLFXTemporalScalerDescriptor,
 };
 
 // Link MetalFX.framework. MetalFX symbols are called through objc_msgSend
@@ -122,6 +124,7 @@ pub(crate) unsafe fn encode_spatial_upscale(
 /// # Safety
 /// `device_ptr` must be a valid `id<MTLDevice>` pointer from wgpu-hal's
 /// `raw_device().lock().as_ptr()`.
+#[cfg(feature = "temporal")]
 pub(crate) unsafe fn try_create_temporal_scaler_from_raw(
     device_ptr: *mut c_void,
     input_width: usize,
@@ -186,6 +189,7 @@ pub(crate) unsafe fn try_create_temporal_scaler_from_raw(
 /// # Safety
 /// - All pointers must be valid Metal objects from wgpu-hal's raw handles.
 /// - No Metal render/compute encoder may be active on the command buffer.
+#[cfg(feature = "temporal")]
 pub(crate) unsafe fn encode_temporal_upscale(
     scaler: &ProtocolObject<dyn MTLFXTemporalScaler>,
     color_ptr: *mut c_void,
@@ -247,6 +251,7 @@ pub(crate) unsafe fn encode_temporal_upscale(
 ///
 /// # Safety
 /// `device_ptr` must be a valid `id<MTLDevice>` pointer that outlives the thread.
+#[cfg(feature = "temporal")]
 pub(crate) unsafe fn spawn_temporal_scaler_thread(
     device_ptr: *mut c_void,
     iw: usize, ih: usize, ow: usize, oh: usize,
@@ -287,6 +292,7 @@ pub(crate) unsafe fn spawn_temporal_scaler_thread(
 /// # Safety
 /// `device_ptr` must be a valid `id<MTLDevice>` pointer.
 #[allow(dead_code)] // Reserved for future use (runtime capability check).
+#[cfg(feature = "frame-interpolation")]
 pub(crate) unsafe fn is_frame_interpolation_supported(device_ptr: *mut c_void) -> bool {
     if device_ptr.is_null() {
         return false;
@@ -313,6 +319,7 @@ pub(crate) unsafe fn is_frame_interpolation_supported(device_ptr: *mut c_void) -
 /// `scaler` is the upscaler whose output feeds `colorTexture`. Attaching it
 /// lets the interpolator reuse the scaler's internal history instead of
 /// re-deriving it.
+#[cfg(feature = "frame-interpolation")]
 pub(crate) unsafe fn try_create_frame_interpolator_from_raw(
     device_ptr: *mut c_void,
     input_width: usize,
@@ -360,6 +367,7 @@ pub(crate) unsafe fn try_create_frame_interpolator_from_raw(
 /// # Safety
 /// All pointers must be valid Metal objects. No encoder may be active on the command buffer.
 #[allow(clippy::too_many_arguments)]
+#[cfg(feature = "frame-interpolation")]
 pub(crate) unsafe fn encode_frame_interpolation(
     interpolator: &ProtocolObject<dyn MTLFXFrameInterpolator>,
     color_ptr: *mut c_void,
@@ -435,6 +443,7 @@ pub(crate) unsafe fn encode_frame_interpolation(
 ///
 /// # Safety
 /// `device_ptr` must be a valid `id<MTLDevice>` pointer that outlives the thread.
+#[cfg(feature = "frame-interpolation")]
 pub(crate) unsafe fn spawn_frame_interpolator_thread(
     device_ptr: *mut c_void,
     iw: usize, ih: usize, ow: usize, oh: usize,
