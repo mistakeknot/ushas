@@ -9,7 +9,12 @@
 # because a sibling workspace member enabled it.
 #
 #   ./verify-published.sh            # against the published 0.2 on crates.io
-#   ./verify-published.sh --packaged # against ../../../target/package/... (pre-publish)
+#   ./verify-published.sh --packaged # against the .crate tarball (pre-publish)
+#
+# --packaged repackages and extracts the tarball itself rather than reusing
+# target/package/<name>-<ver>/. That directory and the .crate beside it can fall
+# out of sync — `cargo publish --dry-run` refreshes the directory but leaves a
+# stale tarball — and the tarball is what actually gets uploaded.
 #
 # Exits non-zero on the first failure.
 
@@ -20,20 +25,31 @@ CRATE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 REPO_ROOT="$(cd "$CRATE_DIR/../.." && pwd)"
 
 if [[ "${1:-}" == "--packaged" ]]; then
-    PKG="$REPO_ROOT/target/package/bevy_metalfx-0.2.0"
-    [[ -d "$PKG" ]] || {
-        echo "no packaged artifact at $PKG — run: cargo package -p bevy_metalfx" >&2
-        exit 2
-    }
+    CRATE_VERSION="$(sed -n 's/^version = "\(.*\)"/\1/p' "$CRATE_DIR/Cargo.toml" | head -1)"
+    echo "==> repackaging bevy_metalfx $CRATE_VERSION"
+    ( cd "$REPO_ROOT" && cargo package -p bevy_metalfx --quiet )
+    TARBALL="$REPO_ROOT/target/package/bevy_metalfx-$CRATE_VERSION.crate"
+    [[ -f "$TARBALL" ]] || { echo "no tarball at $TARBALL" >&2; exit 2; }
+
+    EXTRACT="$(mktemp -d)"
+    trap 'rm -rf "$EXTRACT"' EXIT
+    tar xzf "$TARBALL" -C "$EXTRACT"
+    PKG="$EXTRACT/bevy_metalfx-$CRATE_VERSION"
+
+    echo "    sha256 $(shasum -a 256 "$TARBALL" | awk '{print $1}')"
+    echo "    $(find "$PKG" -type f | wc -l | tr -d ' ') files"
+    for required in LICENSE-MIT LICENSE-APACHE README.md Cargo.toml; do
+        [[ -f "$PKG/$required" ]] || { echo "MISSING from tarball: $required" >&2; exit 1; }
+    done
     DEP="bevy_metalfx = { path = \"$PKG\" }"
-    SOURCE="packaged artifact at $PKG"
+    SOURCE="tarball $TARBALL"
 else
     DEP="bevy_metalfx = \"$VERSION\""
     SOURCE="crates.io $VERSION"
 fi
 
 WORK="$(mktemp -d)"
-trap 'rm -rf "$WORK"' EXIT
+trap 'rm -rf "$WORK" "${EXTRACT:-}"' EXIT
 mkdir -p "$WORK/src"
 
 cat > "$WORK/Cargo.toml" <<EOF
