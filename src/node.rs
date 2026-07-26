@@ -25,7 +25,7 @@
 //!   content depth+motion ─┴──────────────→ interpolate│        └→ swapchain
 //!                                              ↑      ↓
 //!                     metalfx_prev_color ──────┘  metalfx_interp_output
-//!                            ↖───────── copy ────────┘  (computed, unpresented)
+//!                            ↖───────── copy ────────┘
 //! ```
 //!
 //! The descriptor's `inputWidth`/`inputHeight` describe only the depth and
@@ -33,11 +33,34 @@
 //! the render resolution trips a MetalFX debug-layer assertion ("Color texture
 //! width mismatch from descriptor").
 //!
-//! Presenting the interpolated frame needs a second present per update, which a
-//! Bevy render graph does not do. `present.rs` implements that on a
-//! `CAMetalLayer` of its own; it is opt-in and **not yet validated** — every
-//! measurement so far ran on a locked, display-asleep machine, which cannot
-//! present frames at all. See `docs/m5-max-performance-research.md`.
+//! Presenting the synthesised frame needs a second present per update, which a
+//! Bevy render graph does not do. The [`crate::present`] module does it on a
+//! `CAMetalLayer` of its own, and Phase D of `run` feeds it: both frames are
+//! converted to BGRA staging textures here, and presented from the graph
+//! command buffer's completion handler there.
+//!
+//! It is opt-in (`MetalFxDualPresent::enabled`). Presents are accepted at
+//! twice the single-present rate; whether they reach the panel is unverified,
+//! because `MTLDrawable.presentedTime` does not populate on the development
+//! machine for any program. See [`crate::present`] and
+//! `docs/m5-max-performance-research.md`.
+//!
+//! ## Where the phases live
+//!
+//! `run` orchestrates; the phases that carry weight are child modules, which
+//! can still reach this module's private fields:
+//!
+//! | Phase | Module | What it does |
+//! |-------|--------|--------------|
+//! | A     | [`scaler`] | scaler lifecycle + the textures sized to it |
+//! | B0.5  | [`resolve`] | depth + motion prepass resolve to content size |
+//! | B     | [`encode`] | the MetalFX encode, one arm per mode |
+//! | C/D   | here | swapchain blit, then the optional second present |
+//!
+//! Phases A and B can decline to run — a temporal scaler may still be
+//! compiling, or a raw Metal handle may be unavailable — and return `false`
+//! rather than a `NodeRunError`, so the decision to skip a frame stays in
+//! `run`.
 //!
 //! ## Temporal Scaler Threading
 //!

@@ -7,6 +7,19 @@
 //! - **Spatial**: Single-frame ML upscaling (macOS 13+)
 //! - **Temporal**: Multi-frame temporal upscaling with motion vectors (macOS 13+)
 //! - **FrameInterpolation**: Generate intermediate frames (macOS 26+, Metal 4)
+//!
+//! Each mode has a matching cargo feature, and the features are cumulative:
+//! `frame-interpolation` implies `temporal` implies `spatial`. They gate both
+//! this crate's encode paths and the `objc2-metal-fx` bindings behind them, so
+//! a narrower feature set really does compile a narrower surface.
+//!
+//! ## What is and is not verified
+//!
+//! Spatial and temporal upscaling are complete and stable. Frame interpolation
+//! computes a correct intermediate frame and, with [`present::MetalFxDualPresent`]
+//! enabled, presents it — at twice the accepted-present rate of a single
+//! present, with the render rate unchanged. Whether the extra frame reaches the
+//! display is **unverified**: see [`present`] for what that depends on.
 
 #[cfg(target_os = "macos")]
 mod platform;

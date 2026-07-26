@@ -9,6 +9,10 @@ keywords = ["bevy", "metalfx", "upscaling", "apple", "metal"]
 categories = ["game-engines", "rendering", "graphics"]
 rust-version = "1.82"
 readme = "README.md"
+# examples/present_repro.rs is a bug-reproduction harness for an internal
+# issue, referencing scripts that live outside this crate. It stays in the
+# repo for diagnosis and out of the published package.
+exclude = ["examples/"]
 
 [features]
 default = ["spatial"]

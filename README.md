@@ -65,7 +65,11 @@ the MetalFX upscale pass directly, then blits the result to the swapchain.
 
 - **`lib.rs`** — Plugin setup, `MetalFxPlugin`, `MetalFxMode` enum, resolution override systems
 - **`platform.rs`** — Raw `objc2-metal-fx` bindings: scaler creation, encode functions, format mapping
-- **`node.rs`** — Bevy render graph `ViewNode` implementation (spatial, temporal, frame interpolation)
+- **`node.rs`** — Bevy render graph `ViewNode`; `run` orchestrates, phases live in child modules
+  - **`node/scaler.rs`** — scaler lifecycle and the textures sized to it
+  - **`node/resolve.rs`** — depth + motion prepass resolve to content size
+  - **`node/encode.rs`** — the MetalFX encode, one arm per mode
+- **`present/`** — Dual presentation on an owned `CAMetalLayer` (`frame-interpolation` only)
 - **`jitter.rs`** — Halton(2,3) jitter sequence for temporal upscaling (matches Bevy's TAA)
 
 ### ObjC Runtime Interop
@@ -87,6 +91,11 @@ bevy_metalfx = { version = "0.2", features = ["temporal"] }
 bevy_metalfx = { version = "0.2", features = ["frame-interpolation"] }
 ```
 
+The features are cumulative (`frame-interpolation` implies `temporal` implies
+`spatial`) and they genuinely shrink the build: each one gates both this crate's
+encode paths and the corresponding `objc2-metal-fx` bindings, so a `spatial`
+build does not compile the temporal or interpolation surface at all.
+
 The `frame-interpolation` path is complete and stable: it runs a temporal
 upscale, then feeds two consecutive *upscaled* frames plus the content-sized
 depth/motion pair to an `MTLFXFrameInterpolator`, using real camera parameters
@@ -100,42 +109,47 @@ layer, and holds the same ~120 fps as `temporal` on an M5 Max.
 > the genuine upscaled frame and leaves the interpolated one in an offscreen
 > texture.
 >
-> Net effect today: visuals identical to `temporal`, plus the GPU cost of the
-> interpolation pass — roughly 5–7 ms/frame at 3024×1800 on an M5 Max, against
-> well under 1 ms for `temporal` alone. **Enable this feature only if you are
-> building the presentation half**; otherwise prefer `temporal`, which gives the
-> same picture for a fraction of the GPU time.
+> Net effect with dual presentation off: visuals identical to `temporal`, plus
+> the GPU cost of the interpolation pass — roughly 5–7 ms/frame at 3024×1800 on
+> an M5 Max, against well under 1 ms for `temporal` alone. **Prefer `temporal`
+> unless you are opting into dual presentation**, which gives the same picture
+> for a fraction of the GPU time.
 >
-> Lifting the limitation requires display-timed dual presentation *below* the
-> Bevy render graph — a renderer-architecture change rather than a node change.
-> The `present` module implements that attempt and measures it; the result is
-> below.
+> The `present` module implements the presentation half. What it does and does
+> not establish is below.
 
-### Dual presentation: implemented, not yet validated
+### Dual presentation: presents accepted, display unverified
 
 `present::MetalFxDualPresent` (opt-in, off by default) creates a `CAMetalLayer`
-of its own above the one `wgpu` renders into, draws the interpolated and the
-real frame into two drawables from that layer, and presents them on consecutive
-refresh intervals — interpolated first, real held back with
-`presentDrawable:afterMinimumDuration:`.
+of its own above the one `wgpu` renders into and presents both frames from it —
+interpolated first, real held back one refresh with
+`presentDrawable:afterMinimumDuration:` so the two land on consecutive vsyncs
+instead of collapsing onto one.
 
-**Whether this actually raises the displayed frame rate is unverified.** Every
-measurement so far was taken with the macOS session locked and the display
-asleep, a state in which the compositor presents nothing to a panel:
-`MTLDrawable.presentedTime` stays 0 and presented-handlers never fire for *any*
-drawable, including Bevy's own. So the observed "0 frames displayed" says
-nothing about this code.
+Three details are load-bearing, each of which failed silently before it was
+right: the layer must be `framebufferOnly = false`, its `pixelFormat` must be a
+BGRA one (CoreAnimation accepts an RGBA present and then skips it), and the
+presents must be issued from the graph command buffer's *completion* handler on
+a queue of our own — a drawable acquired mid-graph has been recycled by the time
+that buffer commits.
 
-What *is* established in that environment: Metal accepts every present, the
-Metal debug layer is clean, and the command buffer carrying the presents commits
-and completes on every frame. What is not established: that any frame reaches
-the display, what the presented frame rate is, or whether the ordering is
-correct.
+**Measured**, both arms through the same layer and telemetry so only the present
+count differs:
 
-Validating it requires running on an unlocked session with the display awake.
-The instrumentation for that is already in place — `PresentSink` records real
-`presentedTime` values and reports presented rate, interval spread (judder),
-ordering inversions and drops.
+| | presents | callbacks | render fps |
+|---|---|---|---|
+| baseline (single present) | 403 | 403 | 26.9 |
+| dual present | 802 | 801 | 26.7 |
+
+That is 1.99× the accepted-present rate at an unchanged render rate.
+
+**Not established: that any of it reaches the panel.**
+`MTLDrawable.presentedTime` never populates on the development machine — not for
+this crate, and not for a minimal, maximally visible Metal window either. So
+presented frame rate is unmeasurable there by any implementation, and the
+accepted-present rate above is a proxy for it, not a substitute. `PresentSink`
+already records presented rate, judder, ordering inversions and drops, so
+validating this needs only hardware where that signal works.
 
 ## API Reference
 
@@ -175,7 +189,7 @@ of the upscaling pipeline — most apps leave `gpu_timing_sink` at its `None` de
 
 | bevy_metalfx | Bevy |
 |-------------|------|
-| 0.1 | 0.18 |
+| 0.2 | 0.18 |
 
 ## Platform Support
 
