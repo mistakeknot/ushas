@@ -214,6 +214,11 @@ MetalFxPlugin { render_scale: 0.5, mode: MetalFxMode::Spatial, ..default() }
 `MetalFxMode`, `MetalFxRenderScale`, `MetalFxLabel`, `MetalFxUpscaleNode`,
 `is_available()` and `probe_spatial_scaler()` are unchanged.
 
+**Fixed in 0.2:** `features = ["temporal"]` did not compile on Linux or Windows
+in 0.1 — an internal module was platform-gated while its caller was not, so the
+build failed with `unresolved module jitter`. If you build cross-platform with
+temporal upscaling, 0.1 never worked for you off macOS; 0.2 does.
+
 ## Platform Support
 
 - **macOS 13+** (Apple Silicon): Full support
