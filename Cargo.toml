@@ -16,6 +16,16 @@ readme = "README.md"
 # out of the package.
 exclude = ["examples/", "scripts/"]
 
+# docs.rs builds on x86_64-unknown-linux-gnu by default, where this crate is
+# almost entirely #[cfg]'d out — the published docs would show the non-macOS
+# stub: no `present` module, no `gpu_timing`, and a `MetalFxPlugin` missing two
+# of its fields. Point it at the macOS build, with every feature on so frame
+# interpolation and dual presentation are documented too.
+[package.metadata.docs.rs]
+default-target = "aarch64-apple-darwin"
+targets = ["aarch64-apple-darwin"]
+all-features = true
+
 [features]
 default = ["spatial"]
 spatial = []
