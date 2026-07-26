@@ -47,8 +47,8 @@
 //! polls for readiness each frame and falls through to Bevy's bilinear upscaling
 //! until the scaler is ready.
 
-mod resolve;
 mod encode;
+mod resolve;
 mod scaler;
 
 #[cfg(feature = "frame-interpolation")]
@@ -70,26 +70,30 @@ use bevy::render::view::ViewTarget;
 use foreign_types::ForeignType;
 use objc2::rc::Retained;
 use objc2::runtime::ProtocolObject;
+#[cfg(feature = "frame-interpolation")]
+use objc2_metal_fx::MTLFXFrameInterpolator;
 use objc2_metal_fx::MTLFXSpatialScaler;
 #[cfg(feature = "temporal")]
 use objc2_metal_fx::MTLFXTemporalScaler;
-#[cfg(feature = "frame-interpolation")]
-use objc2_metal_fx::MTLFXFrameInterpolator;
 
 use crate::platform::wgpu_format_to_mtl;
 use crate::MetalFxMode;
 
 /// Resource holding the MetalFX render configuration.
 /// Extracted from main world each frame via `ExtractResourcePlugin`.
+///
+/// Fields are crate-private: this is a mirror the plugin maintains, not a
+/// control surface. Drive the render scale through [`crate::MetalFxRenderScale`]
+/// and the mode through [`crate::MetalFxPlugin::mode`].
 #[derive(Resource, Clone, Copy, bevy::render::extract_resource::ExtractResource)]
 pub struct MetalFxConfig {
-    pub render_scale: f32,
-    pub mode: MetalFxMode,
+    pub(crate) render_scale: f32,
+    pub(crate) mode: MetalFxMode,
     /// When `Some((min, max))`, the temporal scaler is created with true dynamic
     /// resolution enabled spanning that render-scale range, so an adaptive
     /// governor can flex `render_scale` within `[min, max]` without rebuilding
     /// the scaler. `None` = fixed-scale scaler (recreated only on window resize).
-    pub dynamic_res_range: Option<(f32, f32)>,
+    pub(crate) dynamic_res_range: Option<(f32, f32)>,
 }
 
 /// Per-frame wall-clock delta, mirrored into the render world.
@@ -104,7 +108,7 @@ pub struct MetalFxConfig {
 #[derive(Resource, Clone, Copy, bevy::render::extract_resource::ExtractResource)]
 pub struct MetalFxFrameTiming {
     /// Seconds elapsed since the previous frame.
-    pub delta_seconds: f32,
+    pub(crate) delta_seconds: f32,
 }
 
 impl Default for MetalFxFrameTiming {
@@ -288,10 +292,7 @@ impl ViewNode for MetalFxUpscaleNode {
     // gated out — jitter, projection, the prepass pointers. The
     // `frame-interpolation` build compiles every path and is *not* excepted
     // here, so it stays the one that catches a genuinely unused binding.
-    #[cfg_attr(
-        not(feature = "frame-interpolation"),
-        allow(unused_variables)
-    )]
+    #[cfg_attr(not(feature = "frame-interpolation"), allow(unused_variables))]
     fn run<'w>(
         &self,
         _graph: &mut RenderGraphContext,

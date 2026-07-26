@@ -134,16 +134,18 @@ pub unsafe fn add_gpu_timing_handler(cmd_buf_ptr: *mut std::ffi::c_void, sink: A
     // The completion block captures only the Arc<sink>. It runs later on a
     // Metal-owned thread: read timestamps from the buffer handed to the block,
     // validate finiteness, push, and return — no allocation, no panic.
-    let handler = RcBlock::new(move |finished: std::ptr::NonNull<ProtocolObject<dyn MTLCommandBuffer>>| {
-        // SAFETY: Metal hands us a valid command buffer for the duration of the call.
-        let fb = unsafe { finished.as_ref() };
-        let start = fb.GPUStartTime();
-        let end = fb.GPUEndTime();
-        let elapsed = end - start;
-        if start > 0.0 && elapsed.is_finite() && elapsed > 0.0 {
-            sink.push((elapsed * 1000.0) as f32);
-        }
-    });
+    let handler = RcBlock::new(
+        move |finished: std::ptr::NonNull<ProtocolObject<dyn MTLCommandBuffer>>| {
+            // SAFETY: Metal hands us a valid command buffer for the duration of the call.
+            let fb = unsafe { finished.as_ref() };
+            let start = fb.GPUStartTime();
+            let end = fb.GPUEndTime();
+            let elapsed = end - start;
+            if start > 0.0 && elapsed.is_finite() && elapsed > 0.0 {
+                sink.push((elapsed * 1000.0) as f32);
+            }
+        },
+    );
 
     // `addCompletedHandler:` copies the block, so passing a borrowed pointer to
     // our RcBlock is sound; Metal retains its own copy for the callback.

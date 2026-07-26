@@ -23,11 +23,14 @@ mod stub {
     use bevy::prelude::*;
 
     /// Render-world configuration (stub for non-macOS platforms).
+    ///
+    /// Field visibility mirrors the macOS definition so cross-platform code
+    /// sees one shape, not two.
     #[derive(Resource, Clone, Copy, bevy::render::extract_resource::ExtractResource)]
     pub struct MetalFxConfig {
-        pub render_scale: f32,
-        pub mode: MetalFxMode,
-        pub dynamic_res_range: Option<(f32, f32)>,
+        pub(crate) render_scale: f32,
+        pub(crate) mode: MetalFxMode,
+        pub(crate) dynamic_res_range: Option<(f32, f32)>,
     }
 
     /// Render graph node (stub for non-macOS platforms — does nothing).
@@ -194,10 +197,7 @@ impl bevy::app::Plugin for MetalFxPlugin {
             mode: self.mode,
             dynamic_res_range,
         });
-        app.add_systems(
-            bevy::app::PostStartup,
-            apply_resolution_override,
-        );
+        app.add_systems(bevy::app::PostStartup, apply_resolution_override);
         app.add_systems(bevy::app::Update, update_resolution_on_resize);
 
         // Adaptive render scale (opt-in).
@@ -205,7 +205,12 @@ impl bevy::app::Plugin for MetalFxPlugin {
             app.insert_resource(AdaptiveScaleState::new(self.render_scale));
             app.add_systems(
                 bevy::app::Update,
-                (adaptive_scale_system, sync_config_scale, update_resolution_on_scale_change).chain(),
+                (
+                    adaptive_scale_system,
+                    sync_config_scale,
+                    update_resolution_on_scale_change,
+                )
+                    .chain(),
             );
         } else {
             // Even without adaptive, keep config in sync for manual scale changes.
@@ -233,9 +238,9 @@ impl bevy::app::Plugin for MetalFxPlugin {
         // Extract MetalFxConfig from main world to render world each frame.
         // Must be added to main app — the plugin internally finds the RenderApp sub-app.
         #[cfg(target_os = "macos")]
-        app.add_plugins(
-            bevy::render::extract_resource::ExtractResourcePlugin::<MetalFxConfig>::default(),
-        );
+        app.add_plugins(bevy::render::extract_resource::ExtractResourcePlugin::<
+            MetalFxConfig,
+        >::default());
 
         // Frame interpolation needs the real inter-frame interval; mirror the
         // main world's `Time` delta into the render world (which has no `Time`).
@@ -243,10 +248,9 @@ impl bevy::app::Plugin for MetalFxPlugin {
         if self.mode == MetalFxMode::FrameInterpolation {
             app.insert_resource(MetalFxFrameTiming::default());
             app.add_systems(bevy::app::Update, update_frame_timing);
-            app.add_plugins(
-                bevy::render::extract_resource::ExtractResourcePlugin::<MetalFxFrameTiming>::default(
-                ),
-            );
+            app.add_plugins(bevy::render::extract_resource::ExtractResourcePlugin::<
+                MetalFxFrameTiming,
+            >::default());
         }
 
         // Dual presentation — the half of interpolation that lives below the
@@ -257,11 +261,9 @@ impl bevy::app::Plugin for MetalFxPlugin {
         if self.mode == MetalFxMode::FrameInterpolation {
             app.insert_resource(self.dual_present.clone().unwrap_or_default());
             app.add_systems(bevy::app::Update, present::capture_metal_layer);
-            app.add_plugins(
-                bevy::render::extract_resource::ExtractResourcePlugin::<
-                    present::MetalFxDualPresent,
-                >::default(),
-            );
+            app.add_plugins(bevy::render::extract_resource::ExtractResourcePlugin::<
+                present::MetalFxDualPresent,
+            >::default());
         }
 
         #[cfg(target_os = "macos")]
@@ -274,11 +276,7 @@ impl bevy::app::Plugin for MetalFxPlugin {
             // and render world (upscale node pushes). Phase 0 bound-ness bench.
             // Reuse a host-provided sink if given (so the debug provider shares
             // the exact Arc), else make our own.
-            let timing = GpuTimingDiag(
-                self.gpu_timing_sink
-                    .clone()
-                    .unwrap_or_default(),
-            );
+            let timing = GpuTimingDiag(self.gpu_timing_sink.clone().unwrap_or_default());
             app.insert_resource(timing.clone());
 
             if let Some(render_app) = app.get_sub_app_mut(RenderApp) {
@@ -290,10 +288,7 @@ impl bevy::app::Plugin for MetalFxPlugin {
                     )
                     // Run MetalFX after Bevy's UpscalingNode — we overwrite
                     // out_texture with the ML-upscaled result via Metal blit.
-                    .add_render_graph_edges(
-                        Core3d,
-                        (Node3d::Upscaling, MetalFxLabel),
-                    );
+                    .add_render_graph_edges(Core3d, (Node3d::Upscaling, MetalFxLabel));
             }
         }
     }
@@ -320,9 +315,23 @@ use bevy::core_pipeline::prepass::{DepthPrepass, MotionVectorPrepass};
 #[cfg(feature = "temporal")]
 use bevy::render::camera::TemporalJitter;
 
-/// Main-world resource holding the MetalFX mode.
+/// Main-world resource reporting the MetalFX mode actually in effect.
+///
+/// Read this rather than assuming the mode you configured: the plugin falls
+/// back to [`MetalFxMode::Spatial`] when a requested mode is unavailable at
+/// runtime, and this resource is what says so.
+///
+/// Readable, not writable — an app cannot decide which mode is active, so the
+/// field is crate-private and reached through [`MetalFxModeResource::get`].
 #[derive(Resource, Clone, Copy)]
-pub struct MetalFxModeResource(pub MetalFxMode);
+pub struct MetalFxModeResource(pub(crate) MetalFxMode);
+
+impl MetalFxModeResource {
+    /// The mode the plugin settled on.
+    pub fn get(&self) -> MetalFxMode {
+        self.0
+    }
+}
 
 // --- Adaptive render scale ---
 
@@ -370,7 +379,9 @@ impl AdaptiveScaleState {
             .iter()
             .enumerate()
             .min_by(|(_, a), (_, b)| {
-                (*a - initial_scale).abs().total_cmp(&(*b - initial_scale).abs())
+                (*a - initial_scale)
+                    .abs()
+                    .total_cmp(&(*b - initial_scale).abs())
             })
             .map(|(i, _)| i)
             .unwrap_or(0);
@@ -438,9 +449,7 @@ fn update_resolution_on_resize(
     let override_h = (h as f32 * scale.0).round() as u32;
 
     for mut res_override in cameras.iter_mut() {
-        log::info!(
-            "MetalFX: resize -> MainPassResolutionOverride {override_w}x{override_h}"
-        );
+        log::info!("MetalFX: resize -> MainPassResolutionOverride {override_w}x{override_h}");
         res_override.0 = UVec2::new(override_w, override_h);
     }
 }
@@ -565,10 +574,7 @@ fn update_resolution_on_scale_change(
 }
 
 /// Keep main-world MetalFxConfig.render_scale in sync with MetalFxRenderScale.
-fn sync_config_scale(
-    scale: Res<MetalFxRenderScale>,
-    mut config: ResMut<MetalFxConfig>,
-) {
+fn sync_config_scale(scale: Res<MetalFxRenderScale>, mut config: ResMut<MetalFxConfig>) {
     if scale.is_changed() && !scale.is_added() {
         config.render_scale = scale.0;
     }
@@ -620,8 +626,8 @@ pub struct MetalFxLabel;
 pub fn probe_spatial_scaler(_render_device: &bevy::render::renderer::RenderDevice) -> bool {
     #[cfg(target_os = "macos")]
     {
-        use std::ffi::c_void;
         use foreign_types::ForeignType;
+        use std::ffi::c_void;
 
         if !is_available() {
             return false;

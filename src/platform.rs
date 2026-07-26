@@ -14,14 +14,14 @@ use std::ffi::c_void;
 use objc2::rc::Retained;
 use objc2::runtime::{AnyClass, ProtocolObject};
 use objc2_metal::{MTLCommandBuffer, MTLDevice, MTLPixelFormat, MTLTexture};
-use objc2_metal_fx::{MTLFXSpatialScaler, MTLFXSpatialScalerBase, MTLFXSpatialScalerDescriptor};
-#[cfg(feature = "temporal")]
-use objc2_metal_fx::{MTLFXTemporalScaler, MTLFXTemporalScalerBase, MTLFXTemporalScalerDescriptor};
 #[cfg(feature = "frame-interpolation")]
 use objc2_metal_fx::{
     MTLFXFrameInterpolatableScaler, MTLFXFrameInterpolator, MTLFXFrameInterpolatorBase,
     MTLFXFrameInterpolatorDescriptor,
 };
+use objc2_metal_fx::{MTLFXSpatialScaler, MTLFXSpatialScalerBase, MTLFXSpatialScalerDescriptor};
+#[cfg(feature = "temporal")]
+use objc2_metal_fx::{MTLFXTemporalScaler, MTLFXTemporalScalerBase, MTLFXTemporalScalerDescriptor};
 
 // Link MetalFX.framework. MetalFX symbols are called through objc_msgSend
 // (ObjC runtime dispatch), not direct C linkage, so no unresolved symbols.
@@ -32,7 +32,6 @@ extern "C" {}
 pub(crate) fn is_available_impl() -> bool {
     AnyClass::get(c"MTLFXSpatialScalerDescriptor").is_some()
 }
-
 
 /// Attempt to create a spatial scaler for the given Metal device.
 ///
@@ -205,8 +204,11 @@ pub(crate) unsafe fn encode_temporal_upscale(
     motion_vector_scale_y: f32,
     reset: bool,
 ) {
-    if color_ptr.is_null() || depth_ptr.is_null() || motion_ptr.is_null()
-        || output_ptr.is_null() || cmd_buf_ptr.is_null()
+    if color_ptr.is_null()
+        || depth_ptr.is_null()
+        || motion_ptr.is_null()
+        || output_ptr.is_null()
+        || cmd_buf_ptr.is_null()
     {
         log::error!("encode_temporal_upscale: received null pointer");
         return;
@@ -254,7 +256,10 @@ pub(crate) unsafe fn encode_temporal_upscale(
 #[cfg(feature = "temporal")]
 pub(crate) unsafe fn spawn_temporal_scaler_thread(
     device_ptr: *mut c_void,
-    iw: usize, ih: usize, ow: usize, oh: usize,
+    iw: usize,
+    ih: usize,
+    ow: usize,
+    oh: usize,
     color_fmt_raw: usize,
     dynamic_res: Option<(f32, f32)>,
     tx: std::sync::mpsc::Sender<Option<super::node::SendScaler>>,
@@ -275,14 +280,21 @@ pub(crate) unsafe fn spawn_temporal_scaler_thread(
         let scaler = unsafe {
             try_create_temporal_scaler_from_raw(
                 ptr,
-                iw, ih, ow, oh,
-                cfmt, cfmt,
+                iw,
+                ih,
+                ow,
+                oh,
+                cfmt,
+                cfmt,
                 MTLPixelFormat::Depth32Float,
                 MTLPixelFormat::RG16Float,
                 dynamic_res,
             )
         };
-        log::info!("MetalFX: background thread done, scaler={}", scaler.is_some());
+        log::info!(
+            "MetalFX: background thread done, scaler={}",
+            scaler.is_some()
+        );
         let _ = tx.send(scaler.map(super::node::SendScaler::Temporal));
     });
 }
@@ -339,7 +351,9 @@ pub(crate) unsafe fn try_create_frame_interpolator_from_raw(
         unsafe { &*(device_ptr as *const ProtocolObject<dyn MTLDevice>) };
 
     if !unsafe { MTLFXFrameInterpolatorDescriptor::supportsDevice(device) } {
-        log::warn!("MetalFX: frame interpolation not supported on this device (requires macOS 26+)");
+        log::warn!(
+            "MetalFX: frame interpolation not supported on this device (requires macOS 26+)"
+        );
         return None;
     }
 
@@ -387,8 +401,12 @@ pub(crate) unsafe fn encode_frame_interpolation(
     far_plane: f32,
     reset_history: bool,
 ) {
-    if color_ptr.is_null() || prev_color_ptr.is_null() || depth_ptr.is_null()
-        || motion_ptr.is_null() || output_ptr.is_null() || cmd_buf_ptr.is_null()
+    if color_ptr.is_null()
+        || prev_color_ptr.is_null()
+        || depth_ptr.is_null()
+        || motion_ptr.is_null()
+        || output_ptr.is_null()
+        || cmd_buf_ptr.is_null()
     {
         log::error!("encode_frame_interpolation: received null pointer");
         return;
@@ -446,7 +464,10 @@ pub(crate) unsafe fn encode_frame_interpolation(
 #[cfg(feature = "frame-interpolation")]
 pub(crate) unsafe fn spawn_frame_interpolator_thread(
     device_ptr: *mut c_void,
-    iw: usize, ih: usize, ow: usize, oh: usize,
+    iw: usize,
+    ih: usize,
+    ow: usize,
+    oh: usize,
     color_fmt_raw: usize,
     tx: std::sync::mpsc::Sender<Option<super::node::SendScaler>>,
 ) {
@@ -474,8 +495,12 @@ pub(crate) unsafe fn spawn_frame_interpolator_thread(
         let scaler = unsafe {
             try_create_temporal_scaler_from_raw(
                 ptr,
-                iw, ih, ow, oh,
-                cfmt, cfmt,
+                iw,
+                ih,
+                ow,
+                oh,
+                cfmt,
+                cfmt,
                 MTLPixelFormat::Depth32Float,
                 MTLPixelFormat::RG16Float,
                 None,
@@ -490,21 +515,29 @@ pub(crate) unsafe fn spawn_frame_interpolator_thread(
         let interpolator = unsafe {
             try_create_frame_interpolator_from_raw(
                 ptr,
-                iw, ih, ow, oh,
+                iw,
+                ih,
+                ow,
+                oh,
                 // Color textures live at *output* size (see the fn's doc).
-                cfmt, cfmt,
+                cfmt,
+                cfmt,
                 MTLPixelFormat::Depth32Float,
                 MTLPixelFormat::RG16Float,
                 Some(ProtocolObject::from_ref(&*scaler)),
             )
         };
-        log::info!("MetalFX: background thread done, interpolator={}", interpolator.is_some());
-        let _ = tx.send(
-            interpolator.map(|interpolator| super::node::SendScaler::FrameInterpolator {
-                scaler,
-                interpolator,
-            }),
+        log::info!(
+            "MetalFX: background thread done, interpolator={}",
+            interpolator.is_some()
         );
+        let _ =
+            tx.send(
+                interpolator.map(|interpolator| super::node::SendScaler::FrameInterpolator {
+                    scaler,
+                    interpolator,
+                }),
+            );
     });
 }
 

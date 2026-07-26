@@ -123,7 +123,15 @@ impl PresentSink {
     pub fn counts(&self) -> (u64, u64, usize, u64, u64) {
         self.inner
             .lock()
-            .map(|r| (r.encoded, r.dropped, r.presented.len(), r.callbacks, r.committed))
+            .map(|r| {
+                (
+                    r.encoded,
+                    r.dropped,
+                    r.presented.len(),
+                    r.callbacks,
+                    r.committed,
+                )
+            })
             .unwrap_or((0, 0, 0, 0, 0))
     }
 
@@ -133,16 +141,14 @@ impl PresentSink {
     pub(crate) fn presented_handler_block(self: &Arc<Self>) -> usize {
         *self.handler_block.get_or_init(|| {
             let sink = Arc::clone(self);
-            let block = RcBlock::new(
-                move |presented: NonNull<ProtocolObject<dyn MTLDrawable>>| {
-                    sink.push_callback();
-                    // SAFETY: Metal hands us a live drawable for the call.
-                    let t = unsafe { presented.as_ref() }.presentedTime();
-                    if t.is_finite() && t > 0.0 {
-                        sink.push_presented(t);
-                    }
-                },
-            );
+            let block = RcBlock::new(move |presented: NonNull<ProtocolObject<dyn MTLDrawable>>| {
+                sink.push_callback();
+                // SAFETY: Metal hands us a live drawable for the call.
+                let t = unsafe { presented.as_ref() }.presentedTime();
+                if t.is_finite() && t > 0.0 {
+                    sink.push_presented(t);
+                }
+            });
             RcBlock::into_raw(block) as usize
         })
     }
@@ -265,7 +271,10 @@ mod tests {
         let s = sink.stats().expect("stats");
         assert!((s.mean_interval_ms - 16.667).abs() < 0.1, "{s:?}");
         assert!((s.interp_fps - 60.0).abs() < 0.5, "{s:?}");
-        assert!(s.judder_ms < 0.01, "steady cadence should show no judder: {s:?}");
+        assert!(
+            s.judder_ms < 0.01,
+            "steady cadence should show no judder: {s:?}"
+        );
         assert_eq!(s.inversions, 0);
     }
 
@@ -322,6 +331,9 @@ mod tests {
         let a = steady.stats().expect("steady");
         let b = jittery.stats().expect("jittery");
         assert!(a.judder_ms < 0.01, "{a:?}");
-        assert!(b.judder_ms > 5.0, "alternating cadence should read as judder: {b:?}");
+        assert!(
+            b.judder_ms > 5.0,
+            "alternating cadence should read as judder: {b:?}"
+        );
     }
 }

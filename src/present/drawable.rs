@@ -5,9 +5,9 @@ use std::ptr::NonNull;
 use std::sync::Arc;
 
 use block2::RcBlock;
+use objc2::msg_send;
 use objc2::rc::Retained;
 use objc2::runtime::{AnyObject, ProtocolObject};
-use objc2::msg_send;
 use objc2_metal::{MTLCommandBuffer, MTLDrawable};
 
 use super::PresentSink;
@@ -40,8 +40,7 @@ pub unsafe fn acquire_drawable(layer: NonNull<c_void>) -> Option<AcquiredDrawabl
         let texture: *mut AnyObject = msg_send![raw, texture];
         let texture = NonNull::new(texture)?;
 
-        let drawable: Retained<ProtocolObject<dyn MTLDrawable>> =
-            Retained::retain(raw.cast())?;
+        let drawable: Retained<ProtocolObject<dyn MTLDrawable>> = Retained::retain(raw.cast())?;
 
         // Validate the cast once, with the single cheapest MTLDrawable call.
         // If the ProtocolObject cast is wrong this throws, and a throwing

@@ -8,8 +8,8 @@
 //! letting render scale drop further for the same perceived sharpness). The
 //! first 8 samples are identical to Bevy's built-in 8-phase TAA sequence.
 
-use bevy::render::camera::TemporalJitter;
 use bevy::prelude::*;
+use bevy::render::camera::TemporalJitter;
 
 /// Halton(2,3) sequence, 32 samples, centered at 0 (subtract 0.5).
 /// Samples are the Halton points for indices 1..=32 — the leading 8 match
@@ -50,10 +50,7 @@ const HALTON_SEQUENCE: [Vec2; 32] = [
 ];
 
 /// Update jitter offset each frame using the Halton(2,3) sequence.
-pub fn update_jitter(
-    mut frame_count: Local<u32>,
-    mut query: Query<&mut TemporalJitter>,
-) {
+pub fn update_jitter(mut frame_count: Local<u32>, mut query: Query<&mut TemporalJitter>) {
     let idx = (*frame_count as usize) % HALTON_SEQUENCE.len();
     let offset = HALTON_SEQUENCE[idx];
     *frame_count = frame_count.wrapping_add(1);

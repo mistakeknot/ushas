@@ -32,9 +32,7 @@ impl MetalFxUpscaleNode {
             let wgpu_dev = device.wgpu_device();
             let shader = wgpu_dev.create_shader_module(wgpu::ShaderModuleDescriptor {
                 label: Some("motion_resolve_shader"),
-                source: wgpu::ShaderSource::Wgsl(
-                    include_str!("motion_resolve.wgsl").into(),
-                ),
+                source: wgpu::ShaderSource::Wgsl(include_str!("motion_resolve.wgsl").into()),
             });
             let bgl = wgpu_dev.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
                 label: Some("motion_resolve_bgl"),
@@ -49,11 +47,12 @@ impl MetalFxUpscaleNode {
                     count: None,
                 }],
             });
-            let pipeline_layout = wgpu_dev.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-                label: Some("motion_resolve_layout"),
-                bind_group_layouts: &[&bgl],
-                push_constant_ranges: &[],
-            });
+            let pipeline_layout =
+                wgpu_dev.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                    label: Some("motion_resolve_layout"),
+                    bind_group_layouts: &[&bgl],
+                    push_constant_ranges: &[],
+                });
             let pipeline = wgpu_dev.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
                 label: Some("motion_resolve_pipeline"),
                 layout: Some(&pipeline_layout),
@@ -89,9 +88,8 @@ impl MetalFxUpscaleNode {
         }
         let mr_ref = mr.as_ref().unwrap();
 
-        let src_motion_view = motion_attachment_texture.create_view(
-            &bevy::render::render_resource::TextureViewDescriptor::default(),
-        );
+        let src_motion_view = motion_attachment_texture
+            .create_view(&bevy::render::render_resource::TextureViewDescriptor::default());
 
         // Get or create cached bind group for motion resolve.
         let mut mr_bg = self.motion_resolve_bind_group.lock().unwrap();
@@ -114,25 +112,23 @@ impl MetalFxUpscaleNode {
         }
         let bind_group = &mr_bg.as_ref().unwrap().1;
 
-        let mut pass = render_context.command_encoder().begin_render_pass(
-            &RenderPassDescriptor {
+        let mut pass = render_context
+            .command_encoder()
+            .begin_render_pass(&RenderPassDescriptor {
                 label: Some("metalfx_motion_resolve"),
-                color_attachments: &[Some(
-                    wgpu::RenderPassColorAttachment {
-                        view: content_motion_view,
-                        resolve_target: None,
-                        ops: wgpu::Operations {
-                            load: wgpu::LoadOp::Clear(wgpu::Color::TRANSPARENT),
-                            store: wgpu::StoreOp::Store,
-                        },
-                        depth_slice: None,
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    view: content_motion_view,
+                    resolve_target: None,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(wgpu::Color::TRANSPARENT),
+                        store: wgpu::StoreOp::Store,
                     },
-                )],
+                    depth_slice: None,
+                })],
                 depth_stencil_attachment: None,
                 timestamp_writes: None,
                 occlusion_query_set: None,
-            },
-        );
+            });
         pass.set_pipeline(&mr_ref.pipeline);
         pass.set_bind_group(0, bind_group, &[]);
         pass.set_viewport(0.0, 0.0, content_w as f32, content_h as f32, 0.0, 1.0);
@@ -160,9 +156,7 @@ impl MetalFxUpscaleNode {
             let wgpu_dev = device.wgpu_device();
             let shader = wgpu_dev.create_shader_module(wgpu::ShaderModuleDescriptor {
                 label: Some("depth_resolve_shader"),
-                source: wgpu::ShaderSource::Wgsl(
-                    include_str!("depth_resolve.wgsl").into(),
-                ),
+                source: wgpu::ShaderSource::Wgsl(include_str!("depth_resolve.wgsl").into()),
             });
             let bgl = wgpu_dev.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
                 label: Some("depth_resolve_bgl"),
@@ -177,11 +171,12 @@ impl MetalFxUpscaleNode {
                     count: None,
                 }],
             });
-            let pipeline_layout = wgpu_dev.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-                label: Some("depth_resolve_layout"),
-                bind_group_layouts: &[&bgl],
-                push_constant_ranges: &[],
-            });
+            let pipeline_layout =
+                wgpu_dev.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                    label: Some("depth_resolve_layout"),
+                    bind_group_layouts: &[&bgl],
+                    push_constant_ranges: &[],
+                });
             let pipeline = wgpu_dev.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
                 label: Some("depth_resolve_pipeline"),
                 layout: Some(&pipeline_layout),
@@ -221,9 +216,8 @@ impl MetalFxUpscaleNode {
 
         // Create source depth view (prepass texture — changes if prepass is recreated).
         // Destination view is stored in CachedState (stable across frames).
-        let src_depth_view = depth_attachment_texture.create_view(
-            &bevy::render::render_resource::TextureViewDescriptor::default(),
-        );
+        let src_depth_view = depth_attachment_texture
+            .create_view(&bevy::render::render_resource::TextureViewDescriptor::default());
 
         // Get or create cached bind group (keyed on src + dst TextureViewId).
         // dst_id is stable (stored in CachedState), src_id changes on prepass recreation.
@@ -253,8 +247,9 @@ impl MetalFxUpscaleNode {
         let bind_group = &dr_bg.as_ref().unwrap().2;
 
         // Dispatch depth resolve render pass.
-        let mut pass = render_context.command_encoder().begin_render_pass(
-            &RenderPassDescriptor {
+        let mut pass = render_context
+            .command_encoder()
+            .begin_render_pass(&RenderPassDescriptor {
                 label: Some("metalfx_depth_resolve"),
                 color_attachments: &[],
                 depth_stencil_attachment: Some(
@@ -272,15 +267,10 @@ impl MetalFxUpscaleNode {
                 ),
                 timestamp_writes: None,
                 occlusion_query_set: None,
-            },
-        );
+            });
         pass.set_pipeline(&dr_ref.pipeline);
         pass.set_bind_group(0, bind_group, &[]);
-        pass.set_viewport(
-            0.0, 0.0,
-            content_w as f32, content_h as f32,
-            0.0, 1.0,
-        );
+        pass.set_viewport(0.0, 0.0, content_w as f32, content_h as f32, 0.0, 1.0);
         pass.draw(0..3, 0..1);
         // pass drops here → render encoder ends
     }

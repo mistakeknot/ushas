@@ -107,12 +107,16 @@ struct CGRect {
 }
 
 unsafe impl objc2::Encode for CGSize {
-    const ENCODING: objc2::Encoding =
-        objc2::Encoding::Struct("CGSize", &[objc2::Encoding::Double, objc2::Encoding::Double]);
+    const ENCODING: objc2::Encoding = objc2::Encoding::Struct(
+        "CGSize",
+        &[objc2::Encoding::Double, objc2::Encoding::Double],
+    );
 }
 unsafe impl objc2::Encode for CGPoint {
-    const ENCODING: objc2::Encoding =
-        objc2::Encoding::Struct("CGPoint", &[objc2::Encoding::Double, objc2::Encoding::Double]);
+    const ENCODING: objc2::Encoding = objc2::Encoding::Struct(
+        "CGPoint",
+        &[objc2::Encoding::Double, objc2::Encoding::Double],
+    );
 }
 unsafe impl objc2::Encode for CGRect {
     const ENCODING: objc2::Encoding =
@@ -241,7 +245,11 @@ pub unsafe fn create_owned_layer(
         }
         log::info!(
             "MetalFX dual presentation: layer hosted on {}",
-            if hosted { "its own NSView" } else { "a bare sublayer (fallback)" }
+            if hosted {
+                "its own NSView"
+            } else {
+                "a bare sublayer (fallback)"
+            }
         );
 
         let _: () = msg_send![transaction, commit];
