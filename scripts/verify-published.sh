@@ -101,6 +101,24 @@ fn main() {
 }
 EOF
 
+# Cross-check the non-macOS path. docs.rs builds on Linux, and a macOS-only
+# crate is exactly the kind that never gets a non-macOS build until a user
+# reports one. `--features temporal` was broken on every non-macOS target from
+# 0.1.0 until this check was added: `mod jitter` carried a spurious
+# `target_os = "macos"` while its caller was gated on the feature alone.
+CROSS_TARGET="${CROSS_TARGET:-x86_64-unknown-linux-gnu}"
+if rustup target list --installed 2>/dev/null | grep -qx "$CROSS_TARGET"; then
+    echo "==> cross-checking $CROSS_TARGET (the docs.rs path)"
+    for feats in "--no-default-features --features spatial" "" "--features temporal" \
+                 "--features frame-interpolation"; do
+        # shellcheck disable=SC2086
+        ( cd "$REPO_ROOT" && cargo check -p bevy_metalfx --target "$CROSS_TARGET" $feats --quiet )
+        echo "    ok: ${feats:-default}"
+    done
+else
+    echo "==> skipping cross-check: rustup target add $CROSS_TARGET"
+fi
+
 echo "==> verifying bevy_metalfx from $SOURCE"
 echo "--- spatial (default features) ---"
 cargo run --quiet --manifest-path "$WORK/Cargo.toml"

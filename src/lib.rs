@@ -39,6 +39,14 @@ mod stub {
     ///
     /// Field visibility mirrors the macOS definition so cross-platform code
     /// sees one shape, not two.
+    ///
+    /// The fields are deliberately unread here: nothing on a non-macOS target
+    /// consumes them, and the struct exists so cross-platform code can name and
+    /// insert the resource without `#[cfg]`. They stopped being `pub` in 0.2,
+    /// which is what makes the lint notice — it is the point of the type, not a
+    /// gap in it. Without this the crate warns on every docs.rs build, which is
+    /// a Linux build of the default features.
+    #[allow(dead_code)]
     #[derive(Resource, Clone, Copy, bevy::render::extract_resource::ExtractResource)]
     pub struct MetalFxConfig {
         pub(crate) render_scale: f32,
@@ -54,7 +62,12 @@ mod stub {
 #[cfg(not(target_os = "macos"))]
 pub use stub::{MetalFxConfig, MetalFxUpscaleNode};
 
-#[cfg(all(target_os = "macos", feature = "temporal"))]
+// Not platform-gated: the Halton sequence and the jitter system are plain
+// Bevy, and the call site in `build` is gated on the feature alone. Adding
+// `target_os = "macos"` here made `--features temporal` fail to compile on
+// every other platform — the module was configured out while its caller was
+// not. Shipped broken in 0.1.0; caught by cross-checking the docs.rs target.
+#[cfg(feature = "temporal")]
 mod jitter;
 
 #[cfg(target_os = "macos")]
