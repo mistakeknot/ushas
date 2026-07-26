@@ -190,6 +190,29 @@ of the upscaling pipeline — most apps leave `gpu_timing_sink` at its `None` de
 | bevy_metalfx | Bevy |
 |-------------|------|
 | 0.2 | 0.18 |
+| 0.1 | 0.18 |
+
+## Upgrading from 0.1
+
+0.2 carries breaking changes, which is what the minor bump signals for a `0.x`
+crate. In practice one pattern covers almost all of it:
+
+```rust
+// 0.1 — exhaustive struct literal
+MetalFxPlugin { render_scale: 0.5, mode: MetalFxMode::Spatial }
+
+// 0.2 — `..default()` absorbs the new fields
+MetalFxPlugin { render_scale: 0.5, mode: MetalFxMode::Spatial, ..default() }
+```
+
+| Change | Why | Fix |
+|---|---|---|
+| `MetalFxPlugin` gained `adaptive`, `gpu_timing_sink`, `dual_present` | adaptive scaling, GPU timing, dual presentation | add `..default()` |
+| `MetalFxConfig` fields are now private | it is a render-world mirror the plugin maintains, not a control surface | set scale via `MetalFxRenderScale`, mode via `MetalFxPlugin::mode` |
+| `MetalFxModeResource.0` is now private | reading is meaningful, writing is not | `.get()` |
+
+`MetalFxMode`, `MetalFxRenderScale`, `MetalFxLabel`, `MetalFxUpscaleNode`,
+`is_available()` and `probe_spatial_scaler()` are unchanged.
 
 ## Platform Support
 
@@ -206,4 +229,15 @@ of the upscaling pipeline — most apps leave `gpu_timing_sink` at its `None` de
 
 ## License
 
-MIT OR Apache-2.0
+Licensed under either of
+
+- Apache License, Version 2.0 ([LICENSE-APACHE](LICENSE-APACHE) or
+  <https://www.apache.org/licenses/LICENSE-2.0>)
+- MIT license ([LICENSE-MIT](LICENSE-MIT) or
+  <https://opensource.org/licenses/MIT>)
+
+at your option.
+
+Unless you explicitly state otherwise, any contribution intentionally submitted
+for inclusion in this crate by you, as defined in the Apache-2.0 license, shall
+be dual licensed as above, without any additional terms or conditions.
