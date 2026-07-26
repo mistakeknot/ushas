@@ -31,9 +31,6 @@ wgpu = "27"
 wgpu-hal = { version = "27", features = ["metal"] }
 # foreign-types for metal crate's ForeignType::as_ptr()
 foreign-types = "0.5"
-# Same version wgpu-hal uses, so `metal::Texture` unifies with its types. Needed
-# to wrap a CAMetalDrawable's texture back into wgpu via `texture_from_raw`.
-metal = "0.32"
 # Matches bevy_window's, so `RawWindowHandle` unifies with Bevy's handle type.
 raw-window-handle = "0.6"
 objc2 = "0.6"

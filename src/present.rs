@@ -81,25 +81,15 @@ use std::ptr::NonNull;
 use std::sync::{Arc, Mutex};
 
 use block2::RcBlock;
-use foreign_types::ForeignType as _;
 use objc2::rc::Retained;
 use objc2::runtime::{AnyObject, ProtocolObject};
 use objc2::{class, msg_send};
 use objc2_metal::{MTLCommandBuffer, MTLDrawable};
 
-#[link(name = "QuartzCore", kind = "framework")]
-extern "C" {
-    /// Current host time on the same timebase as `MTLDrawable.presentedTime`
-    /// and `CADisplayLink.targetTimestamp`.
-    fn CACurrentMediaTime() -> f64;
-}
-
 #[link(name = "CoreGraphics", kind = "framework")]
 extern "C" {
     fn CGMainDisplayID() -> u32;
     fn CGDisplayIsAsleep(display: u32) -> i32;
-    fn CGColorSpaceCreateWithName(name: *const c_void) -> *mut c_void;
-    static kCGColorSpaceExtendedLinearSRGB: *const c_void;
 }
 
 /// Whether the main display is awake enough for presentation to mean anything.
@@ -119,55 +109,6 @@ pub fn display_awake() -> bool {
 
 /// How many recent presentation samples to retain.
 const RING_CAPACITY: usize = 480;
-
-/// How the interpolated drawable's presentation time is chosen.
-///
-/// Exposed as a switch rather than hardcoded because which one is better is an
-/// empirical question, not a design one: explicit scheduling only helps when
-/// the render rate is *not* a clean divisor of the refresh rate, and can fight
-/// CoreAnimation when it is.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub enum PresentTiming {
-    /// `presentDrawable:` — let CoreAnimation place the frame at the next
-    /// vsync. With `displaySyncEnabled` this already yields exactly one
-    /// refresh interval of spacing when the app renders at half the refresh
-    /// rate.
-    ///
-    /// The default: cheapest of the options, and no worse than the others —
-    /// none of them has yet been shown to present on this machine, and
-    /// `OwnCommandBuffer` measurably halves throughput.
-    #[default]
-    Vsync,
-    /// `presentDrawable:atTime:`, scheduled one refresh interval after the
-    /// last frame we saw presented. Spaces frames evenly when the render rate
-    /// is a ragged fraction of the refresh rate (e.g. 45fps on a 120Hz panel).
-    Scheduled,
-    /// `presentDrawable:afterMinimumDuration:` — hold this frame back until the
-    /// *previous* drawable has been on screen for a full refresh interval.
-    ///
-    /// This is the one that makes dual presentation work. Two untimed presents
-    /// issued microseconds apart both target the next vsync, so CoreAnimation
-    /// shows only the later one and silently discards the earlier — its
-    /// presented-handler never fires and `presentedTime` stays 0. A minimum
-    /// duration forces the two frames onto consecutive refresh intervals
-    /// without needing absolute-time arithmetic or any feedback from a frame
-    /// that has not been displayed yet.
-    MinimumDuration,
-    /// Present from the presenting command buffer's completion handler, held
-    /// one refresh behind the previous frame.
-    ///
-    /// Needed because `wgpu` acquires the swapchain drawable before the render
-    /// graph runs: any drawable this node acquires is newer, and a newer
-    /// drawable presented ahead of an older outstanding one is discarded.
-    Deferred,
-    /// Present on a command buffer from our own queue rather than the render
-    /// graph's.
-    ///
-    /// The known-good control does exactly this, and it is the last structural
-    /// difference between it and this crate's path. Ordering with the graph's
-    /// work is preserved by committing only after the graph's buffer completes.
-    OwnCommandBuffer,
-}
 
 /// Thread-safe ring of drawable presentation samples.
 ///
@@ -209,8 +150,7 @@ struct Ring {
     /// Presentation callbacks that arrived with a non-increasing timestamp —
     /// i.e. a frame reached the display out of order.
     inversions: u64,
-    /// Most recent presentation time seen, for inversion detection and for
-    /// [`PresentTiming::Scheduled`].
+    /// Most recent presentation time seen, for inversion detection.
     last_presented: f64,
 }
 
@@ -306,7 +246,7 @@ impl PresentSink {
     }
 
     /// Last presentation time seen, or 0.0 if none yet.
-    fn last_presented(&self) -> f64 {
+    pub fn last_presented(&self) -> f64 {
         self.inner.lock().map(|r| r.last_presented).unwrap_or(0.0)
     }
 
@@ -321,8 +261,8 @@ impl PresentSink {
             ring.callbacks = 0;
             ring.committed = 0;
             ring.inversions = 0;
-            // `last_presented` deliberately survives: it anchors scheduling and
-            // inversion detection across the reset boundary.
+            // `last_presented` deliberately survives: it anchors inversion
+            // detection across the reset boundary.
         }
     }
 
@@ -403,13 +343,6 @@ pub struct AcquiredDrawable {
     drawable: Retained<ProtocolObject<dyn MTLDrawable>>,
     /// `id<MTLTexture>` owned by the drawable. Borrowed, not retained here.
     texture: NonNull<AnyObject>,
-}
-
-impl AcquiredDrawable {
-    /// The drawable's backing texture, for wrapping as a render target.
-    pub fn texture_ptr(&self) -> *mut c_void {
-        self.texture.as_ptr().cast()
-    }
 }
 
 /// Locate the `CAMetalLayer` that `wgpu` renders into for this `NSView`.
@@ -715,197 +648,6 @@ pub unsafe fn acquire_drawable(layer: NonNull<c_void>) -> Option<AcquiredDrawabl
     }
 }
 
-/// Plain `presentDrawable:` — hand the frame to CoreAnimation for the next
-/// available vsync.
-fn drawable_present(
-    cmd_buf: &ProtocolObject<dyn MTLCommandBuffer>,
-    drawable: &ProtocolObject<dyn MTLDrawable>,
-) {
-    cmd_buf.presentDrawable(drawable);
-}
-
-/// Wrap a drawable's `MTLTexture` as a `wgpu::Texture` that can be used as a
-/// render target.
-///
-/// The layer is `framebufferOnly`, so the interpolated frame has to be *drawn*
-/// into the drawable rather than copied. Wrapping the raw texture lets that
-/// happen through the render pass the node already has, instead of hand-rolling
-/// a Metal pipeline.
-///
-/// `format` must match the drawable's real `MTLPixelFormat`. It does, as long
-/// as it comes from the view target Bevy is blitting to: that target is a
-/// drawable from this same layer.
-///
-/// # Safety
-/// `acquired` must hold a live drawable, and `width`/`height` must be the
-/// layer's drawable size.
-pub unsafe fn wrap_drawable_texture(
-    device: &wgpu::Device,
-    acquired: &AcquiredDrawable,
-    format: wgpu::TextureFormat,
-    width: u32,
-    height: u32,
-) -> wgpu::Texture {
-    unsafe {
-        // `metal::Texture::from_ptr` takes ownership without retaining, and the
-        // wrapping `wgpu::Texture` releases on drop. Retain first so dropping it
-        // does not steal the drawable's own reference.
-        let raw: *mut AnyObject = msg_send![acquired.texture.as_ptr(), retain];
-
-        let hal_texture = wgpu_hal::metal::Device::texture_from_raw(
-            metal::Texture::from_ptr(raw.cast()),
-            format,
-            metal::MTLTextureType::D2,
-            1, // array layers
-            1, // mip levels
-            wgpu_hal::CopyExtent {
-                width,
-                height,
-                depth: 1,
-            },
-        );
-
-        device.create_texture_from_hal::<wgpu_hal::metal::Api>(
-            hal_texture,
-            &wgpu::TextureDescriptor {
-                label: Some("metalfx_interp_drawable"),
-                size: wgpu::Extent3d {
-                    width,
-                    height,
-                    depth_or_array_layers: 1,
-                },
-                mip_level_count: 1,
-                sample_count: 1,
-                dimension: wgpu::TextureDimension::D2,
-                format,
-                usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
-                view_formats: &[],
-            },
-        )
-    }
-}
-
-/// Schedule the drawable for presentation on `cmd_buf` and record when it
-/// actually reaches the display.
-///
-/// Encoding the present onto the render graph's *own* command buffer is what
-/// makes this safe: the interpolated texture is written by earlier commands on
-/// that same buffer, so the present cannot outrun the work that produced it.
-/// A separate command buffer would have no such ordering and could present an
-/// unwritten texture.
-///
-/// # Safety
-/// `cmd_buf_ptr` must be a valid `id<MTLCommandBuffer>` borrowed from
-/// wgpu-hal's encoder for the current frame, not yet committed.
-pub unsafe fn present_drawable(
-    cmd_buf_ptr: *mut c_void,
-    acquired: AcquiredDrawable,
-    timing: PresentTiming,
-    refresh_interval: f64,
-    sink: &Arc<PresentSink>,
-    queue_ptr: Option<NonNull<c_void>>,
-) {
-    if cmd_buf_ptr.is_null() {
-        return;
-    }
-    unsafe {
-        // Same underlying ObjC id wgpu-hal holds; borrowed, never owned.
-        let cmd_buf: &ProtocolObject<dyn MTLCommandBuffer> =
-            &*(cmd_buf_ptr as *const ProtocolObject<dyn MTLCommandBuffer>);
-        let drawable = &*acquired.drawable;
-
-        // Record the real presentation time rather than inferring it from the
-        // render loop, which cannot observe drops or compositor scheduling.
-        // `presentedTime` is documented to stay 0 for a frame that was skipped,
-        // so a frame that never makes it to the panel is simply absent here.
-        drawable.addPresentedHandler(sink.presented_handler_block() as *mut _);
-
-        // Keep the drawable alive until the command buffer that presents it has
-        // completed.
-        //
-        // `nextDrawable` hands back an autoreleased object, and our `Retained`
-        // is dropped as soon as this function returns. Relying on the ambient
-        // autorelease pool to bridge the gap to commit is not sound on a render
-        // thread whose pool drain we do not control — a drawable released
-        // early is simply never presented. Moving the retain into the
-        // completion handler ties its lifetime to the work that uses it.
-        let sink_for_commit = Arc::clone(sink);
-        let keep_alive = acquired.drawable.clone();
-        // Keep the *presented* handler's block alive too.
-        //
-        // `RcBlock` is dropped when this function returns, and empirically that
-        // is too early: the handler then never fires. A minimal control app
-        // (plain CAMetalLayer, no Bevy) gets a callback for every present, so
-        // the block must outlive registration — park it in the completion
-        // handler, which Metal does copy, so it lives until the buffer is done.
-        let deferred = timing == PresentTiming::Deferred;
-        let own_buffer = timing == PresentTiming::OwnCommandBuffer;
-        let queue_addr = queue_ptr.map(|q| q.as_ptr() as usize);
-        let refresh = refresh_interval;
-        let done = RcBlock::new(
-            move |_finished: NonNull<ProtocolObject<dyn MTLCommandBuffer>>| {
-                sink_for_commit.push_committed();
-                if own_buffer {
-                    // The graph's work is done, so a present committed now is
-                    // correctly ordered behind the passes that filled this
-                    // drawable — while still coming from our own queue.
-                    if let Some(addr) = queue_addr {
-                        let queue: *mut AnyObject = addr as *mut AnyObject;
-                        let cb: *mut AnyObject = msg_send![queue, commandBuffer];
-                        if !cb.is_null() {
-                            let cb_obj: &ProtocolObject<dyn MTLCommandBuffer> =
-                                &*(cb as *const ProtocolObject<dyn MTLCommandBuffer>);
-                            cb_obj.presentDrawable(&*keep_alive);
-                            cb_obj.commit();
-                        }
-                    }
-                }
-                if deferred {
-                    // Present from the completion handler rather than from the
-                    // command buffer.
-                    //
-                    // `wgpu` acquires its own drawable in `prepare_windows`,
-                    // before the render graph runs, so ours is always the
-                    // *newer* of the two. A `CAMetalLayer` will not display a
-                    // newer drawable ahead of an older outstanding one — the
-                    // present is accepted and silently dropped. Deferring to
-                    // completion puts our present after Bevy's, restoring
-                    // acquisition order.
-                    keep_alive.presentAfterMinimumDuration(refresh);
-                }
-            },
-        );
-        cmd_buf.addCompletedHandler(&*done as *const _ as *mut _);
-
-        sink.push_encoded();
-
-        match timing {
-            // Both handled in the completion handler registered above.
-            PresentTiming::Deferred | PresentTiming::OwnCommandBuffer => {}
-            PresentTiming::MinimumDuration => {
-                cmd_buf.presentDrawable_afterMinimumDuration(drawable, refresh_interval);
-            }
-            PresentTiming::Vsync => drawable_present(cmd_buf, drawable),
-            PresentTiming::Scheduled => {
-                let last = sink.last_presented();
-                let now = CACurrentMediaTime();
-                if last > 0.0 {
-                    // One refresh past the last frame we saw land, but never in
-                    // the past — a stale target would ask the compositor to
-                    // show a frame at a time that has already gone by.
-                    let target = (last + refresh_interval).max(now);
-                    cmd_buf.presentDrawable_atTime(drawable, target);
-                } else {
-                    // No timing history yet; vsync placement until there is.
-                    drawable_present(cmd_buf, drawable);
-                }
-            }
-        }
-    }
-    // `acquired` drops here, releasing our retain. Metal keeps its own
-    // reference until the drawable has been presented.
-}
-
 // ---------------------------------------------------------------------------
 // Bevy wiring
 // ---------------------------------------------------------------------------
@@ -926,13 +668,13 @@ pub struct MetalFxDualPresent {
     queue: usize,
     /// Presentation telemetry, shared with whoever wants to read it.
     pub sink: Arc<PresentSink>,
-    /// How the interpolated frame's presentation time is chosen.
-    pub timing: PresentTiming,
     /// Master switch. Off means the node behaves exactly as before: one
     /// present per update, interpolated frame computed but not shown.
     pub enabled: bool,
-    /// Assumed display refresh interval, in seconds. Only consulted by
-    /// [`PresentTiming::Scheduled`].
+    /// Assumed display refresh interval, in seconds.
+    ///
+    /// The real frame is held back by this much so it lands on the vsync after
+    /// the interpolated one instead of collapsing into the same one.
     pub refresh_interval: f64,
     /// Present only the real frame, skipping the interpolated one.
     ///
@@ -950,14 +692,13 @@ impl Default for MetalFxDualPresent {
             layer: 0,
             queue: 0,
             sink: PresentSink::new(),
-            timing: PresentTiming::default(),
             // Off by default: on this Bevy/wgpu stack the second present is
             // never displayed (see the module docs), and enabling it would
             // hand Bevy's swapchain the interpolated frame while the real one
             // goes nowhere. Opt in only to investigate.
             enabled: false,
-            // ProMotion. Wrong only for non-120Hz panels, and only affects
-            // `Scheduled` pacing.
+            // ProMotion. Wrong only for non-120Hz panels, where the two
+            // frames are spaced by the wrong interval but still both present.
             refresh_interval: 1.0 / 120.0,
             single_present: false,
         }
@@ -969,10 +710,9 @@ impl MetalFxDualPresent {
     ///
     /// A constructor rather than a struct literal because the layer pointer is
     /// private — it is discovered at runtime, never supplied by the caller.
-    pub fn new(sink: Arc<PresentSink>, timing: PresentTiming, enabled: bool) -> Self {
+    pub fn new(sink: Arc<PresentSink>, enabled: bool) -> Self {
         Self {
             sink,
-            timing,
             enabled,
             ..Default::default()
         }
@@ -985,8 +725,6 @@ impl MetalFxDualPresent {
     }
 
     /// Override the assumed display refresh interval (default: 120Hz).
-    ///
-    /// Only [`PresentTiming::Scheduled`] reads this.
     pub fn with_refresh_interval(mut self, seconds: f64) -> Self {
         self.refresh_interval = seconds;
         self
@@ -1048,10 +786,7 @@ pub fn capture_metal_layer(
             };
             state.layer = owned.as_ptr() as usize;
             state.queue = queue.as_ptr() as usize;
-            log::info!(
-                "MetalFX dual presentation: active ({:?} timing) on an owned layer",
-                state.timing
-            );
+            log::info!("MetalFX dual presentation: active on an owned layer");
         }
         None => {
             // Not fatal, and not worth a per-frame log: without a layer the
@@ -1218,6 +953,10 @@ pub unsafe fn present_pair_deferred(
 
         let handler = RcBlock::new(
             move |_done: NonNull<ProtocolObject<dyn MTLCommandBuffer>>| {
+                // Reaching here proves the graph's command buffer completed —
+                // the middle of the encoded/committed/callbacks triad that
+                // separates "never ran" from "ran but was skipped".
+                sink.push_committed();
                 let layer_obj = layer_addr as *mut AnyObject;
 
                 // In single-present mode only the real frame is shown; the
