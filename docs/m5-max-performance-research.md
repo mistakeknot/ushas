@@ -639,137 +639,130 @@ a measurable one.
 
 ---
 
-# e5h3 — display-timed dual presentation: implemented, measurement blocked
+# e5h3 — display-timed dual presentation: built, accepted, display unverified
 
-Frame interpolation was left correct-but-invisible by 6zit.8. This bead built
-the presentation half. **The implementation is complete; its validation is
-not** — every run was made on a locked, display-asleep machine, which cannot
-present frames at all.
+Frame interpolation was left correct-but-invisible by 6zit.8: the node computed
+a correct intermediate frame and had nowhere to put it. This bead built the
+presentation half. It works in the sense that both frames are now accepted for
+presentation at twice the single-present rate. Whether they reach the panel is
+still unknown, for a reason that has nothing to do with this code.
 
 ## What was built
 
-`crates/bevy_metalfx/src/present.rs`, opt-in via `MetalFxPlugin.dual_present`
-and `sw-renderer --dual-present`:
+`crates/bevy_metalfx/src/present/`, opt-in via `MetalFxPlugin.dual_present` and
+`sw-renderer --dual-present`:
 
-- **Owned `CAMetalLayer`.** Sharing wgpu's layer is not viable: wgpu acquires
-  that layer's drawable in Bevy's `prepare_windows`, before the render graph,
-  and holds it all frame. So a layer is created and stacked above wgpu's,
-  mirroring its geometry, scale, pixel format and device; both frames are
-  presented there, and wgpu keeps presenting its own layer underneath.
+- **Owned `CAMetalLayer`,** on its own `NSView`, stacked above wgpu's. Sharing
+  wgpu's layer is not viable — wgpu acquires that layer's drawable in
+  `prepare_windows`, before the graph, and holds it all frame.
 - **Layer discovery.** wgpu installs its `CAMetalLayer` as a *sublayer* of the
   winit `NSView`'s root layer (it only adopts the root layer for an `MTKView`
   or custom `layerClass`), so `[view layer]` is the wrong answer.
-- **Drawable wrapping.** The layer is `framebufferOnly`, so a drawable is not a
-  legal blit destination; each frame is drawn in with the `BlitPipeline` render
-  pass, targeting a `wgpu::Texture` wrapped around the drawable's raw
-  `MTLTexture` via `texture_from_raw`.
-- **Ordering.** The interpolated frame depicts the earlier moment, so it is
-  presented first and the real frame is held one refresh with
-  `presentDrawable:afterMinimumDuration:`. Both presents are encoded onto the
-  render graph's own command buffer, after the passes that fill them, so a frame
-  can never be presented before it is drawn.
-- **Presented-time telemetry.** `MTLDrawable.addPresentedHandler:` records real
-  `presentedTime` values, giving presented frame rate, interval spread (judder),
-  ordering inversions and drops. Render-loop timing cannot see a frame the
-  compositor discarded, so this is the only honest instrument.
+- **BGRA staging.** `CAMetalLayer` supports BGRA channel order only, MetalFX
+  writes the view's RGBA format, and a blit copy cannot convert between them.
+  Each frame is drawn into a BGRA texture by the same fullscreen blit pass Bevy
+  uses for its swapchain, which converts for free.
+- **Deferred present.** Acquire, copy, present and commit all happen in the
+  graph command buffer's *completion* handler, on a command buffer from a queue
+  of our own.
+- **Ordering.** Interpolated frame first — it depicts the earlier moment — with
+  the real frame held one refresh by `presentDrawable:afterMinimumDuration:`.
+- **Presented-time telemetry.** `addPresentedHandler:` records real
+  `presentedTime` values: presented rate, interval spread (judder), ordering
+  inversions, drops. Render-loop timing cannot see a frame the compositor
+  discarded, so this is the only honest instrument.
 - **`--cap-fps=N`.** Interpolation only has somewhere to put a frame if the app
   renders below the refresh rate; at 60 updates/sec into a 60Hz panel Bevy's one
   present per update already claims every vsync.
 
-## Why the measurements are void
+## shb1 — presents silently rejected, and the fix
 
-`ioreg` reports `CGSSessionScreenIsLocked = Yes` with `CGSSessionScreenLockedTime`
-= 2026-07-25 00:06:23 — **one minute before the first presentation test**, and
-`Display Asleep: Yes` throughout. macOS does not composite window content to a
-panel in that state.
+The first working build encoded presents that Metal accepted and then discarded:
+`encoded 758, callbacks 0`. Twelve candidate causes were eliminated (RcBlock
+lifetime, command-buffer validity, drawable lifetime, five presentation APIs,
+layer geometry, queue ownership, `CATransaction` commit, hosting model, thread
+affinity, window attachment, the drawable `ProtocolObject` cast).
 
-Consequently every configuration measured 0 frames displayed and 0 presentation
-callbacks — identically, across four presentation APIs (`presentDrawable:`,
-`:atTime:`, `:afterMinimumDuration:`, and presenting from the command buffer's
-completion handler), across both wgpu's layer and our own, with the render rate
-capped to leave free vsync intervals, and with `caffeinate -u -d -i` held for
-the duration. That uniformity is the tell: it is the environment, not the code.
+The break came from `examples/present_repro.rs` — the same objc2 pattern with no
+Bevy, no wgpu, no MetalFX — which *did* get callbacks. That isolated the fault to
+the commit strategy rather than the binding. Three changes fixed it:
 
-`caffeinate` asserts user activity and prevents *future* sleep; it does not
-unlock an already-locked session.
+1. Present from the graph buffer's **completion handler**, on our own queue. A
+   drawable acquired mid-graph has been recycled by the time a later commit
+   lands, and its present is discarded with no error.
+2. `framebufferOnly = false` on our layer, so a drawable is a legal blit
+   destination.
+3. Pin the layer's `pixelFormat` to a **BGRA** format. An unsupported format is
+   accepted at `setPixelFormat:` time and then costs every present, silently.
 
-An earlier revision of this document concluded from these numbers that wgpu's
-ownership of the drawable queue makes a second present impossible from a render
-node. **That conclusion was not supported** — the experiment could not have
-displayed a frame either way — and has been withdrawn.
+Result: **callbacks 0/758 → 757/758**, later 802/801 on an awake display.
 
-## What is and is not established
+## The measurement that is still missing
 
-Established on this run:
-
-- Metal accepts every present; the Metal debug layer is clean under
-  `MTL_DEBUG_LAYER=1`.
-- The command buffer carrying the presents commits and completes every frame
-  (an `addCompletedHandler` on that buffer fires 1:1 with presents encoded).
-- Drawable acquisition never fails, on either layer.
-- No regression: spatial, temporal and interpolation all run clean with dual
-  presentation off, and the new path is fully bypassed (`encoded 0`).
-
-Not established, pending an unlocked display:
-
-- Whether either frame reaches the panel.
-- Presented frame rate versus the temporal baseline.
-- Judder and ordering-inversion behaviour.
-- The refresh ceiling. The app sits at exactly 60.0fps under vsync, but with the
-  panel asleep that number cannot be read as the display's real capability —
-  and 6zit.14's 118.5fps was measured under `AutoNoVsync`, which is a *render*
-  rate, not a presented one. Distinguishing those two is precisely what the new
-  telemetry is for.
-
-## Positive control: the environment cannot present, proven
-
-Rather than keep inferring the environment's role, a minimal known-good
-presentation loop was written as a control — plain `CAMetalLayer`, no Bevy, no
-`wgpu`, no MetalFX, ~60 lines of Swift
-(`crates/sw-renderer/scripts/present-probe.swift`):
+Presented frame rate cannot be measured on this machine.
+`MTLDrawable.presentedTime` never populates — not for this crate, and not for a
+minimal, maximally visible Metal window either. The positive control
+(`crates/sw-renderer/scripts/present-probe-visible.swift`: `.regular` activation
+policy, `orderFrontRegardless`, `.floating` level, `activate(ignoringOtherApps:)`,
+awake display) reports:
 
 ```
-RESULT encoded=843 callbacks=843 presented=0
+RESULT encoded=881 callbacks=881 presented=0
 ```
 
-`presentedTime` is 0 for **every** drawable in a textbook presentation path. No
-renderer can score above zero in this state, so the null results measured for
-dual presentation say nothing about the dual-presentation code. The environment
-is the cause; this is now established rather than assumed.
+Every present is accepted and acknowledged; none reports a presentation time. No
+implementation, correct or not, can score above zero on that signal here.
 
-## A real defect the control exposed
+### A withdrawn conclusion, and why
 
-The control gets a presentation callback for every present (843/843). The Rust
-path gets **zero** callbacks while encoding the same number of presents. So
-`addPresentedHandler` works, and this crate's registration of it does not.
+An earlier revision concluded from a batch of uniform zeros that wgpu's ownership
+of the drawable queue makes a second present impossible from a render node.
+`ioreg` later showed `CGSSessionScreenIsLocked = Yes` from one minute *before*
+the first test: the experiment could not have displayed a frame either way. The
+conclusion was withdrawn, and shb1 subsequently disproved it outright.
 
-This matters beyond the sleeping display: with the handler never firing,
-`PresentSink` would report zero presented frames *even on a working display*,
-and `validate-dual-present.sh` would emit a false FAIL. Keeping the `RcBlock`
-alive past registration (parking it in the command buffer's completion handler,
-which Metal does copy) was tried and did **not** fix it, so the cause is
-elsewhere — most likely the block's type encoding at the
-`MTLDrawablePresentedHandler` boundary.
+The methodological lesson is worth more than the finding: **uniform null results
+across many independent mechanisms are evidence about the instrument or the
+environment, not N independent confirmations about the code.** The same trap
+recurred later with `cargo tree -e features`, which showed identical feature sets
+for every build of this crate — resolved only by a control experiment (remove the
+gate, confirm the build breaks) rather than by trusting the report.
 
-**Fix this before trusting any validation run.** The control is the oracle:
-match its behaviour, then re-run.
+## The measured result
 
-## Next step## Next step
+Both arms routed through the same layer and the same telemetry, with
+interpolation computed in both so GPU cost is identical and only the present
+count differs (`--present-single` is the baseline control):
 
-Re-run on an unlocked session with the display awake:
+| | presents | callbacks | render fps |
+|---|---|---|---|
+| baseline (single present) | 403 | 403 | 26.9 |
+| dual present | 802 | 801 | 26.7 |
 
-```sh
-# baseline, display-paced
-./target/release/sw-renderer --bench-quick --metalfx=temporal --vsync --cap-fps=30
-# dual presentation
-./target/release/sw-renderer --bench-quick --metalfx=interpolate --dual-present --cap-fps=30
-```
+**1.99× the accepted-present rate at an unchanged render rate.**
 
-The `Presented:` line reports total presented fps, the real/interpolated split,
-interval percentiles, judder and inversions. The acceptance criteria are met if
-presented fps exceeds the temporal baseline with inversions at 0.
+Established: presents are accepted and acknowledged, the debug layer is clean
+under `MTL_DEBUG_LAYER=1`, the carrying command buffer commits and completes
+every frame, drawable acquisition effectively never fails, and there is no
+regression with dual presentation off (the path is fully bypassed, `encoded 0`).
 
-Order of work: fix the presented-handler registration first (compare against
-`present-probe.swift`, which must be run on the same unlocked session to confirm
-it reports `presented>0` there), then run the validation script. Without that
-fix the script cannot report a pass under any circumstances.
+Not established: that either frame reaches the panel, presented frame rate
+versus the temporal baseline, judder, or ordering-inversion behaviour.
+
+## Next step
+
+e5h3's acceptance criteria are written in presented fps, which is exactly the
+signal this hardware cannot produce, so they are unevaluable here by any
+implementation. That is a human decision, tracked as **shadow-work-au59**:
+
+- **A — test elsewhere.** Verify with `present-probe-visible.swift` first
+  (expect `presented>0`), then run
+  `./crates/sw-renderer/scripts/validate-dual-present.sh`, which instruments
+  both arms and prints PASS/FAIL. No code changes needed. Preferred: it answers
+  the original question rather than a substitute for it.
+- **B — re-express the criteria** against a signal that works here
+  (accepted-present rate, already measured at 1.99×, or `CADisplayLink`
+  cadence). Cheap, but it measures frames handed to the compositor rather than
+  frames shown, and should be labelled as such.
+- **C — accept the proxy** and close at 1.99×, recording explicitly that display
+  was never verified.
