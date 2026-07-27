@@ -1,6 +1,6 @@
 [package]
 name = "bevy_metalfx"
-version = "0.2.0"
+version = "0.2.1"
 edition = "2021"
 authors = ["mk <mk@generalsystemsventures.com>"]
 description = "Bevy plugin for Apple MetalFX upscaling and frame interpolation"
@@ -16,14 +16,20 @@ readme = "README.md"
 # out of the package.
 exclude = ["examples/", "scripts/"]
 
-# docs.rs builds on x86_64-unknown-linux-gnu by default, where this crate is
-# almost entirely #[cfg]'d out — the published docs would show the non-macOS
-# stub: no `present` module, no `gpu_timing`, and a `MetalFxPlugin` missing two
-# of its fields. Point it at the macOS build, with every feature on so frame
-# interpolation and dual presentation are documented too.
+# docs.rs must build on x86_64-unknown-linux-gnu, where this crate is almost
+# entirely #[cfg]'d out, so the rendered docs show the non-macOS stub rather
+# than the real API. That is not fixable from here.
+#
+# 0.2.0 tried `default-target = "aarch64-apple-darwin"` and the build FAILED:
+# docs.rs cross-compiles from a Linux container and still has to compile the
+# dependency graph, and `blake3` (pulled in by bevy_asset, so unavoidable for
+# any bevy crate) has a cc-rs build script. Targeting Apple makes it pass
+# `-arch arm64 -mmacosx-version-min=11.0` to Linux gcc, which rejects them.
+# A failed build means no docs page at all — strictly worse than the stub.
+#
+# So: build where it can build. `all-features` still helps, and the real API
+# docs are verified on a macOS runner by .github/workflows/bevy-metalfx.yml.
 [package.metadata.docs.rs]
-default-target = "aarch64-apple-darwin"
-targets = ["aarch64-apple-darwin"]
 all-features = true
 
 [features]

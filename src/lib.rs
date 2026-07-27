@@ -3,6 +3,24 @@
 //! Uses `objc2-metal-fx` for MetalFX framework bindings and integrates
 //! as a render graph node replacing Bevy's built-in upscaling.
 //!
+//! <div class="warning">
+//!
+//! **If you are reading this on docs.rs, you are seeing the non-macOS stub.**
+//!
+//! Almost everything here is `#[cfg(target_os = "macos")]`, and docs.rs builds
+//! on Linux. The `present` and `gpu_timing` modules are missing from the
+//! rendered page entirely, and [`MetalFxPlugin`] shows two of its four fields.
+//!
+//! Pinning docs.rs to an Apple target does not work: it cross-compiles from a
+//! Linux container and must still build the dependency graph, and `blake3`
+//! (via `bevy_asset`) has a C build script that needs an Apple toolchain. That
+//! was tried in 0.2.0 and produced no docs page at all.
+//!
+//! For the real API: `cargo doc --open -p bevy_metalfx --all-features` on a
+//! Mac, or read the source.
+//!
+//! </div>
+//!
 //! ## Supported Modes
 //! - **Spatial**: Single-frame ML upscaling (macOS 13+)
 //! - **Temporal**: Multi-frame temporal upscaling with motion vectors (macOS 13+)
@@ -16,10 +34,14 @@
 //! ## What is and is not verified
 //!
 //! Spatial and temporal upscaling are complete and stable. Frame interpolation
-//! computes a correct intermediate frame and, with [`present::MetalFxDualPresent`]
+//! computes a correct intermediate frame and, with `present::MetalFxDualPresent`
 //! enabled, presents it — at twice the accepted-present rate of a single
 //! present, with the render rate unchanged. Whether the extra frame reaches the
-//! display is **unverified**: see [`present`] for what that depends on.
+//! display is **unverified**: see the `present` module for what that depends
+//! on.
+//!
+//! (Deliberately not intra-doc links: `present` is macOS-only, and docs.rs
+//! renders this page from a Linux build where the link target does not exist.)
 
 #[cfg(target_os = "macos")]
 mod platform;
