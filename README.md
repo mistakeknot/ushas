@@ -189,8 +189,59 @@ of the upscaling pipeline — most apps leave `gpu_timing_sink` at its `None` de
 
 | bevy_metalfx | Bevy |
 |-------------|------|
+| 0.3 | 0.18 |
 | 0.2 | 0.18 |
 | 0.1 | 0.18 |
+
+## Upgrading from 0.2
+
+0.3 changes two things on the presentation-telemetry surface. Both are breaking
+only for code that reads `PresentSink`/`PresentStats` — the plugin, the modes,
+the render scale and every upscaling type are untouched, so if you do not sample
+presentation telemetry, 0.3 is a drop-in.
+
+| Change | Why | Fix |
+|---|---|---|
+| `PresentSink::counts()` returns `(u64, u64, u64, u64, u64)`, was `(u64, u64, usize, u64, u64)` | the third element is a real counter now, not a length | see below — **read the note, do not just fix the type** |
+| `PresentStats::interp_fps` renamed `presented_fps` | it was never the interpolated-frame rate | rename at the use site |
+
+**The third element of `counts()` changed meaning, not just type.** It used to
+be `presented.len()` — the occupancy of the sample ring, which is capped at
+`RING_CAPACITY` (480). The other four counters are cumulative and unbounded, so
+past 480 presents the old third element sat at 480 forever while `encoded`,
+`callbacks` and `committed` kept climbing. Read as a row, that looks exactly
+like presentation having stopped 480 frames in. It is now `displayed`, a
+cumulative count of frames that actually reached the display, reset only by
+`reset()`.
+
+```rust
+// 0.2 — third element saturates at 480
+let (encoded, dropped, presented_len, callbacks, committed) = sink.counts();
+
+// 0.3 — third element is cumulative, like the other four
+let (encoded, dropped, displayed, callbacks, committed) = sink.counts();
+```
+
+The type moved from `usize` to `u64` in the same change, and that is deliberate:
+it makes the compiler stop you. Had the type stayed put, a saturating gauge
+would have silently become an unbounded counter and every dashboard built on it
+would have kept rendering without a single diagnostic. If you were storing the
+old value as a "how full is the ring" signal, there is no replacement for it —
+that was never a useful number to expose, and it is the ring's own business.
+
+**`interp_fps` → `presented_fps`** is a rename with no behavioural change, but
+the old name was actively wrong. One presented-handler serves every drawable the
+crate presents, so the rate it measures has always covered real and interpolated
+frames together. Code that added a render rate to `interp_fps` to recover a
+total was double-counting the real frames; delete the addition.
+
+```rust
+// 0.2 — the name invited this, and it is wrong
+let total = stats.interp_fps + render_fps;
+
+// 0.3 — the name says what it always measured
+let total = stats.presented_fps;
+```
 
 ## Upgrading from 0.1
 

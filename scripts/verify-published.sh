@@ -20,7 +20,7 @@
 
 set -euo pipefail
 
-VERSION="${BEVY_METALFX_VERSION:-0.2}"
+VERSION="${BEVY_METALFX_VERSION:-0.3}"
 CRATE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 REPO_ROOT="$(cd "$CRATE_DIR/../.." && pwd)"
 
@@ -38,8 +38,38 @@ if [[ "${1:-}" == "--packaged" ]]; then
 
     echo "    sha256 $(shasum -a 256 "$TARBALL" | awk '{print $1}')"
     echo "    $(find "$PKG" -type f | wc -l | tr -d ' ') files"
-    for required in LICENSE-MIT LICENSE-APACHE README.md Cargo.toml; do
+    for required in LICENSE-MIT LICENSE-APACHE README.md CHANGELOG.md Cargo.toml; do
         [[ -f "$PKG/$required" ]] || { echo "MISSING from tarball: $required" >&2; exit 1; }
+    done
+
+    # Assert the shipped SOURCE, not the working tree. `cargo package` leaves an
+    # extracted directory and a .crate beside it and they drift — `--dry-run`
+    # refreshes the directory but can leave a stale tarball, and only the
+    # tarball uploads. Without this, a stale tarball publishes the PREVIOUS
+    # release's bytes under the new version number: the manifest reads 0.3.0,
+    # the consumer check passes, and the breaking change simply is not in it.
+    #
+    # Each entry is "description<TAB>grep -E pattern"; a `!` prefix asserts the
+    # pattern is ABSENT. Update these when the release changes public API.
+    echo "==> asserting the 0.3 API surface is in the tarball"
+    API_CHECKS=(
+        "counts() returns five u64	pub fn counts\(&self\) -> \(u64, u64, u64, u64, u64\)"
+        "PresentStats exposes presented_fps	pub presented_fps: f32"
+        "!no interp_fps anywhere	interp_fps"
+    )
+    for check in "${API_CHECKS[@]}"; do
+        desc="${check%%$'\t'*}"; pat="${check#*$'\t'}"
+        if [[ "$desc" == !* ]]; then
+            if grep -rEq -- "$pat" "$PKG/src"; then
+                echo "API CHECK FAILED (${desc#!}): found /$pat/ in the tarball" >&2
+                grep -rEn -- "$pat" "$PKG/src" >&2
+                exit 1
+            fi
+        elif ! grep -rEq -- "$pat" "$PKG/src"; then
+            echo "API CHECK FAILED ($desc): /$pat/ not in the tarball" >&2
+            exit 1
+        fi
+        echo "    ok: ${desc#!}"
     done
     DEP="bevy_metalfx = { path = \"$PKG\" }"
     SOURCE="tarball $TARBALL"
