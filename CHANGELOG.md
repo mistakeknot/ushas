@@ -90,10 +90,13 @@ change.
   ships, including four `MTL4FX*` families this crate never touches, which made
   the per-feature gating a no-op.
 
-## [0.1.0] — 2026-03-23
+## [0.1.0] — 2026-03-23 — YANKED
 
 Initial release: MetalFX spatial and temporal upscaling as a Bevy render-graph
 node, with the plugin disabling itself on unsupported platforms.
+
+Yanked: `--features temporal` did not compile on any non-macOS target, so the
+release was unusable for cross-platform consumers. Fixed in 0.2.0.
 
 [0.3.0]: https://github.com/mistakeknot/bevy_metalfx/releases/tag/v0.3.0
 [0.2.1]: https://github.com/mistakeknot/bevy_metalfx/releases/tag/v0.2.1
