@@ -94,7 +94,8 @@ use bevy::render::render_resource::{
 };
 use bevy::render::renderer::{RenderContext, ViewQuery};
 use bevy::render::view::ViewTarget;
-#[cfg(feature = "frame-interpolation")]
+// Unconditional: `SendScaler::Spatial` holds a `Retained`, so every feature
+// combination needs this — including the default, spatial-only build.
 use objc2::rc::Retained;
 use objc2::runtime::ProtocolObject;
 #[cfg(feature = "frame-interpolation")]
