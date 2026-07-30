@@ -50,8 +50,11 @@ impl MetalFxUpscaleNode {
             let pipeline_layout =
                 wgpu_dev.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                     label: Some("motion_resolve_layout"),
-                    bind_group_layouts: &[&bgl],
-                    push_constant_ranges: &[],
+                    bind_group_layouts: &[Some(&bgl)],
+                    // wgpu 29 replaced `push_constant_ranges` with a single
+                    // `immediate_size`. Neither resolve pipeline uses push
+                    // constants, so this is zero rather than a translation.
+                    immediate_size: 0,
                 });
             let pipeline = wgpu_dev.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
                 label: Some("motion_resolve_pipeline"),
@@ -78,7 +81,7 @@ impl MetalFxUpscaleNode {
                 },
                 depth_stencil: None,
                 multisample: Default::default(),
-                multiview: None,
+                multiview_mask: None,
                 cache: None,
             });
             *mr = Some(ResolvePipeline {
@@ -128,6 +131,7 @@ impl MetalFxUpscaleNode {
                 depth_stencil_attachment: None,
                 timestamp_writes: None,
                 occlusion_query_set: None,
+                multiview_mask: None,
             });
         pass.set_pipeline(&mr_ref.pipeline);
         pass.set_bind_group(0, bind_group, &[]);
@@ -174,8 +178,11 @@ impl MetalFxUpscaleNode {
             let pipeline_layout =
                 wgpu_dev.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                     label: Some("depth_resolve_layout"),
-                    bind_group_layouts: &[&bgl],
-                    push_constant_ranges: &[],
+                    bind_group_layouts: &[Some(&bgl)],
+                    // wgpu 29 replaced `push_constant_ranges` with a single
+                    // `immediate_size`. Neither resolve pipeline uses push
+                    // constants, so this is zero rather than a translation.
+                    immediate_size: 0,
                 });
             let pipeline = wgpu_dev.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
                 label: Some("depth_resolve_pipeline"),
@@ -198,13 +205,13 @@ impl MetalFxUpscaleNode {
                 },
                 depth_stencil: Some(wgpu::DepthStencilState {
                     format: wgpu::TextureFormat::Depth32Float,
-                    depth_write_enabled: true,
-                    depth_compare: wgpu::CompareFunction::Always,
+                    depth_write_enabled: Some(true),
+                    depth_compare: Some(wgpu::CompareFunction::Always),
                     stencil: Default::default(),
                     bias: Default::default(),
                 }),
                 multisample: Default::default(),
-                multiview: None,
+                multiview_mask: None,
                 cache: None,
             });
             *dr = Some(ResolvePipeline {
@@ -267,6 +274,7 @@ impl MetalFxUpscaleNode {
                 ),
                 timestamp_writes: None,
                 occlusion_query_set: None,
+                multiview_mask: None,
             });
         pass.set_pipeline(&dr_ref.pipeline);
         pass.set_bind_group(0, bind_group, &[]);

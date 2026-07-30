@@ -316,8 +316,8 @@ impl bevy::app::Plugin for MetalFxPlugin {
 
         #[cfg(target_os = "macos")]
         {
-            use bevy::core_pipeline::core_3d::graph::{Core3d, Node3d};
-            use bevy::render::render_graph::{RenderGraphExt, ViewNodeRunner};
+            use bevy::core_pipeline::schedule::Core3d;
+            use bevy::core_pipeline::upscaling::upscaling;
             use bevy::render::RenderApp;
 
             // Shared GPU-timing sink: same Arc in main world (debug server reads)
@@ -329,14 +329,16 @@ impl bevy::app::Plugin for MetalFxPlugin {
 
             if let Some(render_app) = app.get_sub_app_mut(RenderApp) {
                 render_app.insert_resource(timing);
-                render_app
-                    .add_render_graph_node::<ViewNodeRunner<MetalFxUpscaleNode>>(
-                        Core3d,
-                        MetalFxLabel,
-                    )
-                    // Run MetalFX after Bevy's UpscalingNode — we overwrite
-                    // out_texture with the ML-upscaled result via Metal blit.
-                    .add_render_graph_edges(Core3d, (Node3d::Upscaling, MetalFxLabel));
+                // Bevy 0.19 drives rendering from schedules, not a graph, so the
+                // node-plus-edge pair below is now a single ordered system. The
+                // ordering constraint is unchanged and still load-bearing: run
+                // after Bevy's own `upscaling`, because we overwrite
+                // out_texture with the ML-upscaled result via a Metal blit, and
+                // running first would just have it blitted over.
+                render_app.add_systems(
+                    Core3d,
+                    node::metalfx_upscale.in_set(MetalFxLabel).after(upscaling),
+                );
             }
         }
     }
@@ -659,8 +661,14 @@ fn setup_temporal_camera(
     }
 }
 
-/// Render graph label for the MetalFX upscale node.
-#[derive(Debug, Hash, PartialEq, Eq, Clone, bevy::render::render_graph::RenderLabel)]
+/// System set containing the MetalFX upscale pass.
+///
+/// Through 0.3 this was a render *graph* label, because Bevy had a render graph
+/// and the pass was a node in it. Bevy 0.19 drives rendering from schedules, so
+/// the thing you order against is a set rather than a node — the type keeps its
+/// name and its job, and `my_system.after(MetalFxLabel)` still means what it
+/// always meant.
+#[derive(SystemSet, Debug, Hash, PartialEq, Eq, Clone)]
 pub struct MetalFxLabel;
 
 /// Probe whether a spatial scaler can be created for the given render device.
@@ -674,7 +682,6 @@ pub struct MetalFxLabel;
 pub fn probe_spatial_scaler(_render_device: &bevy::render::renderer::RenderDevice) -> bool {
     #[cfg(target_os = "macos")]
     {
-        use foreign_types::ForeignType;
         use std::ffi::c_void;
 
         if !is_available() {
@@ -688,10 +695,12 @@ pub fn probe_spatial_scaler(_render_device: &bevy::render::renderer::RenderDevic
             return false;
         };
         let device_ptr = {
-            // SAFETY: read while the lock is held; scaler creation retains what
-            // it needs, and the pointer does not outlive this function.
-            let dev_lock = hal_dev.raw_device().lock();
-            dev_lock.as_ptr() as *mut c_void
+            // wgpu-hal 29 hands back the objc2 device directly; through 28 it
+            // was behind a Mutex, hence the lock this used to take.
+            //
+            // SAFETY: scaler creation retains what it needs, and the pointer
+            // does not outlive this function.
+            &**hal_dev.raw_device() as *const _ as *mut c_void
         };
 
         let fmt = bevy::render::render_resource::TextureFormat::Bgra8Unorm;

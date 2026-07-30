@@ -1,8 +1,14 @@
-//! MetalFX upscaling render graph node (spatial + temporal).
+//! MetalFX upscaling pass (spatial + temporal).
 //!
-//! Runs after `Node3d::Upscaling`. Creates its own output texture at full
-//! resolution, uses MetalFX to upscale from `main_texture` (low-res) into it,
-//! then blits to the swapchain via a render pass on `ViewTarget::out_texture()`.
+//! Runs after Bevy's own `upscaling` system. Creates its own output texture at
+//! full resolution, uses MetalFX to upscale from `main_texture` (low-res) into
+//! it, then blits to the swapchain via a render pass on
+//! `ViewTarget::out_texture()`.
+//!
+//! Through 0.3 this was a render-graph `ViewNode`. Bevy 0.19 removed the render
+//! graph in favour of ECS schedules, so the entry point is now the
+//! [`metalfx_upscale`] system; everything below it is unchanged, because the
+//! MetalFX work only ever needed a command encoder and a pair of textures.
 //!
 //! ## Architecture
 //!
@@ -33,11 +39,11 @@
 //! the render resolution trips a MetalFX debug-layer assertion ("Color texture
 //! width mismatch from descriptor").
 //!
-//! Presenting the synthesised frame needs a second present per update, which a
-//! Bevy render graph does not do. The [`crate::present`] module does it on a
-//! `CAMetalLayer` of its own, and Phase D of `run` feeds it: both frames are
-//! converted to BGRA staging textures here, and presented from the graph
-//! command buffer's completion handler there.
+//! Presenting the synthesised frame needs a second present per update, which
+//! Bevy does not do. The [`crate::present`] module does it on a `CAMetalLayer`
+//! of its own, and Phase D of `run` feeds it: both frames are converted to BGRA
+//! staging textures here, and presented from the frame command buffer's
+//! completion handler there.
 //!
 //! It is opt-in (`MetalFxDualPresent::enabled`). Presents are accepted at
 //! twice the single-present rate; whether they reach the panel is unverified,
@@ -82,15 +88,13 @@ use bevy::core_pipeline::blit::{BlitPipeline, BlitPipelineKey};
 use bevy::core_pipeline::prepass::ViewPrepassTextures;
 use bevy::prelude::*;
 use bevy::render::camera::TemporalJitter;
-use bevy::render::render_graph::{NodeRunError, RenderGraphContext, ViewNode};
 use bevy::render::render_resource::{
     BindGroup, CachedRenderPipelineId, Extent3d, PipelineCache, RenderPassDescriptor,
     SpecializedRenderPipeline, TextureView, TextureViewId,
 };
-use bevy::render::renderer::RenderContext;
+use bevy::render::renderer::{RenderContext, ViewQuery};
 use bevy::render::view::ViewTarget;
 #[cfg(feature = "frame-interpolation")]
-use foreign_types::ForeignType;
 use objc2::rc::Retained;
 use objc2::runtime::ProtocolObject;
 #[cfg(feature = "frame-interpolation")]
@@ -300,8 +304,20 @@ impl Default for MetalFxUpscaleNode {
     }
 }
 
-impl ViewNode for MetalFxUpscaleNode {
-    type ViewQuery = (
+/// The MetalFX upscale pass.
+///
+/// Bevy 0.19 removed the render graph and drives rendering from ECS *schedules*
+/// instead: a pass is an ordinary system that reaches the current view through
+/// [`ViewQuery`] and the frame's encoder through [`RenderContext`]. That is the
+/// entire integration change. The MetalFX work below is untouched by it,
+/// because it only ever needed a command encoder and a pair of textures — the
+/// graph was scaffolding around that, not part of it.
+///
+/// The per-frame caches that used to live in the graph node live in a [`Local`],
+/// which gives them the same per-system persistence the node had.
+#[allow(clippy::type_complexity)]
+pub fn metalfx_upscale(
+    view: ViewQuery<(
         &'static ViewTarget,
         Option<&'static ViewPrepassTextures>,
         Option<&'static TemporalJitter>,
@@ -309,31 +325,39 @@ impl ViewNode for MetalFxUpscaleNode {
         // entity, so the camera frustum is readable here without a bespoke
         // extract system. Frame interpolation needs FOV/near/far from it.
         Option<&'static Projection>,
-    );
+    )>,
+    state: Local<MetalFxUpscaleNode>,
+    mut render_context: RenderContext,
+    world: &World,
+) {
+    state.run(&mut render_context, view.into_inner(), world);
+}
 
+impl MetalFxUpscaleNode {
     // Reduced builds legitimately compute values whose only consumers are
     // gated out — jitter, projection, the prepass pointers. The
     // `frame-interpolation` build compiles every path and is *not* excepted
     // here, so it stays the one that catches a genuinely unused binding.
     #[cfg_attr(not(feature = "frame-interpolation"), allow(unused_variables))]
-    fn run<'w>(
+    #[allow(clippy::type_complexity)]
+    fn run(
         &self,
-        _graph: &mut RenderGraphContext,
-        render_context: &mut RenderContext<'w>,
-        (target, prepass_textures, temporal_jitter, projection): bevy::ecs::query::QueryItem<
-            'w,
-            '_,
-            Self::ViewQuery,
-        >,
-        world: &'w World,
-    ) -> Result<(), NodeRunError> {
+        render_context: &mut RenderContext,
+        (target, prepass_textures, temporal_jitter, projection): (
+            &ViewTarget,
+            Option<&ViewPrepassTextures>,
+            Option<&TemporalJitter>,
+            Option<&Projection>,
+        ),
+        world: &World,
+    ) {
         let main_tex = target.main_texture();
         let main_size = main_tex.size();
         let main_format = main_tex.format();
 
         let Some(color_mtl_fmt) = wgpu_format_to_mtl(main_format) else {
             log::error!("MetalFxUpscaleNode: unsupported format {:?}", main_format);
-            return Ok(());
+            return;
         };
 
         let config = world.get_resource::<MetalFxConfig>();
@@ -390,7 +414,7 @@ impl ViewNode for MetalFxUpscaleNode {
             color_mtl_fmt,
             dynamic_res_range,
         ) {
-            return Ok(());
+            return;
         }
 
         let state = cached.as_mut().unwrap();
@@ -416,15 +440,15 @@ impl ViewNode for MetalFxUpscaleNode {
         if is_temporal_like {
             let Some(prepass) = prepass_textures else {
                 log::warn!("MetalFxUpscaleNode: temporal mode but no prepass textures");
-                return Ok(());
+                return;
             };
             let Some(depth_attachment) = &prepass.depth else {
                 log::warn!("MetalFxUpscaleNode: no depth prepass texture");
-                return Ok(());
+                return;
             };
             let Some(motion_attachment) = &prepass.motion_vectors else {
                 log::warn!("MetalFxUpscaleNode: no motion vector prepass texture");
-                return Ok(());
+                return;
             };
 
             // Log prepass and content-sized dimensions on first frame.
@@ -487,7 +511,7 @@ impl ViewNode for MetalFxUpscaleNode {
             output_w,
             output_h,
         ) {
-            return Ok(());
+            return;
         }
 
         // --- Phase C: Blit metalfx_output → out_texture (swapchain) ---
@@ -498,10 +522,20 @@ impl ViewNode for MetalFxUpscaleNode {
         let pipeline_id = match *cached_pipeline {
             Some(id) => id,
             None => {
+                // wgpu 29 / Bevy 0.19: the output format is now optional,
+                // because a view target can exist without a resolved output.
+                // Skip the frame rather than guessing a format.
+                let Some(target_format) = target.out_texture_view_format() else {
+                    log::error!("MetalFxUpscaleNode: view target has no output format");
+                    return;
+                };
                 let key = BlitPipelineKey {
-                    texture_format: target.out_texture_view_format(),
+                    target_format,
                     blend_state: None,
                     samples: 1,
+                    // 0.18's key had no colour-space knob and blitted the source
+                    // through unchanged; `None` is that behaviour, not a new choice.
+                    source_space: None,
                 };
                 let descriptor = blit_pipeline.specialize(key);
                 let id = pipeline_cache.queue_render_pipeline(descriptor);
@@ -513,7 +547,7 @@ impl ViewNode for MetalFxUpscaleNode {
         let Some(pipeline) = pipeline_cache.get_render_pipeline(pipeline_id) else {
             log::warn!("MetalFxUpscaleNode: blit pipeline not ready yet");
             drop(cached);
-            return Ok(());
+            return;
         };
 
         // Cloned out before the state lock is released, so the dual-present
@@ -578,10 +612,12 @@ impl ViewNode for MetalFxUpscaleNode {
 
         let pass_descriptor = RenderPassDescriptor {
             label: Some("metalfx_blit"),
-            color_attachments: &[Some(target.out_texture_color_attachment(None))],
+            // Bevy 0.19 returns the attachment already wrapped in `Option`.
+            color_attachments: &[target.out_texture_color_attachment(None)],
             depth_stencil_attachment: None,
             timestamp_writes: None,
             occlusion_query_set: None,
+            multiview_mask: None,
         };
 
         drop(cached);
@@ -627,9 +663,13 @@ impl ViewNode for MetalFxUpscaleNode {
                     None => {
                         let id = pipeline_cache.queue_render_pipeline(blit_pipeline.specialize(
                             BlitPipelineKey {
-                                texture_format: PRESENT_FORMAT,
+                                target_format: PRESENT_FORMAT,
                                 blend_state: None,
                                 samples: 1,
+                                // 0.18's key had no colour-space knob and blitted
+                                // the source through unchanged; `None` is that
+                                // behaviour, not a new choice.
+                                source_space: None,
                             },
                         ));
                         *present_pipeline = Some(id);
@@ -672,8 +712,8 @@ impl ViewNode for MetalFxUpscaleNode {
                         let r = real_tex.as_hal::<wgpu_hal::metal::Api>();
                         match (i, r) {
                             (Some(i), Some(r)) => Some((
-                                i.raw_handle().as_ptr() as *mut c_void,
-                                r.raw_handle().as_ptr() as *mut c_void,
+                                i.raw_handle() as *const _ as *mut c_void,
+                                r.raw_handle() as *const _ as *mut c_void,
                             )),
                             _ => None,
                         }
@@ -693,7 +733,7 @@ impl ViewNode for MetalFxUpscaleNode {
                                         return;
                                     };
                                     crate::present::present_pair_deferred(
-                                        cmd_buf.as_ptr() as *mut c_void,
+                                        cmd_buf as *const _ as *mut c_void,
                                         layer,
                                         queue,
                                         interp_ptr,
@@ -708,8 +748,6 @@ impl ViewNode for MetalFxUpscaleNode {
                 }
             }
         }
-
-        Ok(())
     }
 }
 
@@ -774,6 +812,7 @@ impl MetalFxUpscaleNode {
                 depth_stencil_attachment: None,
                 timestamp_writes: None,
                 occlusion_query_set: None,
+                multiview_mask: None,
             });
 
         pass.set_pipeline(pipeline);

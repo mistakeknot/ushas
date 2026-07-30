@@ -13,7 +13,6 @@ use bevy::render::render_resource::{
     Extent3d, TextureDescriptor, TextureDimension, TextureFormat, TextureUsages,
 };
 use bevy::render::renderer::RenderDevice;
-use foreign_types::ForeignType;
 use objc2_metal::MTLPixelFormat;
 
 #[cfg(feature = "temporal")]
@@ -268,10 +267,13 @@ impl MetalFxUpscaleNode {
                     return false;
                 };
                 let device_ptr = {
-                    // SAFETY: read while the lock is held and handed straight to scaler
-                    // creation, which retains whatever it needs from it.
-                    let dev_lock = hal_dev.raw_device().lock();
-                    dev_lock.as_ptr() as *mut c_void
+                    // wgpu-hal 29 hands back the objc2 device directly; through
+                    // 28 it was behind a Mutex, hence the lock this used to
+                    // take. Nothing to serialize against any more.
+                    //
+                    // SAFETY: handed straight to scaler creation, which retains
+                    // whatever it needs; the pointer does not outlive this scope.
+                    &**hal_dev.raw_device() as *const _ as *mut c_void
                 };
 
                 match mode {

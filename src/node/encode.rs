@@ -16,7 +16,6 @@ use bevy::render::camera::TemporalJitter;
 #[cfg(feature = "frame-interpolation")]
 use bevy::render::render_resource::{Extent3d, TextureDescriptor, TextureDimension, TextureUsages};
 use bevy::render::renderer::{RenderContext, RenderDevice};
-use foreign_types::ForeignType;
 
 #[cfg(feature = "frame-interpolation")]
 use super::MetalFxFrameTiming;
@@ -68,7 +67,7 @@ impl MetalFxUpscaleNode {
                 log::error!("MetalFxUpscaleNode: no Metal HAL for input texture");
                 return false;
             };
-            unsafe { hal.raw_handle().as_ptr() as *mut c_void }
+            (hal.raw_handle() as *const _) as *mut c_void
         };
 
         let out_tex_ptr = {
@@ -80,7 +79,7 @@ impl MetalFxUpscaleNode {
                 log::error!("MetalFxUpscaleNode: no Metal HAL for output texture");
                 return false;
             };
-            unsafe { hal.raw_handle().as_ptr() as *mut c_void }
+            (hal.raw_handle() as *const _) as *mut c_void
         };
 
         let is_first_frame = state.frame_count == 0;
@@ -99,7 +98,7 @@ impl MetalFxUpscaleNode {
                     log::error!("MetalFxUpscaleNode: no Metal HAL for content depth texture");
                     return false;
                 };
-                unsafe { hal.raw_handle().as_ptr() as *mut c_void }
+                (hal.raw_handle() as *const _) as *mut c_void
             };
 
             let motion_ptr = {
@@ -110,7 +109,7 @@ impl MetalFxUpscaleNode {
                     log::error!("MetalFxUpscaleNode: no Metal HAL for content motion texture");
                     return false;
                 };
-                unsafe { hal.raw_handle().as_ptr() as *mut c_void }
+                (hal.raw_handle() as *const _) as *mut c_void
             };
 
             Some((depth_ptr, motion_ptr))
@@ -204,7 +203,7 @@ impl MetalFxUpscaleNode {
                     log::error!("MetalFxUpscaleNode: no Metal HAL for prev color texture");
                     return false;
                 };
-                let prev_ptr = unsafe { hal.raw_handle().as_ptr() as *mut c_void };
+                let prev_ptr = (hal.raw_handle() as *const _) as *mut c_void;
                 drop(hal);
 
                 let interp_tex = state.interp_output_texture.as_ref().unwrap();
@@ -215,7 +214,7 @@ impl MetalFxUpscaleNode {
                     log::error!("MetalFxUpscaleNode: no Metal HAL for interp output texture");
                     return false;
                 };
-                let interp_ptr = unsafe { hal.raw_handle().as_ptr() as *mut c_void };
+                let interp_ptr = (hal.raw_handle() as *const _) as *mut c_void;
 
                 Some((prev_ptr, interp_ptr))
             }
@@ -240,7 +239,7 @@ impl MetalFxUpscaleNode {
                         let Some(cmd_buf) = enc.raw_command_buffer() else {
                             return;
                         };
-                        let cmd_buf_ptr = cmd_buf.as_ptr() as *mut c_void;
+                        let cmd_buf_ptr = cmd_buf as *const _ as *mut c_void;
 
                         encode_spatial_upscale(
                             scaler,
@@ -329,7 +328,7 @@ impl MetalFxUpscaleNode {
                         let Some(cmd_buf) = enc.raw_command_buffer() else {
                             return;
                         };
-                        let cmd_buf_ptr = cmd_buf.as_ptr() as *mut c_void;
+                        let cmd_buf_ptr = cmd_buf as *const _ as *mut c_void;
 
                         // Stage 1 — upscale the low-res render to output size.
                         // This is the *real* frame, and it is what gets
@@ -424,7 +423,7 @@ impl MetalFxUpscaleNode {
                         let Some(cmd_buf) = enc.raw_command_buffer() else {
                             return;
                         };
-                        let cmd_buf_ptr = cmd_buf.as_ptr() as *mut c_void;
+                        let cmd_buf_ptr = cmd_buf as *const _ as *mut c_void;
 
                         encode_temporal_upscale(
                             scaler,

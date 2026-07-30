@@ -1,6 +1,6 @@
 [package]
 name = "bevy_metalfx"
-version = "0.3.0"
+version = "0.4.0"
 edition = "2021"
 authors = ["mk <mk@generalsystemsventures.com>"]
 description = "Bevy plugin for Apple MetalFX upscaling and frame interpolation"
@@ -8,7 +8,9 @@ license = "MIT OR Apache-2.0"
 repository = "https://github.com/mistakeknot/bevy_metalfx"
 keywords = ["bevy", "metalfx", "upscaling", "apple", "metal"]
 categories = ["game-engines", "rendering", "graphics"]
-rust-version = "1.82"
+# Forced by bevy 0.19 / bevy_ecs 0.19, which require 1.95.0. Nothing in this
+# crate's own code needs it.
+rust-version = "1.95"
 readme = "README.md"
 # examples/present_repro.rs is a bug-reproduction harness for an internal
 # issue, referencing scripts that live outside this crate; scripts/ verifies a
@@ -39,7 +41,7 @@ temporal = ["spatial", "objc2-metal-fx/MTLFXTemporalScaler"]
 frame-interpolation = ["temporal", "objc2-metal-fx/MTLFXFrameInterpolator"]
 
 [dependencies]
-bevy = { version = "0.18", default-features = false, features = [
+bevy = { version = "0.19", default-features = false, features = [
   "bevy_camera",
   "bevy_render",
   "bevy_core_pipeline",
@@ -49,10 +51,11 @@ log = "0.4"
 
 [target.'cfg(target_os = "macos")'.dependencies]
 # wgpu + wgpu-hal for raw Metal device/texture/cmdbuf extraction via as_hal
-wgpu = "27"
-wgpu-hal = { version = "27", features = ["metal"] }
-# foreign-types for metal crate's ForeignType::as_ptr()
-foreign-types = "0.5"
+wgpu = "29"
+wgpu-hal = { version = "29", features = ["metal"] }
+# foreign-types is gone as of 0.4: wgpu-hal 29 migrated its Metal handles from
+# the `metal` crate to objc2, so `raw_handle()` hands back an objc2 object this
+# crate can point at directly. ForeignType::as_ptr() has nothing left to convert.
 # Matches bevy_window's, so `RawWindowHandle` unifies with Bevy's handle type.
 raw-window-handle = "0.6"
 objc2 = "0.6"
