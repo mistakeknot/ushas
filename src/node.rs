@@ -254,6 +254,20 @@ struct PendingScaler {
     input_h: u32,
     output_w: u32,
     output_h: u32,
+    /// When the background creation started, so a creation that never returns
+    /// can be told apart from one that is merely slow.
+    ///
+    /// It cannot, otherwise: the receive loop treats `TryRecvError::Empty` as
+    /// "still creating" and skips the frame, which is correct for the ~1s a
+    /// cold MPSGraph compile takes and indistinguishable from a permanent hang.
+    /// Measured against a locked session, `newTemporalScalerWithDevice:` did not
+    /// return in 121s across 36,052 rendered frames -- MetalFX silently never
+    /// engaged, and the only trace was one INFO line saying it had started.
+    started: std::time::Instant,
+    /// Latched so the warning below is printed once per creation, not per frame.
+    /// `Cell` because the receive loop holds `&PendingScaler` and reassigns the
+    /// enclosing `Option` in sibling arms, so it cannot take `&mut` here.
+    warned: std::cell::Cell<bool>,
 }
 
 /// Render pipeline + bind group layout for prepass texture resolve.

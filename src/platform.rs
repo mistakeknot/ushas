@@ -249,13 +249,39 @@ pub(crate) unsafe fn encode_temporal_upscale(
     }
 }
 
+/// An owning, `Send` handle to the Metal device for background scaler creation.
+///
+/// The previous design passed `&**hal_dev.raw_device() as *mut c_void` -- a
+/// BORROW of wgpu's device -- into `std::thread::spawn`, with the caller's
+/// safety note claiming "the pointer does not outlive this scope". For the
+/// synchronous spatial path that was true. For the temporal and
+/// frame-interpolation paths it was false by construction: a detached thread
+/// outlives the scope that spawned it, and nothing retained the object. The
+/// process survived only because wgpu happened to keep its own reference alive.
+///
+/// All four SIGSEGVs recorded in shadow-work-ejgo faulted on this thread, inside
+/// `newTemporalScalerWithDevice:` (EXC_BAD_ACCESS, KERN_INVALID_ADDRESS at 0x18).
+/// That crash is unreproduced, so this is not a demonstrated fix for it -- but a
+/// detached thread dereferencing an unretained Objective-C object is a defect on
+/// its own terms, and it is exactly the shape that produces that fault.
+///
+/// `Retained` makes the lifetime a guarantee instead of a coincidence: the object
+/// is retained before the spawn and released when the thread's copy drops.
+#[cfg(feature = "temporal")]
+pub(crate) struct SendDevice(pub(crate) Retained<ProtocolObject<dyn MTLDevice>>);
+
+// SAFETY: `MTLDevice` is documented thread-safe, and `Retained` keeps the object
+// alive for as long as this wrapper exists -- which is the whole point of it.
+#[cfg(feature = "temporal")]
+unsafe impl Send for SendDevice {}
+
 /// Spawn a background thread to create a temporal scaler (avoids blocking the render thread).
 ///
-/// # Safety
-/// `device_ptr` must be a valid `id<MTLDevice>` pointer that outlives the thread.
+/// Takes an owned [`SendDevice`] rather than a raw pointer: the thread is
+/// detached, so it must keep the device alive itself.
 #[cfg(feature = "temporal")]
-pub(crate) unsafe fn spawn_temporal_scaler_thread(
-    device_ptr: *mut c_void,
+pub(crate) fn spawn_temporal_scaler_thread(
+    device: SendDevice,
     iw: usize,
     ih: usize,
     ow: usize,
@@ -264,18 +290,14 @@ pub(crate) unsafe fn spawn_temporal_scaler_thread(
     dynamic_res: Option<(f32, f32)>,
     tx: std::sync::mpsc::Sender<Option<super::node::SendScaler>>,
 ) {
-    // Wrapper to make raw pointer Send-able for thread transfer.
-    struct SendablePtr(usize); // Store as usize to avoid *mut c_void !Send
-    unsafe impl Send for SendablePtr {}
-
-    let dev = SendablePtr(device_ptr as usize);
-
     std::thread::spawn(move || {
         // MTLPixelFormat is a #[repr(transparent)] newtype over NSUInteger,
         // so we can construct it directly from the raw discriminant instead
         // of transmuting (which would be UB for out-of-range values).
         let cfmt = MTLPixelFormat(color_fmt_raw as objc2_foundation::NSUInteger);
-        let ptr = dev.0 as *mut c_void;
+        // Borrow from the retained handle the thread owns, so the object cannot
+        // go away underneath this call.
+        let ptr = &*device.0 as *const ProtocolObject<dyn MTLDevice> as *mut c_void;
         log::info!("MetalFX: background thread starting temporal scaler creation");
         let scaler = unsafe {
             try_create_temporal_scaler_from_raw(
@@ -459,11 +481,11 @@ pub(crate) unsafe fn encode_frame_interpolation(
 
 /// Spawn a background thread to create a frame interpolator.
 ///
-/// # Safety
-/// `device_ptr` must be a valid `id<MTLDevice>` pointer that outlives the thread.
+/// Takes an owned [`SendDevice`] for the same reason as the temporal spawn: a
+/// detached thread must keep the device alive itself.
 #[cfg(feature = "frame-interpolation")]
-pub(crate) unsafe fn spawn_frame_interpolator_thread(
-    device_ptr: *mut c_void,
+pub(crate) fn spawn_frame_interpolator_thread(
+    device: SendDevice,
     iw: usize,
     ih: usize,
     ow: usize,
@@ -471,20 +493,13 @@ pub(crate) unsafe fn spawn_frame_interpolator_thread(
     color_fmt_raw: usize,
     tx: std::sync::mpsc::Sender<Option<super::node::SendScaler>>,
 ) {
-    // Wrapper to make the raw device pointer Send-able for thread transfer.
-    // SAFETY: the pointer is only dereferenced on the spawned thread, and the
-    // caller's `# Safety` contract guarantees it outlives that thread.
-    struct SendablePtr(usize);
-    unsafe impl Send for SendablePtr {}
-
-    let dev = SendablePtr(device_ptr as usize);
-
     std::thread::spawn(move || {
         // MTLPixelFormat is a #[repr(transparent)] newtype over NSUInteger,
         // so we can construct it directly from the raw discriminant instead
         // of transmuting (which would be UB for out-of-range values).
         let cfmt = MTLPixelFormat(color_fmt_raw as objc2_foundation::NSUInteger);
-        let ptr = dev.0 as *mut c_void;
+        // Borrow from the retained handle the thread owns.
+        let ptr = &*device.0 as *const ProtocolObject<dyn MTLDevice> as *mut c_void;
         log::info!("MetalFX: background thread starting frame interpolator creation");
 
         // Frame interpolation is a two-stage pipeline: the temporal scaler

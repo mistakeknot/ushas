@@ -229,7 +229,36 @@ impl MetalFxUpscaleNode {
                             return false;
                         }
                         Err(std::sync::mpsc::TryRecvError::Empty) => {
-                            // Still creating — skip this frame.
+                            // Still creating — skip this frame. But say so if it
+                            // has been going long enough to mean something else.
+                            //
+                            // A cold MPSGraph compile takes on the order of a
+                            // second. Against a locked session,
+                            // `newTemporalScalerWithDevice:` was measured not to
+                            // return at all: 121s and 36,052 rendered frames, no
+                            // result, no error, no crash. MetalFX simply never
+                            // engaged and nothing said so — the frames kept
+                            // coming, unscaled, and the only evidence was one
+                            // INFO line saying creation had started.
+                            //
+                            // Keep waiting rather than give up: a genuinely slow
+                            // first compile should still succeed. But a silent
+                            // wait forever is the same unfalsifiable state as a
+                            // guard that never fires, so name it.
+                            const SLOW_CREATE_WARN: std::time::Duration =
+                                std::time::Duration::from_secs(10);
+                            if !p.warned.get() && p.started.elapsed() > SLOW_CREATE_WARN {
+                                p.warned.set(true);
+                                log::warn!(
+                                    "MetalFxUpscaleNode: MetalFX scaler creation has not \
+                                     returned after {:?}. MetalFX is NOT running; frames are \
+                                     being presented unscaled. This is expected while the \
+                                     session is locked or the display is asleep, where \
+                                     newTemporalScalerWithDevice: does not return at all — \
+                                     unlock the session to get a scaler. Still waiting.",
+                                    p.started.elapsed()
+                                );
+                            }
                             return false;
                         }
                         Err(std::sync::mpsc::TryRecvError::Disconnected) => {
@@ -266,15 +295,26 @@ impl MetalFxUpscaleNode {
                     log::error!("MetalFxUpscaleNode: no Metal HAL device");
                     return false;
                 };
-                let device_ptr = {
-                    // wgpu-hal 29 hands back the objc2 device directly; through
-                    // 28 it was behind a Mutex, hence the lock this used to
-                    // take. Nothing to serialize against any more.
-                    //
-                    // SAFETY: handed straight to scaler creation, which retains
-                    // whatever it needs; the pointer does not outlive this scope.
-                    &**hal_dev.raw_device() as *const _ as *mut c_void
-                };
+                // wgpu-hal 29 hands back the objc2 device directly; through 28 it
+                // was behind a Mutex, hence the lock this used to take. Nothing to
+                // serialize against any more.
+                //
+                // Two handles, because the two paths have different lifetimes and
+                // the old code used one for both. `device_ptr` is a BORROW, valid
+                // only while `hal_dev` is in scope -- fine for the synchronous
+                // spatial branch below. The temporal and frame-interpolation
+                // branches hand their device to `std::thread::spawn`, which
+                // outlives this scope by construction, so they take a RETAINED
+                // handle instead. The previous comment here read "the pointer does
+                // not outlive this scope", which was true of the spatial path and
+                // false of the other two; the process survived only because wgpu
+                // happened to hold its own reference. See shadow-work-ejgo.
+                //
+                // SAFETY: borrowed for the duration of this scope only.
+                let device_ptr = &**hal_dev.raw_device() as *const _ as *mut c_void;
+                #[cfg(feature = "temporal")]
+                let owned_device =
+                    crate::platform::SendDevice(hal_dev.raw_device().clone());
 
                 match mode {
                     MetalFxMode::Spatial => {
@@ -378,7 +418,7 @@ impl MetalFxUpscaleNode {
                         // discriminant via the field rather than transmuting.
                         let color_fmt_raw: usize = color_mtl_fmt.0;
                         match mode {
-                            MetalFxMode::Temporal => unsafe {
+                            MetalFxMode::Temporal => {
                                 // Create temporal scaler at the max input dimensions
                                 // (== current dims when dynamic res is off). Depth and
                                 // motion vectors are resolved to content-sized textures
@@ -386,7 +426,7 @@ impl MetalFxUpscaleNode {
                                 // set, enables true dynamic resolution so scale changes
                                 // flex without rebuilding this scaler.
                                 crate::platform::spawn_temporal_scaler_thread(
-                                    device_ptr,
+                                    owned_device,
                                     scaler_input_w as usize,
                                     scaler_input_h as usize,
                                     output_w as usize,
@@ -397,9 +437,9 @@ impl MetalFxUpscaleNode {
                                 );
                             },
                             #[cfg(feature = "frame-interpolation")]
-                            MetalFxMode::FrameInterpolation => unsafe {
+                            MetalFxMode::FrameInterpolation => {
                                 crate::platform::spawn_frame_interpolator_thread(
-                                    device_ptr,
+                                    owned_device,
                                     scaler_input_w as usize,
                                     scaler_input_h as usize,
                                     output_w as usize,
@@ -417,6 +457,8 @@ impl MetalFxUpscaleNode {
                             input_h: scaler_input_h,
                             output_w,
                             output_h,
+                            started: std::time::Instant::now(),
+                            warned: std::cell::Cell::new(false),
                         });
 
                         return false;
