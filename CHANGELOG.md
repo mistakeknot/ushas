@@ -53,7 +53,7 @@ but nothing had run it on a GPU; the first hardware run found this in seconds.
   mistimed clear would drop it with no symptom but ghosting. This distinguishes
   "the reset did not help" from "the reset never arrived".
 
-## [0.4.0] — 2026-07-29
+## [0.4.0] — 2026-07-29 — YANKED
 
 Requires **Bevy 0.19** and **Rust 1.95**. If you are on Bevy 0.18, stay on 0.3 —
 Bevy 0.19 removed the render graph, so no single version of this crate can
@@ -101,6 +101,11 @@ The wgpu 27 → 29 jump was expected to be the risky part and was not: every
 raw encoding APIs on one command encoder, and this crate tripped it on the first
 frame it encoded. The compile-time audit that produced this note could not have
 found it. Only running the thing could.
+
+Yanked: the release panics on the first frame it encodes, in every mode, on
+every supported platform — `wgpu-core`'s "Mixing the wgpu encoding API with the
+raw encoding API is not permitted". There is no configuration in which 0.4.0
+renders, so it is not a degraded release but an unusable one. Fixed in 0.4.1.
 
 ## [0.3.0] — 2026-07-29
 
