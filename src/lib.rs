@@ -33,6 +33,20 @@
 //!
 //! ## What is and is not verified
 //!
+//! **On hardware, as of 0.4.1** (M5 Max, macOS, `MTL_DEBUG_LAYER=1`): all four
+//! modes — spatial, temporal, frame interpolation, and disabled — run without a
+//! panic or a Metal validation assertion; the temporal prepass is wired
+//! (`Depth32Float` depth and `Rg16Float` motion, resolved to content size); and
+//! `MetalFxScaleRange` reports the band the scaler was actually built with.
+//!
+//! Still **unconfirmed on hardware**: that the pass wins the write to
+//! `ViewTarget::out_texture` — Bevy's own upscaling blits into the same texture
+//! first, and if the `.after(upscaling)` ordering were lost the output would be
+//! silently replaced by bilinear with no error anywhere. Deciding that needs a
+//! pixel diff against a same-scale bilinear run, which needs an unlocked screen.
+//! The same goes for `MetalFxHistoryReset` measurably suppressing ghosting
+//! across a cut. Treat both as reasoned-but-unmeasured until then.
+//!
 //! Spatial and temporal upscaling are complete and stable. Frame interpolation
 //! computes a correct intermediate frame and, with `present::MetalFxDualPresent`
 //! enabled, presents it — at twice the accepted-present rate of a single

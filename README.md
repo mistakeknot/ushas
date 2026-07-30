@@ -241,6 +241,33 @@ wgpu 29 refuses to let one command encoder carry both wgpu calls and raw
 `as_hal` encoding, and this pass does both. It was compile-verified and
 unit-tested but had never rendered a frame; 0.4.1 is the fix. See the CHANGELOG.
 
+### Hardware verification status of the Bevy 0.19 port
+
+Confirmed on an M5 Max under `MTL_DEBUG_LAYER=1`, which turns silent MetalFX
+misuse into an immediate assertion rather than garbage pixels:
+
+- All four modes — spatial, temporal, frame interpolation, disabled — run with
+  no panic and no Metal validation assertion.
+- The temporal prepass is wired: `Depth32Float` depth and `Rg16Float` motion,
+  resolved from full physical resolution to content size.
+- `MetalFxScaleRange` reports the band the scaler was actually created with
+  (render `0.5..=0.5` → MetalFX upscale ratios `2.0..=2.0`), and the configured
+  scale tests in-band.
+
+Not yet confirmed, and deliberately not claimed:
+
+- **That the pass wins the write to `out_texture`.** Bevy's own upscaling blits
+  into the same texture and MetalFX blits over it afterwards; before Bevy 0.19
+  that order was a render-graph edge, and it is now a system ordering
+  constraint. If it were lost the pass would still run, still encode, still
+  report GPU timings, and be silently replaced by bilinear. Settling it needs a
+  pixel diff against a same-scale bilinear run — `crates/sw-renderer/scripts/playtest-suite.sh`
+  in the workspace — which needs an unlocked screen, because a locked macOS
+  session has no swapchain and every capture comes back black.
+- **That `MetalFxHistoryReset` measurably suppresses ghosting** across a hard
+  cut. The plumbing is unit-tested and the render world logs when it honours a
+  request; the visible effect is unmeasured.
+
 ## Upgrading from 0.3
 
 **If you are on Bevy 0.18, stay on `bevy_metalfx` 0.3.** 0.4 requires Bevy 0.19
