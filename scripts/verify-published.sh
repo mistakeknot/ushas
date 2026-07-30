@@ -25,7 +25,11 @@ CRATE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 REPO_ROOT="$(cd "$CRATE_DIR/../.." && pwd)"
 
 if [[ "${1:-}" == "--packaged" ]]; then
-    CRATE_VERSION="$(sed -n 's/^version = "\(.*\)"/\1/p' "$CRATE_DIR/Cargo.toml" | head -1)"
+    # One awk, no pipe: `sed ... | head -1` under `set -o pipefail` returns 141
+    # whenever the producer outstruns the pipe buffer, and this script also runs
+    # `set -e`. Cargo.toml is small enough today that it never fires -- which is
+    # a fact about the file, not about the code.
+    CRATE_VERSION="$(awk -F'"' '/^version = /{print $2; exit}' "$CRATE_DIR/Cargo.toml")"
     echo "==> repackaging bevy_metalfx $CRATE_VERSION"
     ( cd "$REPO_ROOT" && cargo package -p bevy_metalfx --quiet )
     TARBALL="$REPO_ROOT/target/package/bevy_metalfx-$CRATE_VERSION.crate"
