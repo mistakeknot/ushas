@@ -20,7 +20,7 @@
 
 set -euo pipefail
 
-VERSION="${BEVY_METALFX_VERSION:-0.3}"
+VERSION="${BEVY_METALFX_VERSION:-0.4}"
 CRATE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 REPO_ROOT="$(cd "$CRATE_DIR/../.." && pwd)"
 
@@ -51,11 +51,21 @@ if [[ "${1:-}" == "--packaged" ]]; then
     #
     # Each entry is "description<TAB>grep -E pattern"; a `!` prefix asserts the
     # pattern is ABSENT. Update these when the release changes public API.
-    echo "==> asserting the 0.3 API surface is in the tarball"
+    echo "==> asserting the 0.4 API surface is in the tarball"
     API_CHECKS=(
+        # 0.3 surface — kept, because a regression here is exactly the stale-
+        # tarball failure these assertions exist to catch.
         "counts() returns five u64	pub fn counts\(&self\) -> \(u64, u64, u64, u64, u64\)"
         "PresentStats exposes presented_fps	pub presented_fps: f32"
         "!no interp_fps anywhere	interp_fps"
+        # 0.4 surface.
+        "MetalFxScaleRange is public	pub struct MetalFxScaleRange"
+        "scale range converts to upscale ratios	pub fn as_upscale_ratios"
+        "MetalFxHistoryReset is public	pub struct MetalFxHistoryReset"
+        "history reset can be requested	pub fn request\(&mut self\)"
+        "the pass is a system, not a ViewNode	pub fn metalfx_upscale"
+        "!no ViewNode impl survives	impl ViewNode for"
+        "!no render_graph imports survive	bevy::render::render_graph"
     )
     for check in "${API_CHECKS[@]}"; do
         desc="${check%%$'\t'*}"; pat="${check#*$'\t'}"
@@ -90,7 +100,7 @@ edition = "2021"
 publish = false
 
 [dependencies]
-bevy = { version = "0.18", default-features = false, features = [
+bevy = { version = "0.19", default-features = false, features = [
   "bevy_camera", "bevy_render", "bevy_core_pipeline", "bevy_window",
 ] }
 $DEP
@@ -125,7 +135,35 @@ fn main() {
             .get_resource::<bevy_metalfx::MetalFxModeResource>()
             .map(|m| m.get());
         assert_eq!(reported, Some(mode), "{label}: plugin did not report its mode");
-        println!("  {label}: OK (reported {reported:?})");
+
+        // 0.4 surface, exercised from outside the crate: the scale band must be
+        // published and must contain the scale the plugin was built with,
+        // otherwise `contains()` would reject the app's own configuration.
+        let range = app
+            .world()
+            .get_resource::<bevy_metalfx::MetalFxScaleRange>()
+            .copied()
+            .expect("MetalFxScaleRange must be inserted by the plugin");
+        assert!(
+            range.contains(0.5),
+            "{label}: configured scale 0.5 outside the reported band {:?}",
+            range.as_range()
+        );
+        assert!(
+            *range.as_upscale_ratios().start() >= 1.0,
+            "{label}: upscale ratio below 1.0 would make the scaler nil"
+        );
+
+        // And the reset request must be reachable and default to off.
+        let mut reset = app
+            .world_mut()
+            .get_resource_mut::<bevy_metalfx::MetalFxHistoryReset>()
+            .expect("MetalFxHistoryReset must be inserted by the plugin");
+        assert!(!reset.is_requested(), "{label}: reset must default to off");
+        reset.request();
+        assert!(reset.is_requested(), "{label}: request() had no effect");
+
+        println!("  {label}: OK (reported {reported:?}, band {:?})", range.as_range());
     }
     println!("OK: public API consumed from outside the workspace");
 }

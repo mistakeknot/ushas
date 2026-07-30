@@ -82,7 +82,17 @@ impl MetalFxUpscaleNode {
             (hal.raw_handle() as *const _) as *mut c_void
         };
 
-        let is_first_frame = state.frame_count == 0;
+        // A reset is owed on the very first frame — there is no history yet — and
+        // whenever a consumer declares a discontinuity the renderer cannot see
+        // (camera cut, teleport, scene load). Both mean the same thing to
+        // MetalFX, so they collapse into one flag here.
+        //
+        // The request clears itself in the main world at the top of the next
+        // frame, so this reads true for exactly one rendered frame.
+        let history_reset_requested = world
+            .get_resource::<crate::MetalFxHistoryReset>()
+            .is_some_and(crate::MetalFxHistoryReset::is_requested);
+        let is_first_frame = state.frame_count == 0 || history_reset_requested;
         state.frame_count += 1;
 
         // Extract temporal texture pointers (content-sized depth + motion).

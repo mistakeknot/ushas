@@ -161,8 +161,49 @@ validating this needs only hardware where that signal works.
 | `MetalFxMode` | Enum: `Spatial`, `Temporal`, `FrameInterpolation`, `Disabled` |
 | `MetalFxRenderScale` | Main-world resource holding the render scale factor |
 | `MetalFxConfig` | Render-world resource (auto-inserted) |
-| `MetalFxUpscaleNode` | Render graph `ViewNode` (auto-inserted) |
-| `MetalFxLabel` | Render graph label for ordering |
+| `MetalFxScaleRange` | Resource: the render-scale band MetalFX will accept |
+| `MetalFxHistoryReset` | Resource: request a temporal-history reset |
+| `MetalFxUpscaleNode` | State for the upscale pass (auto-registered) |
+| `MetalFxLabel` | `SystemSet` containing the pass, for ordering |
+
+### Render scale bounds
+
+`MetalFxScaleRange` answers "what scale am I allowed to set?" before you set it.
+
+```rust
+fn set_scale(range: Res<MetalFxScaleRange>, mut scale: ResMut<MetalFxRenderScale>) {
+    let wanted = 0.6;
+    if range.contains(wanted) {
+        scale.0 = wanted;
+    }
+}
+```
+
+This exists because the failure it prevents is silent. MetalFX is configured in
+*upscale ratios* (`output / input`, always `>= 1.0`), while a render scale is a
+fraction of the output — the two are reciprocals, so converting swaps the ends.
+Hand MetalFX a fraction where it wants a ratio and
+`newTemporalScalerWithDevice` returns `nil` and says nothing else.
+`as_upscale_ratios()` shows the converted values if you need them.
+
+With adaptive scaling on, the band is the governor's step range and the scaler
+flexes inside it with no rebuild. With it off, the band is the single configured
+scale — any other value works, but forces the scaler to be rebuilt.
+
+### Temporal history reset
+
+Temporal upscaling accumulates across frames, which is wrong across a
+discontinuity. On a camera cut, teleport or scene load, ask for a reset:
+
+```rust
+fn on_teleport(mut reset: ResMut<MetalFxHistoryReset>) {
+    reset.request();
+}
+```
+
+It applies to the next rendered frame and clears itself. Do not hold it set —
+that suppresses temporal accumulation entirely, which is the thing you are
+paying for. Ignored in `Spatial` mode, which keeps no history.
 
 ### Runtime Queries
 
@@ -187,11 +228,41 @@ of the upscaling pipeline — most apps leave `gpu_timing_sink` at its `None` de
 
 ## Bevy Compatibility
 
-| bevy_metalfx | Bevy |
-|-------------|------|
-| 0.3 | 0.18 |
-| 0.2 | 0.18 |
-| 0.1 | 0.18 |
+| bevy_metalfx | Bevy | MSRV |
+|-------------|------|------|
+| 0.4 | 0.19 | 1.95 |
+| 0.3 | 0.18 | 1.82 |
+| 0.2 | 0.18 | 1.82 |
+| 0.1 | 0.18 | 1.82 |
+
+## Upgrading from 0.3
+
+**If you are on Bevy 0.18, stay on `bevy_metalfx` 0.3.** 0.4 requires Bevy 0.19
+and cannot work with 0.18: Bevy 0.19 removed the render graph, and this crate's
+pass is now a system in a schedule. There is no version of this crate that
+supports both.
+
+The upgrade is mostly Bevy's, not ours. Most apps change nothing in their
+MetalFX code — `MetalFxPlugin`, `MetalFxMode`, `MetalFxRenderScale`,
+`is_available()` and `probe_spatial_scaler()` are all untouched.
+
+| Change | Why | Fix |
+|---|---|---|
+| Requires Bevy 0.19 and Rust 1.95 | `bevy_ecs` 0.19 sets the MSRV; nothing here needs it | upgrade both |
+| `MetalFxLabel` is a `SystemSet`, was a `RenderLabel` | Bevy 0.19 has no render graph to label | `.after(MetalFxLabel)` still works; drop any `add_render_graph_edges` |
+| `MetalFxUpscaleNode` is no longer a `ViewNode` | the pass is the `metalfx_upscale` system now | remove any manual graph wiring; the plugin registers it |
+
+If you never referenced the node or the label directly — the common case, since
+the plugin wires itself — 0.4 is a drop-in once you are on Bevy 0.19.
+
+**New in 0.4**, both closing gaps that used to fail silently:
+
+- `MetalFxScaleRange` reports the render-scale band MetalFX will accept, and
+  `contains()` lets you check a scale *before* setting it. Previously an
+  out-of-band scale produced a `nil` scaler with no diagnostic at all.
+- `MetalFxHistoryReset` lets you drop accumulated temporal history on a camera
+  cut, teleport or scene load. Previously only the very first frame reset, so a
+  hard cut ghosted.
 
 ## Upgrading from 0.2
 

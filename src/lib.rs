@@ -192,6 +192,116 @@ impl Default for MetalFxPlugin {
 #[derive(bevy::prelude::Resource, Clone, Copy)]
 pub struct MetalFxRenderScale(pub f32);
 
+/// The render-scale band MetalFX is configured to accept, inclusive.
+///
+/// Inserted by [`MetalFxPlugin`], so a consumer can ask what it is allowed to
+/// write into [`MetalFxRenderScale`] instead of discovering the answer as a
+/// scaler that silently fails to build.
+///
+/// **Why this needs an accessor at all.** A render scale here is a fraction of
+/// the output resolution (`0.5` = half-res). MetalFX is configured in the other
+/// direction, as *upscale ratios* — `output / input`, always `>= 1.0`. The two
+/// are reciprocals, so converting also swaps the ends: the smallest render
+/// scale is the largest upscale ratio. Handing MetalFX a fraction where it
+/// wants a ratio makes `newTemporalScalerWithDevice` return `nil` and report
+/// nothing further, which is exactly the failure this type exists to prevent.
+/// See [`Self::as_upscale_ratios`].
+#[derive(bevy::prelude::Resource, Debug, Clone, Copy, PartialEq)]
+pub struct MetalFxScaleRange {
+    min: f32,
+    max: f32,
+}
+
+impl MetalFxScaleRange {
+    /// Smallest render scale (largest upscale) MetalFX will accept here.
+    pub fn min(&self) -> f32 {
+        self.min
+    }
+
+    /// Largest render scale (smallest upscale) MetalFX will accept here.
+    pub fn max(&self) -> f32 {
+        self.max
+    }
+
+    /// The band as a range of output-resolution fractions.
+    pub fn as_range(&self) -> core::ops::RangeInclusive<f32> {
+        self.min..=self.max
+    }
+
+    /// The same band expressed the way MetalFX takes it: upscale ratios,
+    /// `output / input`, always `>= 1.0`.
+    ///
+    /// Reciprocal of [`Self::as_range`], with the ends swapped — a `0.5` render
+    /// scale is a `2.0` upscale, and a `0.75` render scale is a `~1.33` one, so
+    /// the *minimum* scale produces the *maximum* ratio. These are the values
+    /// handed to `setInputContentMinScale` / `setInputContentMaxScale`.
+    pub fn as_upscale_ratios(&self) -> core::ops::RangeInclusive<f32> {
+        1.0 / self.max..=1.0 / self.min
+    }
+
+    /// Whether `render_scale` is inside the band.
+    ///
+    /// The checkable condition: test before writing [`MetalFxRenderScale`].
+    pub fn contains(&self, render_scale: f32) -> bool {
+        self.as_range().contains(&render_scale)
+    }
+}
+
+/// Ask MetalFX to discard its accumulated temporal history.
+///
+/// Temporal upscaling and frame interpolation both work by accumulating
+/// information across frames, which is exactly wrong across a discontinuity —
+/// a camera cut, a teleport, a level load — where the previous frame shows an
+/// unrelated place. Blended across the cut, that history ghosts, sometimes for
+/// a noticeable fraction of a second.
+///
+/// The first frame resets automatically. Every reset after that is this:
+///
+/// ```ignore
+/// fn on_teleport(mut reset: ResMut<MetalFxHistoryReset>) {
+///     reset.request();
+/// }
+/// ```
+///
+/// The request applies to the next rendered frame and then clears itself. It is
+/// deliberately not sticky — holding it set would suppress temporal
+/// accumulation entirely, which is the thing you are paying for. In `Spatial`
+/// mode it is ignored, because there is no history to drop.
+#[derive(
+    bevy::prelude::Resource,
+    bevy::render::extract_resource::ExtractResource,
+    Debug,
+    Clone,
+    Copy,
+    Default,
+)]
+pub struct MetalFxHistoryReset(bool);
+
+impl MetalFxHistoryReset {
+    /// Drop temporal history on the next rendered frame.
+    pub fn request(&mut self) {
+        self.0 = true;
+    }
+
+    /// Whether a reset is pending for the next rendered frame.
+    pub fn is_requested(&self) -> bool {
+        self.0
+    }
+}
+
+/// Clear a consumed reset request at the top of the frame.
+///
+/// Runs in `First`, which is the only correct place: extraction to the render
+/// world happens after the whole main schedule, so a request made anywhere in
+/// frame N is still set when frame N is extracted, and is cleared before
+/// frame N+1's systems run. Clearing in `Last` would wipe it before the render
+/// world ever saw it.
+fn clear_history_reset(mut reset: bevy::prelude::ResMut<MetalFxHistoryReset>) {
+    if reset.0 {
+        reset.0 = false;
+    }
+}
+
 impl bevy::app::Plugin for MetalFxPlugin {
     fn build(&self, app: &mut bevy::app::App) {
         assert!(
@@ -240,11 +350,31 @@ impl bevy::app::Plugin for MetalFxPlugin {
         } else {
             None
         };
+        // Derived from `dynamic_res_range`, not restated alongside it: this is
+        // the same band the temporal scaler is actually created with, so the
+        // two cannot drift. Without adaptive scaling there is no band — the
+        // scaler is rebuilt whenever the scale moves — so the range collapses
+        // to the configured scale, which is the honest answer to "what will be
+        // accepted without a rebuild".
+        let (range_min, range_max) =
+            dynamic_res_range.unwrap_or((self.render_scale, self.render_scale));
+        app.insert_resource(MetalFxScaleRange {
+            min: range_min,
+            max: range_max,
+        });
         app.insert_resource(MetalFxConfig {
             render_scale: self.render_scale,
             mode: self.mode,
             dynamic_res_range,
         });
+        // Registered unconditionally, including off macOS: the crate promises a
+        // consumer needs no `#[cfg]` guards of its own, and that only holds if
+        // the resource it writes to exists everywhere.
+        app.init_resource::<MetalFxHistoryReset>();
+        app.add_plugins(bevy::render::extract_resource::ExtractResourcePlugin::<
+            MetalFxHistoryReset,
+        >::default());
+        app.add_systems(bevy::app::First, clear_history_reset);
         app.add_systems(bevy::app::PostStartup, apply_resolution_override);
         app.add_systems(bevy::app::Update, update_resolution_on_resize);
 
@@ -724,6 +854,106 @@ pub fn probe_spatial_scaler(_render_device: &bevy::render::renderer::RenderDevic
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The adaptive band must BE the governor's steps, not a copy of them.
+    ///
+    /// This is the whole point of deriving the range from `dynamic_res_range`:
+    /// if someone widens `SCALE_STEPS` and the reported band does not follow,
+    /// consumers clamp to a stale window and the bug is invisible.
+    #[test]
+    fn adaptive_range_tracks_the_governor_steps() {
+        let range = MetalFxScaleRange {
+            min: SCALE_STEPS[0],
+            max: SCALE_STEPS[SCALE_STEPS.len() - 1],
+        };
+        assert_eq!(range.min(), SCALE_STEPS[0]);
+        assert_eq!(range.max(), SCALE_STEPS[SCALE_STEPS.len() - 1]);
+        assert!(range.min() < range.max(), "steps must be ascending");
+    }
+
+    /// Render scale -> MetalFX upscale ratio is a reciprocal, so the ends swap.
+    ///
+    /// Pinned because getting it backwards does not fail loudly: MetalFX takes
+    /// ratios >= 1.0, and a render fraction < 1.0 makes
+    /// `newTemporalScalerWithDevice` return nil with no diagnostic.
+    #[test]
+    fn upscale_ratios_are_the_reciprocal_with_ends_swapped() {
+        let range = MetalFxScaleRange { min: 0.5, max: 0.75 };
+        let ratios = range.as_upscale_ratios();
+
+        // min scale 0.5 -> max ratio 2.0; max scale 0.75 -> min ratio ~1.333.
+        assert!((ratios.start() - 1.0 / 0.75).abs() < 1e-6, "{ratios:?}");
+        assert!((ratios.end() - 2.0).abs() < 1e-6, "{ratios:?}");
+
+        // Every ratio MetalFX is handed must be a genuine upscale.
+        assert!(
+            *ratios.start() >= 1.0,
+            "an upscale ratio below 1.0 makes the scaler nil: {ratios:?}"
+        );
+    }
+
+    /// Native render scale is the degenerate case: ratio exactly 1.0, not 0.
+    #[test]
+    fn native_scale_is_a_unit_ratio() {
+        let range = MetalFxScaleRange { min: 1.0, max: 1.0 };
+        let ratios = range.as_upscale_ratios();
+        assert!((ratios.start() - 1.0).abs() < 1e-6);
+        assert!((ratios.end() - 1.0).abs() < 1e-6);
+    }
+
+    /// The checkable condition an out-of-band scale used to lack.
+    #[test]
+    fn contains_rejects_out_of_band_scales() {
+        let range = MetalFxScaleRange { min: 0.5, max: 0.75 };
+        assert!(range.contains(0.5), "inclusive at the bottom");
+        assert!(range.contains(0.75), "inclusive at the top");
+        assert!(range.contains(0.6));
+        assert!(!range.contains(0.49));
+        assert!(!range.contains(0.76));
+        // The case that produced a silent nil scaler: asking for more than
+        // native, i.e. an upscale ratio below 1.0.
+        assert!(!range.contains(1.5));
+    }
+
+    #[test]
+    fn history_reset_defaults_to_not_requested() {
+        let reset = MetalFxHistoryReset::default();
+        assert!(
+            !reset.is_requested(),
+            "a default reset would throw away history on every startup frame"
+        );
+    }
+
+    /// The full request-then-clear cycle, which is where this can go wrong.
+    ///
+    /// Two failure modes are pinned. Clearing too early (in `Last`, say) would
+    /// wipe the flag before the render world extracts it, so the reset silently
+    /// never happens. Clearing too late — or not at all — would leave it set,
+    /// which suppresses temporal accumulation entirely and quietly turns
+    /// temporal upscaling into something closer to spatial.
+    #[test]
+    fn history_reset_survives_its_frame_then_clears_on_the_next() {
+        let mut app = bevy::app::App::new();
+        app.init_resource::<MetalFxHistoryReset>();
+        app.add_systems(bevy::app::First, clear_history_reset);
+
+        // Frame N: a consumer requests after `First` has already run.
+        app.update();
+        app.world_mut()
+            .resource_mut::<MetalFxHistoryReset>()
+            .request();
+        assert!(
+            app.world().resource::<MetalFxHistoryReset>().is_requested(),
+            "the request must still be set when the render world extracts at end of frame"
+        );
+
+        // Frame N+1: `First` consumes it.
+        app.update();
+        assert!(
+            !app.world().resource::<MetalFxHistoryReset>().is_requested(),
+            "a consumed request must not persist into a second frame"
+        );
+    }
 
     #[test]
     fn mip_bias_matches_log2_scale() {

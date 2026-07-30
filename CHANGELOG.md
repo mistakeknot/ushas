@@ -7,6 +7,49 @@ This is a `0.x` crate, so a **minor** bump is the carrier for breaking changes
 and a patch bump never breaks. Entries before 0.3.0 were reconstructed from the
 commit history when this file was added.
 
+## [0.4.0] — 2026-07-29
+
+Requires **Bevy 0.19** and **Rust 1.95**. If you are on Bevy 0.18, stay on 0.3 —
+Bevy 0.19 removed the render graph, so no single version of this crate can
+support both.
+
+### Changed (breaking)
+
+- **Requires Bevy 0.19 / wgpu 29.** MSRV moves 1.82 → 1.95, set by `bevy_ecs`
+  0.19; nothing in this crate's own code needs it.
+- **`MetalFxLabel` is now a `SystemSet`**, was a render-graph `RenderLabel`.
+  Its job is unchanged — it is the handle you order against — so
+  `.after(MetalFxLabel)` still means what it meant. Any `add_render_graph_edges`
+  referencing it should simply be deleted; the plugin registers the ordering.
+- **`MetalFxUpscaleNode` is no longer a `ViewNode`.** Bevy 0.19 drives rendering
+  from ECS schedules, so the pass is the `metalfx_upscale` system and the type
+  is now just the state it carries. Apps that let the plugin wire itself — the
+  documented path — need no change.
+
+### Added
+
+- `MetalFxScaleRange`: the render-scale band MetalFX will accept, with
+  `contains()` to check a scale before setting it and `as_upscale_ratios()` to
+  see the converted values. Out-of-band scales previously produced a `nil`
+  scaler with no diagnostic. The band is derived from the same configuration the
+  scaler is created with, so the two cannot drift.
+- `MetalFxHistoryReset`: request that temporal history be dropped on the next
+  frame, for camera cuts, teleports and scene loads. Only the first frame reset
+  before this, so a hard cut ghosted. The request clears itself after one frame;
+  holding it set would suppress temporal accumulation entirely.
+
+### Removed
+
+- The `foreign-types` dependency. wgpu-hal 29 migrated its Metal handles from
+  the `metal` crate to objc2, so `raw_handle()` returns an objc2 object this
+  crate can point at directly and `ForeignType::as_ptr()` has nothing to
+  convert. This also removed six unnecessary `unsafe` blocks.
+
+### Notes
+
+The wgpu 27 → 29 jump was expected to be the risky part and was not: every
+`as_hal` call site compiled unchanged. The work was all on the Bevy side.
+
 ## [0.3.0] — 2026-07-29
 
 Presentation telemetry only. The plugin, the modes, the render scale and every
@@ -98,6 +141,7 @@ node, with the plugin disabling itself on unsupported platforms.
 Yanked: `--features temporal` did not compile on any non-macOS target, so the
 release was unusable for cross-platform consumers. Fixed in 0.2.0.
 
+[0.4.0]: https://github.com/mistakeknot/bevy_metalfx/releases/tag/v0.4.0
 [0.3.0]: https://github.com/mistakeknot/bevy_metalfx/releases/tag/v0.3.0
 [0.2.1]: https://github.com/mistakeknot/bevy_metalfx/releases/tag/v0.2.1
 [0.2.0]: https://github.com/mistakeknot/bevy_metalfx/releases/tag/v0.2.0
