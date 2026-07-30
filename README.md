@@ -241,32 +241,39 @@ wgpu 29 refuses to let one command encoder carry both wgpu calls and raw
 `as_hal` encoding, and this pass does both. It was compile-verified and
 unit-tested but had never rendered a frame; 0.4.1 is the fix. See the CHANGELOG.
 
-### Hardware verification status of the Bevy 0.19 port
+### Hardware verification of the Bevy 0.19 port
 
-Confirmed on an M5 Max under `MTL_DEBUG_LAYER=1`, which turns silent MetalFX
-misuse into an immediate assertion rather than garbage pixels:
+Verified on an M5 Max under `MTL_DEBUG_LAYER=1`, which turns silent MetalFX
+misuse into an immediate assertion rather than garbage pixels. Harness:
+`crates/sw-renderer/scripts/playtest-suite.sh` in the workspace.
 
 - All four modes — spatial, temporal, frame interpolation, disabled — run with
   no panic and no Metal validation assertion.
 - The temporal prepass is wired: `Depth32Float` depth and `Rg16Float` motion,
   resolved from full physical resolution to content size.
 - `MetalFxScaleRange` reports the band the scaler was actually created with
-  (render `0.5..=0.5` → MetalFX upscale ratios `2.0..=2.0`), and the configured
-  scale tests in-band.
+  (render `0.5..=0.5` → upscale ratios `2.0..=2.0`), configured scale in band.
+- **The pass wins the write to `out_texture`.** This is the property the
+  `.after(upscaling)` ordering exists to guarantee and the one that fails
+  silently: Bevy's own upscaling blits into the same texture, so losing the
+  order would substitute bilinear with no error anywhere. At an identical render
+  scale, MetalFX output differs from Bevy's bilinear by mean-abs 44.26 across
+  74.65% of pixels — while the same configuration run twice is byte-identical,
+  so the difference is the upscaler and not run-to-run noise.
+- **`MetalFxHistoryReset` reaches the scaler and changes the output**: 2.74% of
+  pixels on the cut frame at a 0.25 rad jump, 11.31% with the camera held still,
+  and it leaves measurably less of the pre-cut view behind (25.280 vs 25.224).
 
-Not yet confirmed, and deliberately not claimed:
+One documented non-effect, because it looks like a bug and is not: across a
+*half-turn* teleport the reset changes nothing at all, byte for byte. A total
+disocclusion leaves no history MetalFX considers reusable, so it discards the
+lot on its own and there is nothing left for the flag to drop. The reset earns
+its keep on partial discontinuities — which is also the only case where stale
+history could have smeared in the first place.
 
-- **That the pass wins the write to `out_texture`.** Bevy's own upscaling blits
-  into the same texture and MetalFX blits over it afterwards; before Bevy 0.19
-  that order was a render-graph edge, and it is now a system ordering
-  constraint. If it were lost the pass would still run, still encode, still
-  report GPU timings, and be silently replaced by bilinear. Settling it needs a
-  pixel diff against a same-scale bilinear run — `crates/sw-renderer/scripts/playtest-suite.sh`
-  in the workspace — which needs an unlocked screen, because a locked macOS
-  session has no swapchain and every capture comes back black.
-- **That `MetalFxHistoryReset` measurably suppresses ghosting** across a hard
-  cut. The plumbing is unit-tested and the render world logs when it honours a
-  request; the visible effect is unmeasured.
+Still unverified, and unrelated to the port: whether the interpolated frame
+under `dual_present` reaches the panel. `MTLDrawable.presentedTime` does not
+populate on this machine for any program.
 
 ## Upgrading from 0.3
 

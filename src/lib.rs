@@ -33,19 +33,17 @@
 //!
 //! ## What is and is not verified
 //!
-//! **On hardware, as of 0.4.1** (M5 Max, macOS, `MTL_DEBUG_LAYER=1`): all four
-//! modes — spatial, temporal, frame interpolation, and disabled — run without a
-//! panic or a Metal validation assertion; the temporal prepass is wired
-//! (`Depth32Float` depth and `Rg16Float` motion, resolved to content size); and
-//! `MetalFxScaleRange` reports the band the scaler was actually built with.
+//! **Hardware-verified as of 0.4.1** (M5 Max, `MTL_DEBUG_LAYER=1`): all four
+//! modes run with no panic and no Metal validation assertion; the temporal
+//! prepass is wired; `MetalFxScaleRange` reports the band the scaler was built
+//! with; the pass **wins the write to `out_texture`** (MetalFX output differs
+//! from Bevy's bilinear at the same render scale by mean-abs 44.26 over 74.65%
+//! of pixels, while the same config run twice is byte-identical); and
+//! `MetalFxHistoryReset` reaches the scaler and measurably alters the cut frame.
 //!
-//! Still **unconfirmed on hardware**: that the pass wins the write to
-//! `ViewTarget::out_texture` — Bevy's own upscaling blits into the same texture
-//! first, and if the `.after(upscaling)` ordering were lost the output would be
-//! silently replaced by bilinear with no error anywhere. Deciding that needs a
-//! pixel diff against a same-scale bilinear run, which needs an unlocked screen.
-//! The same goes for `MetalFxHistoryReset` measurably suppressing ghosting
-//! across a cut. Treat both as reasoned-but-unmeasured until then.
+//! Note one non-effect: across a half-turn teleport the reset changes nothing,
+//! because a total disocclusion leaves MetalFX no reusable history to drop. It
+//! matters on partial discontinuities, which is where stale history would smear.
 //!
 //! Spatial and temporal upscaling are complete and stable. Frame interpolation
 //! computes a correct intermediate frame and, with `present::MetalFxDualPresent`
