@@ -66,6 +66,12 @@ if [[ "${1:-}" == "--packaged" ]]; then
         "the pass is a system, not a ViewNode	pub fn metalfx_upscale"
         "!no ViewNode impl survives	impl ViewNode for"
         "!no render_graph imports survive	bevy::render::render_graph"
+        # 0.4.1 — the crash fix. 0.4.0 panicked on the first MetalFX encode
+        # because the raw Metal work shared a command encoder with wgpu calls,
+        # which wgpu 29 forbids at runtime. The dedicated encoder is the fix, so
+        # assert it is in the bytes that upload rather than only in the tree.
+        "raw encoding gets its own command encoder	metalfx_raw_encode"
+        "!raw encode never rides the context encoder	let encoder = render_context.command_encoder\(\);"
     )
     for check in "${API_CHECKS[@]}"; do
         desc="${check%%$'\t'*}"; pat="${check#*$'\t'}"

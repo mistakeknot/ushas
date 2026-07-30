@@ -230,10 +230,16 @@ of the upscaling pipeline — most apps leave `gpu_timing_sink` at its `None` de
 
 | bevy_metalfx | Bevy | MSRV |
 |-------------|------|------|
-| 0.4 | 0.19 | 1.95 |
+| 0.4.1 | 0.19 | 1.95 |
+| ~~0.4.0~~ | 0.19 | 1.95 |
 | 0.3 | 0.18 | 1.82 |
 | 0.2 | 0.18 | 1.82 |
 | 0.1 | 0.18 | 1.82 |
+
+**Do not use 0.4.0.** It panicked on the first MetalFX encode, in every mode —
+wgpu 29 refuses to let one command encoder carry both wgpu calls and raw
+`as_hal` encoding, and this pass does both. It was compile-verified and
+unit-tested but had never rendered a frame; 0.4.1 is the fix. See the CHANGELOG.
 
 ## Upgrading from 0.3
 

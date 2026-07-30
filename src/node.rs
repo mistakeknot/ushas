@@ -92,6 +92,11 @@ use bevy::render::render_resource::{
     BindGroup, CachedRenderPipelineId, Extent3d, PipelineCache, RenderPassDescriptor,
     SpecializedRenderPipeline, TextureView, TextureViewId,
 };
+// Gated to match its only use site — the dual-present block below is
+// `frame-interpolation`-only, and an import wider than its use is an unused
+// import on every other feature combination.
+#[cfg(feature = "frame-interpolation")]
+use bevy::render::render_resource::CommandEncoderDescriptor;
 use bevy::render::renderer::{RenderContext, ViewQuery};
 use bevy::render::view::ViewTarget;
 // Unconditional: `SendScaler::Spatial` holds a `Retained`, so every feature
@@ -721,13 +726,24 @@ impl MetalFxUpscaleNode {
                     };
 
                     if let Some((interp_ptr, real_ptr)) = ptrs {
-                        // SAFETY: the encoder's command buffer is live and
-                        // uncommitted, and both conversion passes are encoded on
-                        // it, so the staging textures are final by the time the
-                        // completion handler copies them.
+                        // A dedicated encoder for the raw work, for the same
+                        // reason as the MetalFX encode in `encode.rs`: wgpu 29
+                        // panics if one command encoder sees both the wgpu API
+                        // and `as_hal_mut`, and the two `convert_for_present`
+                        // calls above are render passes on the context's
+                        // encoder.
+                        let mut raw_encoder =
+                            device.create_command_encoder(&CommandEncoderDescriptor {
+                                label: Some("metalfx_dual_present"),
+                            });
+                        // SAFETY: both conversion passes are already encoded, and
+                        // `add_command_buffer` below queues this buffer after
+                        // them. Metal executes command buffers on a queue in
+                        // commit order, so this buffer's completion handler
+                        // cannot run until the conversions have finished and the
+                        // staging textures are final.
                         unsafe {
-                            render_context
-                                .command_encoder()
+                            raw_encoder
                                 .as_hal_mut::<wgpu_hal::metal::Api, _, ()>(|hal_encoder| {
                                     let Some(enc) = hal_encoder else { return };
                                     let Some(cmd_buf) = enc.raw_command_buffer() else {
@@ -745,6 +761,7 @@ impl MetalFxUpscaleNode {
                                     );
                                 });
                         }
+                        render_context.add_command_buffer(raw_encoder.finish());
                     }
                 }
             }

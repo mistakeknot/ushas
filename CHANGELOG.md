@@ -7,6 +7,52 @@ This is a `0.x` crate, so a **minor** bump is the carrier for breaking changes
 and a patch bump never breaks. Entries before 0.3.0 were reconstructed from the
 commit history when this file was added.
 
+## [0.4.1] — 2026-07-29
+
+**Upgrade immediately if you are on 0.4.0.** That release panicked the moment
+MetalFX first encoded, in every mode. It was compile-verified and unit-tested,
+but nothing had run it on a GPU; the first hardware run found this in seconds.
+
+### Fixed
+
+- **Panic on the first MetalFX encode: "Mixing the wgpu encoding API with the
+  raw encoding API is not permitted".** wgpu 29 tracks, per command encoder,
+  whether it has been used through the wgpu API or through `as_hal`, and panics
+  on the second one to appear. This pass necessarily does both — it copies the
+  content region and resolves depth/motion with wgpu, then encodes MetalFX
+  against the raw `MTLCommandBuffer` — so the raw half now gets a command
+  encoder of its own, queued via `add_command_buffer` so submission order still
+  matches encode order.
+
+  wgpu 27 tracked no such state and allowed the mixing. This is the part of the
+  wgpu 27 → 29 jump that mattered, and it is invisible to the compiler: every
+  `as_hal` call site compiled unchanged, which is exactly what made 0.4.0 look
+  safe. The 0.4.0 note claiming the wgpu major "was not the risky part" was
+  wrong — it was, just not at compile time.
+
+- **Frame interpolation panicked for a second reason**: the history snapshot
+  (`prevColorTexture`) is a wgpu copy that was sharing the raw encoder. It now
+  runs on the context encoder after the raw buffer is queued, which preserves
+  the "snapshot lands after the interpolation pass" contract through
+  command-buffer commit order instead of encode order within one buffer.
+
+- **`MetalFxRenderScale` and `MetalFxModeResource` were missing whenever the
+  plugin disabled itself** — on non-macOS builds and in `MetalFxMode::Disabled`
+  at full resolution. The README promises the plugin "disables itself
+  gracefully — no `#[cfg]` guards needed in your app code", but any app reading
+  `Res<MetalFxRenderScale>`, the documented way to drive render scale, panicked
+  with "Resource does not exist" on precisely those configurations. Both are now
+  always published, reporting *effective* values (scale 1.0, mode `Disabled`)
+  rather than the requested ones, so an adaptive governor cannot mistake an
+  inactive plugin for headroom.
+
+### Added
+
+- A log line when the render world honours a `MetalFxHistoryReset`. The request
+  is set in the main world and read in the render world after extraction, so a
+  mistimed clear would drop it with no symptom but ghosting. This distinguishes
+  "the reset did not help" from "the reset never arrived".
+
 ## [0.4.0] — 2026-07-29
 
 Requires **Bevy 0.19** and **Rust 1.95**. If you are on Bevy 0.18, stay on 0.3 —
@@ -49,6 +95,12 @@ support both.
 
 The wgpu 27 → 29 jump was expected to be the risky part and was not: every
 `as_hal` call site compiled unchanged. The work was all on the Bevy side.
+
+**This note was wrong, and 0.4.1 corrects it.** "Compiled unchanged" is not
+"works unchanged": wgpu 29 added a *runtime* guard against mixing the wgpu and
+raw encoding APIs on one command encoder, and this crate tripped it on the first
+frame it encoded. The compile-time audit that produced this note could not have
+found it. Only running the thing could.
 
 ## [0.3.0] — 2026-07-29
 
@@ -141,6 +193,7 @@ node, with the plugin disabling itself on unsupported platforms.
 Yanked: `--features temporal` did not compile on any non-macOS target, so the
 release was unusable for cross-platform consumers. Fixed in 0.2.0.
 
+[0.4.1]: https://github.com/mistakeknot/bevy_metalfx/releases/tag/v0.4.1
 [0.4.0]: https://github.com/mistakeknot/bevy_metalfx/releases/tag/v0.4.0
 [0.3.0]: https://github.com/mistakeknot/bevy_metalfx/releases/tag/v0.3.0
 [0.2.1]: https://github.com/mistakeknot/bevy_metalfx/releases/tag/v0.2.1

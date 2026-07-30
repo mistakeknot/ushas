@@ -310,12 +310,28 @@ impl bevy::app::Plugin for MetalFxPlugin {
             self.render_scale
         );
 
+        // `MetalFxRenderScale` and `MetalFxModeResource` are this plugin's
+        // "what actually happened" surface, and the README promises the plugin
+        // disables itself gracefully with no `#[cfg]` guards in app code. That
+        // promise only holds if the resources exist on the paths where it
+        // disables itself. They did not, so any consumer reading
+        // `Res<MetalFxRenderScale>` panicked with "Resource does not exist" on
+        // precisely the machines and configurations the graceful path was
+        // written for — a non-macOS build, or `MetalFxMode::Disabled`.
+        //
+        // Both report the *effective* values, not the requested ones: with the
+        // plugin inactive no resolution override is applied, so the scale really
+        // is 1.0, and saying otherwise would mislead an adaptive governor into
+        // thinking it had headroom to reclaim.
         if !is_available() {
             log::warn!("MetalFX is not available on this system — plugin disabled");
+            app.insert_resource(MetalFxRenderScale(1.0));
+            app.insert_resource(MetalFxModeResource(MetalFxMode::Disabled));
             return;
         }
 
         if self.mode == MetalFxMode::Disabled {
+            app.insert_resource(MetalFxModeResource(MetalFxMode::Disabled));
             // Even in Disabled mode, apply resolution override if scale < 1.0.
             // This lets Bevy's built-in bilinear upscaler handle the upscale,
             // serving as a control condition for MetalFX benchmarks.
@@ -329,6 +345,7 @@ impl bevy::app::Plugin for MetalFxPlugin {
                 app.add_systems(bevy::app::Update, update_resolution_on_resize);
             } else {
                 log::info!("MetalFX mode is Disabled at full resolution — bypassing");
+                app.insert_resource(MetalFxRenderScale(1.0));
             }
             return;
         }
@@ -953,6 +970,39 @@ mod tests {
             !app.world().resource::<MetalFxHistoryReset>().is_requested(),
             "a consumed request must not persist into a second frame"
         );
+    }
+
+    /// The README promises the plugin "disables itself gracefully — no `#[cfg]`
+    /// guards needed in your app code". That is only true if its public
+    /// resources exist on the disabled paths too.
+    ///
+    /// They did not, so an app reading `Res<MetalFxRenderScale>` — the
+    /// documented way to drive render scale — panicked with "Resource does not
+    /// exist" on exactly the configurations the graceful path was written for.
+    /// Caught by running the renderer with `--metalfx=off`, which no test
+    /// covered because every test built the plugin in an enabled mode.
+    #[test]
+    fn disabled_mode_still_publishes_its_public_resources() {
+        for scale in [1.0_f32, 0.5] {
+            let mut app = bevy::app::App::new();
+            app.add_plugins(MetalFxPlugin {
+                render_scale: scale,
+                mode: MetalFxMode::Disabled,
+                ..Default::default()
+            });
+
+            let world = app.world();
+            assert!(
+                world.get_resource::<MetalFxRenderScale>().is_some(),
+                "MetalFxRenderScale must exist at scale {scale} in Disabled mode — \
+                 consumers read it unconditionally"
+            );
+            assert_eq!(
+                world.get_resource::<MetalFxModeResource>().map(|m| m.get()),
+                Some(MetalFxMode::Disabled),
+                "the reported mode must say Disabled, not the requested mode"
+            );
+        }
     }
 
     #[test]

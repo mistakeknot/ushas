@@ -13,6 +13,10 @@ use std::ffi::c_void;
 
 use bevy::prelude::*;
 use bevy::render::camera::TemporalJitter;
+// Ungated: every mode encodes MetalFX through a dedicated raw command encoder,
+// not just frame interpolation. Kept as its own `use` so it does not inherit
+// the `#[cfg]` on the import below.
+use bevy::render::render_resource::CommandEncoderDescriptor;
 #[cfg(feature = "frame-interpolation")]
 use bevy::render::render_resource::{Extent3d, TextureDescriptor, TextureDimension, TextureUsages};
 use bevy::render::renderer::{RenderContext, RenderDevice};
@@ -93,6 +97,19 @@ impl MetalFxUpscaleNode {
             .get_resource::<crate::MetalFxHistoryReset>()
             .is_some_and(crate::MetalFxHistoryReset::is_requested);
         let is_first_frame = state.frame_count == 0 || history_reset_requested;
+        // Log the honoured request, not the requested one. The main world can
+        // say `request()` and still have the flag never arrive — extraction
+        // runs after the whole main schedule, so a mistimed clear would drop it
+        // silently and the only visible symptom would be ghosting nobody
+        // connects to the flag. This line is what distinguishes "the reset did
+        // not help" from "the reset never reached the scaler".
+        if history_reset_requested {
+            log::info!(
+                "MetalFxUpscaleNode: honouring MetalFxHistoryReset — dropping temporal history \
+                 for frame {}",
+                state.frame_count
+            );
+        }
         state.frame_count += 1;
 
         // Extract temporal texture pointers (content-sized depth + motion).
@@ -235,8 +252,30 @@ impl MetalFxUpscaleNode {
         // borrowing the encoder, so the completion handler can capture it.
         let timing_sink = world.get_resource::<GpuTimingDiag>().map(|d| d.0.clone());
 
-        // Now safe to acquire encoder's as_hal_mut — all texture guards dropped.
-        let encoder = render_context.command_encoder();
+        // Now safe to acquire as_hal_mut — all texture guards dropped.
+        //
+        // The raw encoding gets a command encoder of its own, because wgpu 29
+        // refuses to let one encoder carry both kinds of work: the first wgpu
+        // call marks an encoder `Wgpu`, the first `as_hal_mut` marks it `Raw`,
+        // and whichever runs second panics with "Mixing the wgpu encoding API
+        // with the raw encoding API is not permitted".
+        //
+        // This pass unavoidably does both. Phase B0 copies the content region
+        // with `copy_texture_to_texture`, and the temporal path resolves depth
+        // and motion through render passes — all on the context's encoder —
+        // before MetalFX encodes against the raw `MTLCommandBuffer`. wgpu 27
+        // tracked no such state and allowed the mixing, which is exactly why
+        // this survived a compile-time audit of every `as_hal` call site and
+        // only surfaced when the pass first ran on hardware.
+        //
+        // Ordering is preserved rather than assumed: `add_command_buffer` at
+        // the end of this function flushes the context's open encoder and
+        // queues it *ahead* of this one, so the copies and resolves still
+        // execute before the MetalFX work that reads their output.
+        let mut raw_encoder = device.create_command_encoder(&CommandEncoderDescriptor {
+            label: Some("metalfx_raw_encode"),
+        });
+        let encoder = &mut raw_encoder;
 
         match &state.scaler {
             SendScaler::Spatial(scaler) => {
@@ -397,20 +436,12 @@ impl MetalFxUpscaleNode {
                 // the life of the process, so every frame after the first was
                 // interpolated against garbage (6zit.8).
                 //
-                // Encoded *after* the interpolation pass on purpose: Metal
-                // executes commands in encode order within a command buffer, so
-                // the pass above still reads the genuine previous frame and this
-                // copy only lands afterwards.
-                let prev_tex = state.prev_color_texture.as_ref().unwrap();
-                encoder.copy_texture_to_texture(
-                    state.output_texture.as_image_copy(),
-                    prev_tex.as_image_copy(),
-                    Extent3d {
-                        width: output_w,
-                        height: output_h,
-                        depth_or_array_layers: 1,
-                    },
-                );
+                // Ordering still holds, but it is now carried by command-buffer
+                // submission order rather than encode order within one buffer:
+                // this copy is a wgpu operation and cannot share the raw encoder
+                // above, so it is issued after `add_command_buffer` below, and
+                // Metal executes command buffers on a queue in commit order.
+                // See the snapshot block at the end of this function.
             }
             #[cfg(feature = "temporal")]
             SendScaler::Temporal(scaler) => {
@@ -457,6 +488,40 @@ impl MetalFxUpscaleNode {
                     });
                 }
             }
+        }
+
+        // Queue the raw-encoded buffer. This flushes the context's still-open
+        // wgpu encoder first, so the Phase B0 copy and the depth/motion
+        // resolves are submitted ahead of the MetalFX work that consumes them,
+        // and the Phase C blit — which opens a fresh encoder after this — is
+        // submitted after it.
+        render_context.add_command_buffer(raw_encoder.finish());
+
+        // Snapshot this frame's upscaled color into the history buffer.
+        //
+        // MetalFX's contract: whenever `shouldResetHistory` is false,
+        // `prevColorTexture` must contain the data that was in `colorTexture`
+        // during the *previous* `encodeToCommandBuffer:`. Without this copy the
+        // history buffer stays uninitialised for the life of the process and
+        // every frame after the first is interpolated against garbage (6zit.8).
+        //
+        // It must land *after* the interpolation pass, which is why it sits
+        // here rather than beside it: this is a wgpu copy and the interpolation
+        // is raw Metal, and wgpu 29 will not let one encoder carry both. The
+        // copy therefore goes on a fresh context encoder, queued after the raw
+        // buffer, and Metal runs a queue's command buffers in commit order.
+        #[cfg(feature = "frame-interpolation")]
+        if matches!(state.scaler, SendScaler::FrameInterpolator { .. }) {
+            let prev_tex = state.prev_color_texture.as_ref().unwrap();
+            render_context.command_encoder().copy_texture_to_texture(
+                state.output_texture.as_image_copy(),
+                prev_tex.as_image_copy(),
+                Extent3d {
+                    width: output_w,
+                    height: output_h,
+                    depth_or_array_layers: 1,
+                },
+            );
         }
 
         true
