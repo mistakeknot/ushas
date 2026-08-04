@@ -353,8 +353,7 @@ impl bevy::app::Plugin for MetalFxPlugin {
                     self.render_scale
                 );
                 app.insert_resource(MetalFxRenderScale(self.render_scale));
-                app.add_systems(bevy::app::PostStartup, apply_resolution_override);
-                app.add_systems(bevy::app::Update, update_resolution_on_resize);
+                register_resolution_override(app);
             } else {
                 log::info!("MetalFX mode is Disabled at full resolution — bypassing");
                 app.insert_resource(MetalFxRenderScale(1.0));
@@ -404,8 +403,7 @@ impl bevy::app::Plugin for MetalFxPlugin {
             MetalFxHistoryReset,
         >::default());
         app.add_systems(bevy::app::First, clear_history_reset);
-        app.add_systems(bevy::app::PostStartup, apply_resolution_override);
-        app.add_systems(bevy::app::Update, update_resolution_on_resize);
+        register_resolution_override(app);
 
         // Adaptive render scale (opt-in).
         if self.adaptive {
@@ -506,6 +504,8 @@ impl bevy::app::Plugin for MetalFxPlugin {
 use bevy::camera::MainPassResolutionOverride;
 use bevy::prelude::*;
 use bevy::render::camera::MipBias;
+use bevy::render::sync_world::RenderEntity;
+use bevy::render::Extract;
 
 /// Texture LOD bias to apply when rendering below native resolution.
 ///
@@ -604,6 +604,84 @@ impl AdaptiveScaleState {
             consecutive_under: 0,
             cooldown: 0.0,
             frames_since_eval: 0,
+        }
+    }
+}
+
+/// Register the resolution-override systems as a single unit.
+///
+/// The main-world insert and the render-world extract go in together and never
+/// separately. They *were* separate — the main-world half existed alone for the
+/// entire life of this crate, which is the bug documented on
+/// [`extract_resolution_override`]. Registering them apart again would restore a
+/// plugin that reports a render scale it does not apply.
+fn register_resolution_override(app: &mut App) {
+    app.add_systems(bevy::app::PostStartup, apply_resolution_override);
+    app.add_systems(bevy::app::Update, update_resolution_on_resize);
+
+    let Some(render_app) = app.get_sub_app_mut(bevy::render::RenderApp) else {
+        // Deliberately loud. Skipping quietly is what the old code effectively
+        // did, and the resulting failure presents as "MetalFX won us nothing"
+        // rather than "the render scale never reached the GPU" — a wrong
+        // conclusion about the upscaler instead of a bug report about wiring.
+        log::error!(
+            "MetalFX: no RenderApp when registering the resolution override. The render scale \
+             will NOT be applied — MainPassResolutionOverride is read in the render world only. \
+             Add MetalFxPlugin after DefaultPlugins."
+        );
+        return;
+    };
+    render_app.add_systems(
+        bevy::render::ExtractSchedule,
+        extract_resolution_override.after(bevy::render::camera::extract_cameras),
+    );
+}
+
+/// Copy `MainPassResolutionOverride` onto the camera's **render-world** entity.
+///
+/// Bevy reads this component off the render-world view entity, never the main
+/// world one: `main_opaque_pass_3d`, the prepass node and the view-uniform
+/// writer all take it as `Option<&MainPassResolutionOverride>` on the entity
+/// `extract_cameras` builds, and feed it to `Viewport::from_viewport_and_
+/// override`. Its own doc comment states the contract — "Insert this component
+/// on a 3d camera entity in the render world."
+///
+/// Nothing carries it across the world boundary for you. `extract_cameras`
+/// extracts a *fixed* list — Hdr, CompositingSpace, ColorGrading, Exposure,
+/// TemporalJitter, MipBias, RenderLayers, Projection, NoIndirectDrawing — and
+/// this component is not on it. There is no `ExtractComponentPlugin` for it
+/// either, and there cannot be a derived one: it is not `Clone`.
+///
+/// So a main-world-only insert is inert, in the most expensive way available.
+/// The component reads back correctly from the main world, the logs report the
+/// intended resolution, and the GPU rasterizes every pixel at full size.
+/// Measured with gpu-load-bench at 8000 serial-ALU fragment iterations: a
+/// native 640x360 window ran 3.6-3.8x faster than native 1280x720, while the
+/// same 640x360 asked for through this override ran at full-resolution speed.
+///
+/// What hid it for so long is that `apply_resolution_override` inserts `MipBias`
+/// on the same line — and `MipBias` *is* on the extract list. Half the pair
+/// worked, so nothing downstream looked disconnected.
+fn extract_resolution_override(
+    mut commands: Commands,
+    cameras: Extract<Query<(&RenderEntity, Option<&MainPassResolutionOverride>), With<Camera3d>>>,
+) {
+    for (render_entity, resolution) in cameras.iter() {
+        // A camera that has not synced yet has no render entity to write to.
+        let Ok(mut entity) = commands.get_entity(render_entity.id()) else {
+            continue;
+        };
+        match resolution {
+            Some(resolution) => {
+                entity.insert(MainPassResolutionOverride(**resolution));
+            }
+            // Mirror absence, not just presence — `extract_cameras` does the
+            // same for MipBias and for the same reason. A stale override left
+            // on the render entity would go on shrinking the main pass after
+            // the main world stopped asking for it.
+            None => {
+                entity.remove::<MainPassResolutionOverride>();
+            }
         }
     }
 }
@@ -1015,6 +1093,47 @@ mod tests {
                 "the reported mode must say Disabled, not the requested mode"
             );
         }
+    }
+
+    /// The bug this crate shipped with for its entire life.
+    ///
+    /// `MainPassResolutionOverride` is read off the **render**-world view
+    /// entity, and Bevy does not carry it across the world boundary for you: it
+    /// is absent from `extract_cameras`' fixed extract list, and it cannot have
+    /// an `ExtractComponentPlugin` because it is not `Clone`. Registering only
+    /// the main-world half therefore produced a plugin that logged the right
+    /// resolution, read the component back correctly, and rendered every pixel
+    /// at full size anyway.
+    ///
+    /// Note what this test can and cannot do. It asserts the render-world half
+    /// is REGISTERED. It cannot assert the override is EFFECTIVE — that needs a
+    /// GPU, and is what `gpu-load-bench` measures by comparing the override
+    /// against a NATIVE window at the same pixel count. Reading the component
+    /// back proves only that it was applied, which is the distinction that let
+    /// this survive an earlier investigation.
+    #[test]
+    fn the_resolution_override_is_registered_in_the_render_world_too() {
+        use bevy::render::{ExtractSchedule, RenderApp};
+
+        let mut app = bevy::app::App::new();
+        let mut render_app = bevy::app::SubApp::new();
+        render_app.add_schedule(bevy::ecs::schedule::Schedule::new(ExtractSchedule));
+        app.insert_sub_app(RenderApp, render_app);
+
+        register_resolution_override(&mut app);
+
+        let extract = app
+            .get_sub_app(RenderApp)
+            .expect("render sub-app was inserted above")
+            .get_schedule(ExtractSchedule)
+            .expect("ExtractSchedule was added above");
+        assert_eq!(
+            extract.systems_len(),
+            1,
+            "register_resolution_override must add extract_resolution_override to the render \
+             world's ExtractSchedule. Without it the main-world component is inert, and the \
+             plugin reports a render scale it never applies."
+        );
     }
 
     #[test]
