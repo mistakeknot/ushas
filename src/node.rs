@@ -757,23 +757,22 @@ impl MetalFxUpscaleNode {
                         // cannot run until the conversions have finished and the
                         // staging textures are final.
                         unsafe {
-                            raw_encoder
-                                .as_hal_mut::<wgpu_hal::metal::Api, _, ()>(|hal_encoder| {
-                                    let Some(enc) = hal_encoder else { return };
-                                    let Some(cmd_buf) = enc.raw_command_buffer() else {
-                                        return;
-                                    };
-                                    crate::present::present_pair_deferred(
-                                        cmd_buf as *const _ as *mut c_void,
-                                        layer,
-                                        queue,
-                                        interp_ptr,
-                                        real_ptr,
-                                        dual.refresh_interval,
-                                        &dual.sink,
-                                        dual.single_present,
-                                    );
-                                });
+                            raw_encoder.as_hal_mut::<wgpu_hal::metal::Api, _, ()>(|hal_encoder| {
+                                let Some(enc) = hal_encoder else { return };
+                                let Some(cmd_buf) = enc.raw_command_buffer() else {
+                                    return;
+                                };
+                                crate::present::present_pair_deferred(
+                                    cmd_buf as *const _ as *mut c_void,
+                                    layer,
+                                    queue,
+                                    interp_ptr,
+                                    real_ptr,
+                                    dual.refresh_interval,
+                                    &dual.sink,
+                                    dual.single_present,
+                                );
+                            });
                         }
                         render_context.add_command_buffer(raw_encoder.finish());
                     }

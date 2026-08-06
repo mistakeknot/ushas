@@ -313,8 +313,7 @@ impl MetalFxUpscaleNode {
                 // SAFETY: borrowed for the duration of this scope only.
                 let device_ptr = &**hal_dev.raw_device() as *const _ as *mut c_void;
                 #[cfg(feature = "temporal")]
-                let owned_device =
-                    crate::platform::SendDevice(hal_dev.raw_device().clone());
+                let owned_device = crate::platform::SendDevice(hal_dev.raw_device().clone());
 
                 match mode {
                     MetalFxMode::Spatial => {
@@ -435,7 +434,7 @@ impl MetalFxUpscaleNode {
                                     dynamic_res_range,
                                     tx,
                                 );
-                            },
+                            }
                             #[cfg(feature = "frame-interpolation")]
                             MetalFxMode::FrameInterpolation => {
                                 crate::platform::spawn_frame_interpolator_thread(
@@ -447,7 +446,7 @@ impl MetalFxUpscaleNode {
                                     color_fmt_raw,
                                     tx,
                                 );
-                            },
+                            }
                             _ => unreachable!(),
                         }
 

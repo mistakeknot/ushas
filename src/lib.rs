@@ -985,7 +985,10 @@ mod tests {
     /// `newTemporalScalerWithDevice` return nil with no diagnostic.
     #[test]
     fn upscale_ratios_are_the_reciprocal_with_ends_swapped() {
-        let range = MetalFxScaleRange { min: 0.5, max: 0.75 };
+        let range = MetalFxScaleRange {
+            min: 0.5,
+            max: 0.75,
+        };
         let ratios = range.as_upscale_ratios();
 
         // min scale 0.5 -> max ratio 2.0; max scale 0.75 -> min ratio ~1.333.
@@ -1011,7 +1014,10 @@ mod tests {
     /// The checkable condition an out-of-band scale used to lack.
     #[test]
     fn contains_rejects_out_of_band_scales() {
-        let range = MetalFxScaleRange { min: 0.5, max: 0.75 };
+        let range = MetalFxScaleRange {
+            min: 0.5,
+            max: 0.75,
+        };
         assert!(range.contains(0.5), "inclusive at the bottom");
         assert!(range.contains(0.75), "inclusive at the top");
         assert!(range.contains(0.6));
