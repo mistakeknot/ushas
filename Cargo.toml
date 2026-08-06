@@ -5,7 +5,7 @@ edition = "2021"
 authors = ["mk <mk@generalsystemsventures.com>"]
 description = "Bevy plugin for Apple MetalFX upscaling and frame interpolation"
 license = "MIT OR Apache-2.0"
-repository = "https://github.com/mistakeknot/bevy_metalfx"
+repository = "https://github.com/mistakeknot/ushas"
 keywords = ["bevy", "metalfx", "upscaling", "apple", "metal"]
 categories = ["game-engines", "rendering", "graphics"]
 # Forced by bevy 0.19 / bevy_ecs 0.19, which require 1.95.0. Nothing in this
@@ -30,7 +30,7 @@ exclude = ["examples/", "scripts/"]
 # A failed build means no docs page at all — strictly worse than the stub.
 #
 # So: build where it can build. `all-features` still helps, and the real API
-# docs are verified on a macOS runner by .github/workflows/bevy-metalfx.yml.
+# docs are verified on a macOS runner by .github/workflows/ci.yml.
 [package.metadata.docs.rs]
 all-features = true
 

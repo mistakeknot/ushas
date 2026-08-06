@@ -22,7 +22,11 @@ set -euo pipefail
 
 VERSION="${BEVY_METALFX_VERSION:-0.4}"
 CRATE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-REPO_ROOT="$(cd "$CRATE_DIR/../.." && pwd)"
+# The crate is the repository root here. It was two levels down when this crate
+# lived in a monorepo, and the two paths are the same directory now -- keep both
+# names so the `cd "$REPO_ROOT" && cargo ... -p bevy_metalfx` calls below still
+# read as "run from where the manifest cargo resolves against lives".
+REPO_ROOT="$CRATE_DIR"
 
 if [[ "${1:-}" == "--packaged" ]]; then
     # One awk, no pipe: `sed ... | head -1` under `set -o pipefail` returns 141

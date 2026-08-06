@@ -2,12 +2,18 @@
 
 [![Crates.io](https://img.shields.io/crates/v/bevy_metalfx.svg)](https://crates.io/crates/bevy_metalfx)
 [![Docs.rs](https://docs.rs/bevy_metalfx/badge.svg)](https://docs.rs/bevy_metalfx)
-[![License](https://img.shields.io/crates/l/bevy_metalfx.svg)](https://github.com/mistakeknot/bevy_metalfx#license)
+[![License](https://img.shields.io/crates/l/bevy_metalfx.svg)](https://github.com/mistakeknot/ushas#license)
 
 Bevy plugin for Apple MetalFX upscaling and frame interpolation.
 
 Renders your scene at a lower resolution and uses MetalFX's ML-based upscaling
 to reconstruct a full-resolution image, improving performance on Apple Silicon Macs.
+
+> This repository is `ushas`; the crate it publishes is `bevy_metalfx`. A
+> crates.io name is permanent and the `bevy_` prefix is how the ecosystem finds
+> plugins, so the crate keeps the plain name. Links to
+> `github.com/mistakeknot/bevy_metalfx` in versions published before 0.4.1
+> redirect here.
 
 ## Features
 
@@ -21,7 +27,7 @@ to reconstruct a full-resolution image, improving performance on Apple Silicon M
 
 ```toml
 [dependencies]
-bevy_metalfx = "0.2"
+bevy_metalfx = "0.4"
 ```
 
 ```rust
@@ -82,13 +88,13 @@ bridges between them via raw `*mut c_void` casts.
 
 ```toml
 # Spatial only (default) — stable
-bevy_metalfx = "0.2"
+bevy_metalfx = "0.4"
 
 # Temporal upscaling (adds motion vector + depth prepass) — stable
-bevy_metalfx = { version = "0.2", features = ["temporal"] }
+bevy_metalfx = { version = "0.4", features = ["temporal"] }
 
 # Frame interpolation (requires macOS 26+) — see the limitation below
-bevy_metalfx = { version = "0.2", features = ["frame-interpolation"] }
+bevy_metalfx = { version = "0.4", features = ["frame-interpolation"] }
 ```
 
 The features are cumulative (`frame-interpolation` implies `temporal` implies
@@ -244,8 +250,7 @@ unit-tested but had never rendered a frame; 0.4.1 is the fix. See the CHANGELOG.
 ### Hardware verification of the Bevy 0.19 port
 
 Verified on an M5 Max under `MTL_DEBUG_LAYER=1`, which turns silent MetalFX
-misuse into an immediate assertion rather than garbage pixels. Harness:
-`crates/sw-renderer/scripts/playtest-suite.sh` in the workspace.
+misuse into an immediate assertion rather than garbage pixels. Harness: a private consumer application, not this repository.
 
 - All four modes — spatial, temporal, frame interpolation, disabled — run with
   no panic and no Metal validation assertion.

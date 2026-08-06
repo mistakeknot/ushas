@@ -1,0 +1,5 @@
+/target
+# Cargo.lock is not committed: this is a library crate, so downstream builds
+# resolve their own graph and a committed lock here would only ever describe
+# CI's choices, never a consumer's.
+Cargo.lock

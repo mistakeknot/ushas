@@ -1,0 +1,208 @@
+# bevy_metalfx is published to crates.io, so its build surface is wider than a
+# single `cargo check`: four feature combinations, two platforms, and a docs
+# build that renders for a target the crate cannot run on.
+#
+# This matrix exists because three real defects shipped through a plain
+# `cargo check` with default features in one week:
+#
+#   - `--features temporal` never compiled on any non-macOS target (a `#[cfg]`
+#     on `mod jitter` was narrower than the `#[cfg]` on its caller). Broken from
+#     0.1.0 in March until it was found by cross-compiling in July.
+#   - The non-macOS stub warned on every docs.rs build.
+#   - docs.rs would have rendered the stub API: no `present` module, and a
+#     `MetalFxPlugin` missing two of its four fields.
+#
+# Every one of those lives on an axis that default-feature checking never
+# touches. Hence the matrix.
+
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  # A warning here is a defect: every one of the bugs above first appeared as
+  # one. The crate is warning-clean in all four combos on both platforms.
+  RUSTFLAGS: -D warnings
+
+jobs:
+  build:
+    name: ${{ matrix.os }} / ${{ matrix.features.name }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      # Both axes are matrix dimensions so this is a genuine 2x4 cross-product,
+      # eight jobs. Listing the feature sets under `include:` instead would not
+      # do that: include entries that do not match an existing combination get
+      # merged into every combination in order, so each would overwrite the
+      # last and only the final one would run.
+      matrix:
+        os: [macos-latest, ubuntu-latest]
+        features:
+          - name: spatial
+            flags: --no-default-features --features spatial
+          - name: default
+            flags: ''
+          - name: temporal
+            flags: --features temporal
+          - name: frame-interpolation
+            flags: --features frame-interpolation
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: metalfx-${{ matrix.features.name }}
+
+      # bevy is taken with default-features = false and only four features, so
+      # no audio/input system libraries are pulled in. `cargo check` does not
+      # link, which keeps this the same on both runners.
+      - name: Check
+        run: cargo check ${{ matrix.features.flags }} --all-targets
+
+      # Tests are pure logic (presentation telemetry maths) but the module they
+      # live in is macOS-only, so they only exist on that runner.
+      - name: Test
+        if: runner.os == 'macOS'
+        run: cargo test ${{ matrix.features.flags }}
+
+  fmt:
+    name: rustfmt
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+      - run: cargo fmt -- --check
+
+  docs:
+    name: docs.rs render
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Add the Linux target
+        run: rustup target add x86_64-unknown-linux-gnu
+
+      # This is the build docs.rs actually runs: Linux, all features. It must
+      # be warning-clean, because docs.rs renders THIS. 0.2.0's page was lost
+      # to a failed build, so "does the docs build survive" is the first
+      # property to protect, ahead of what it contains.
+      #
+      # Intra-doc links to macOS-only items break here specifically, which is
+      # invisible when documenting natively on a Mac.
+      - name: Build docs as docs.rs will (Linux)
+        env:
+          RUSTDOCFLAGS: -D warnings
+        run: cargo doc --target x86_64-unknown-linux-gnu --all-features --no-deps
+
+      # The real API only documents on macOS. docs.rs cannot do this — it
+      # cross-compiles from a Linux container and blake3 (via bevy_asset) needs
+      # an Apple C toolchain — so this runner is the only place it is checked.
+      - name: Build the macOS docs
+        env:
+          RUSTDOCFLAGS: -D warnings
+        run: cargo doc --target aarch64-apple-darwin --all-features --no-deps
+
+      # A green docs build is not enough: docs that build fine while describing
+      # the wrong platform is the failure mode this guards.
+      - name: Assert the macOS docs contain the macOS API
+        run: |
+          DOC=target/aarch64-apple-darwin/doc/bevy_metalfx
+          fail=0
+          for item in present gpu_timing struct.MetalFxPlugin.html; do
+            if [ ! -e "$DOC/$item" ]; then
+              echo "::error::missing from generated docs: $item"
+              fail=1
+            fi
+          done
+          for field in gpu_timing_sink dual_present; do
+            if ! grep -q "$field" "$DOC/struct.MetalFxPlugin.html"; then
+              echo "::error::MetalFxPlugin documented without its $field field"
+              fail=1
+            fi
+          done
+          exit $fail
+
+  invariants:
+    name: static invariants
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # PresentSink::counts() must report a cumulative counter, never the
+      # occupancy of the `presented` ring. Reporting ring length as `displayed`
+      # makes a bounded buffer look like a frame count: it climbs to the ring
+      # size and then stops, which reads as "presentation plateaued" rather
+      # than "the gauge saturated".
+      #
+      # Scoped to counts() deliberately — `presented.len()` is CORRECT inside
+      # push_presented, where it drives the ring fill, so a file-wide ban would
+      # fail a correct implementation.
+      #
+      # This check used to live in the consumer that found the bug, reaching
+      # across into this crate's source by path. It is an assertion about this
+      # crate's internals, so it belongs here, where the file it reads cannot
+      # move out from under it.
+      - name: counts() is not a ring gauge
+        run: |
+          BODY=$(awk '/pub fn counts/{f=1} f{print} f&&/^    }$/{exit}' src/present/sink.rs)
+          if [ -z "$BODY" ]; then
+            echo "::error::could not locate PresentSink::counts() in src/present/sink.rs"
+            exit 1
+          fi
+          # An empty grep result here means "no violations", but an empty BODY
+          # above means "never looked" — which is why they are checked apart.
+          N=$(printf '%s\n' "$BODY" | grep -cF 'presented.len()' || true)
+          if [ "$N" -ne 0 ]; then
+            echo "::error::counts() returns the ring length as displayed ($N occurrence(s))"
+            exit 1
+          fi
+          echo "ok: counts() reports a cumulative counter"
+
+  package:
+    name: publishable
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+
+      # Catches the class where the working tree is fine but the artifact is
+      # not: a source file excluded by mistake, or a licence that stops being
+      # packaged. --list reads manifest intent, so assert against the tarball.
+      - name: Package and inspect the tarball
+        run: |
+          cargo package
+          VERSION=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)
+          TARBALL="target/package/bevy_metalfx-$VERSION.crate"
+          EXTRACT=$(mktemp -d)
+          tar xzf "$TARBALL" -C "$EXTRACT"
+          PKG="$EXTRACT/bevy_metalfx-$VERSION"
+          echo "packaged $(find "$PKG" -type f | wc -l | tr -d ' ') files from $TARBALL"
+          fail=0
+          for required in LICENSE-MIT LICENSE-APACHE README.md src/lib.rs \
+                          src/node/depth_resolve.wgsl src/node/motion_resolve.wgsl; do
+            if [ ! -f "$PKG/$required" ]; then
+              echo "::error::missing from published tarball: $required"
+              fail=1
+            fi
+          done
+          exit $fail
