@@ -11,9 +11,10 @@ to reconstruct a full-resolution image, improving performance on Apple Silicon M
 
 > This repository is `ushas`; the crate it publishes is `bevy_metalfx`. A
 > crates.io name is permanent and the `bevy_` prefix is how the ecosystem finds
-> plugins, so the crate keeps the plain name. Links to
-> `github.com/mistakeknot/bevy_metalfx` in versions published before 0.4.1
-> redirect here.
+> plugins, so the crate keeps the plain name. Versions through 0.4.1 were
+> published with a `repository` pointing at `github.com/mistakeknot/bevy_metalfx`;
+> that URL redirects here, and 0.4.2 is the first release to name this repo
+> directly.
 
 ## Features
 

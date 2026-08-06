@@ -7,6 +7,82 @@ This is a `0.x` crate, so a **minor** bump is the carrier for breaking changes
 and a patch bump never breaks. Entries before 0.3.0 were reconstructed from the
 commit history when this file was added.
 
+## [0.4.2] — 2026-08-06
+
+**Upgrade if you rely on the render scale — which is the entire point of this
+crate.** Every release before this one, 0.1.0 through 0.4.1, asked for the
+reduced render resolution in the wrong world, so Bevy never applied it. The
+plugin logged the resolution it wanted and read the component back correctly,
+and the GPU rasterized every pixel at full size anyway: MetalFX's cost with none
+of its benefit.
+
+### Fixed
+
+- **`MainPassResolutionOverride` was only ever set in the main world, and Bevy
+  reads it in the render world.** `main_opaque_pass_3d`, the prepass node and
+  the view-uniform writer all take it as `Option<&MainPassResolutionOverride>`
+  on the entity `extract_cameras` builds. Nothing carries it across the world
+  boundary for you: it is absent from `extract_cameras`' fixed extract list, and
+  it cannot be given an `ExtractComponentPlugin` because it is not `Clone`. So
+  the main-world insert was inert, in the most expensive way available — the
+  component read back correctly, the logs reported the intended resolution, and
+  nothing rendered any smaller.
+
+  Measured with a synthetic fragment load at 8000 serial-ALU iterations: a
+  native 640×360 window ran 3.6–3.8× faster than native 1280×720, while the same
+  640×360 requested through this override ran at full-resolution speed.
+
+  What hid it for the crate's entire life is that the same call also inserts
+  `MipBias`, and `MipBias` *is* on the extract list. Half the pair worked, so
+  nothing downstream looked disconnected: the logs, the component read-back and
+  the mip selection all agreed with each other, and disagreed only with the
+  rasterizer.
+
+  The render-world half now exists, both halves are registered by a single
+  function so they cannot be separated again, and a test asserts the extract
+  system is present in the render world's `ExtractSchedule`. Registration warns
+  rather than silently doing nothing when there is no `RenderApp`, and a stale
+  override is now removed instead of left behind.
+
+- **A detached thread dereferenced an unretained `MTLDevice`.** Temporal and
+  frame-interpolation scaler creation runs on `std::thread::spawn`, and was
+  handed a raw pointer *borrowed* from wgpu's device under a safety note
+  claiming the pointer would not outlive the scope. For the synchronous spatial
+  path that was true. For the two threaded paths it was false by construction: a
+  detached thread outlives the scope that spawned it, and nothing retained the
+  object. The process survived only because wgpu happened to keep its own
+  reference alive.
+
+  Both spawns now take an owned, retained device handle, and neither function
+  needs to be `unsafe` any more. This is **not** a demonstrated fix for a known
+  crash: several SIGSEGVs were recorded faulting on exactly this thread inside
+  `newTemporalScalerWithDevice:`, but they are unreproduced. The claim here is
+  narrower — an unretained Objective-C reference handed to a detached thread is
+  a defect on its own terms, and it happens to be the shape that produces that
+  fault.
+
+### Added
+
+- **A warning when scaler creation has not returned after ten seconds.** A cold
+  MPSGraph compile takes on the order of a second. Against a locked session,
+  `newTemporalScalerWithDevice:` was measured not to return *at all* — 121
+  seconds and 36,052 rendered frames, no result, no error, no crash. MetalFX
+  never engaged and nothing said so; the only evidence was a single line saying
+  creation had started. The node still waits rather than giving up, since a
+  genuinely slow first compile should be allowed to finish, but it now says once
+  that MetalFX is not running, that frames are being presented unscaled, and
+  that a locked session or sleeping display is the usual cause.
+
+### Changed
+
+- `repository` points at `github.com/mistakeknot/ushas`, where this crate is
+  actually developed. Through 0.4.1 it pointed at a two-commit snapshot cut the
+  day after the first publish and never updated again; under `MIT OR Apache-2.0`
+  that link is the mechanism by which the source promise is kept. The old URL
+  redirects here, so the links in already-published versions still resolve.
+- The version links at the bottom of this file now point at crates.io. They
+  pointed at GitHub release tags that were never created, so all six 404'd.
+
 ## [0.4.1] — 2026-07-29
 
 **Upgrade immediately if you are on 0.4.0.** That release panicked the moment
@@ -198,9 +274,10 @@ node, with the plugin disabling itself on unsupported platforms.
 Yanked: `--features temporal` did not compile on any non-macOS target, so the
 release was unusable for cross-platform consumers. Fixed in 0.2.0.
 
-[0.4.1]: https://github.com/mistakeknot/bevy_metalfx/releases/tag/v0.4.1
-[0.4.0]: https://github.com/mistakeknot/bevy_metalfx/releases/tag/v0.4.0
-[0.3.0]: https://github.com/mistakeknot/bevy_metalfx/releases/tag/v0.3.0
-[0.2.1]: https://github.com/mistakeknot/bevy_metalfx/releases/tag/v0.2.1
-[0.2.0]: https://github.com/mistakeknot/bevy_metalfx/releases/tag/v0.2.0
-[0.1.0]: https://github.com/mistakeknot/bevy_metalfx/releases/tag/v0.1.0
+[0.4.2]: https://crates.io/crates/bevy_metalfx/0.4.2
+[0.4.1]: https://crates.io/crates/bevy_metalfx/0.4.1
+[0.4.0]: https://crates.io/crates/bevy_metalfx/0.4.0
+[0.3.0]: https://crates.io/crates/bevy_metalfx/0.3.0
+[0.2.1]: https://crates.io/crates/bevy_metalfx/0.2.1
+[0.2.0]: https://crates.io/crates/bevy_metalfx/0.2.0
+[0.1.0]: https://crates.io/crates/bevy_metalfx/0.1.0
