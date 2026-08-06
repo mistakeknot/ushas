@@ -74,6 +74,16 @@ if [[ "${1:-}" == "--packaged" ]]; then
         "the pass is a system, not a ViewNode	pub fn metalfx_upscale"
         "!no ViewNode impl survives	impl ViewNode for"
         "!no render_graph imports survive	bevy::render::render_graph"
+        # 0.4.2 — the resolution-override fix and the retained device handle.
+        # Neither changes public API, so the "update these when the release
+        # changes public API" rule above would not have added anything here.
+        # They are asserted for the other reason this list exists: a stale
+        # tarball would upload 0.4.1's bytes under 0.4.2's version number, and
+        # every check above would still pass while the release's entire point
+        # was missing.
+        "resolution override reaches the render world	fn extract_resolution_override"
+        "detached scaler threads take a retained device	struct SendDevice"
+        "!no unretained pointer crosses a thread boundary	struct SendablePtr"
         # 0.4.1 — the crash fix. 0.4.0 panicked on the first MetalFX encode
         # because the raw Metal work shared a command encoder with wgpu calls,
         # which wgpu 29 forbids at runtime. The dedicated encoder is the fix, so
