@@ -353,6 +353,58 @@ pub fn metalfx_upscale(
     state.run(&mut render_context, view.into_inner(), world);
 }
 
+/// Timing-only pass for [`MetalFxMode::Disabled`].
+///
+/// Submits a command buffer carrying no work whatsoever — nothing rides on it
+/// but an `addCompletedHandler:`. Its `gpu_ms` is therefore the *floor* of
+/// `GPUEndTime - GPUStartTime` on this machine: the fixed cost of dispatching
+/// an empty buffer.
+///
+/// That floor is what makes the upscale arm's `gpu_ms` legible. The enabled
+/// path times `metalfx_raw_encode`, a buffer created solely to carry the
+/// MetalFX encode, so its `gpu_ms` is the pass cost *plus* this same constant.
+/// Without a measured zero there is no way to tell a 0.3 ms upscale from
+/// 0.3 ms of command-buffer dispatch, and the difference is the entire
+/// question a crossover benchmark is asking.
+///
+/// Registered only when the host explicitly supplied a
+/// [`MetalFxPlugin::gpu_timing_sink`](crate::MetalFxPlugin::gpu_timing_sink).
+/// A plain `Disabled` consumer submits nothing extra and pays nothing.
+pub fn metalfx_timing_only(mut render_context: RenderContext, world: &World) {
+    let Some(sink) = world
+        .get_resource::<crate::GpuTimingDiag>()
+        .map(|d| d.0.clone())
+    else {
+        return;
+    };
+
+    let device = render_context.render_device().clone();
+    let mut encoder = device.create_command_encoder(
+        &bevy::render::render_resource::CommandEncoderDescriptor {
+            label: Some("metalfx_timing_only"),
+        },
+    );
+
+    // SAFETY: mirrors the borrow discipline in `encode.rs`. This encoder carries
+    // no work, so no texture guard is live and wgpu's snatch lock is untouched.
+    // The command-buffer pointer is read inside the closure, handed straight to
+    // `addCompletedHandler:`, and never retained or stored.
+    unsafe {
+        encoder.as_hal_mut::<wgpu_hal::metal::Api, _, ()>(|hal_encoder| {
+            let Some(enc) = hal_encoder else { return };
+            let Some(cmd_buf) = enc.raw_command_buffer() else {
+                return;
+            };
+            crate::gpu_timing::add_gpu_timing_handler(
+                cmd_buf as *const _ as *mut std::ffi::c_void,
+                sink,
+            );
+        });
+    }
+
+    render_context.add_command_buffer(encoder.finish());
+}
+
 impl MetalFxUpscaleNode {
     // Reduced builds legitimately compute values whose only consumers are
     // gated out — jitter, projection, the prepass pointers. The

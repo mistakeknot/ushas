@@ -314,6 +314,26 @@ fn clear_history_reset(mut reset: bevy::prelude::ResMut<MetalFxHistoryReset>) {
     }
 }
 
+#[cfg(target_os = "macos")]
+impl MetalFxPlugin {
+    /// Put the shared [`GpuTimingDiag`] in both worlds: the main world, where a
+    /// debug server or harness reads `stats()`, and the render world, where the
+    /// node pushes samples in.
+    ///
+    /// Reuses a host-provided sink when given, so a caller holding its own
+    /// `Arc` reads the exact same ring the render world writes to; otherwise it
+    /// makes its own, and the resource is merely present-and-empty.
+    fn install_gpu_timing(&self, app: &mut bevy::app::App) {
+        use bevy::render::RenderApp;
+
+        let timing = GpuTimingDiag(self.gpu_timing_sink.clone().unwrap_or_default());
+        app.insert_resource(timing.clone());
+        if let Some(render_app) = app.get_sub_app_mut(RenderApp) {
+            render_app.insert_resource(timing);
+        }
+    }
+}
+
 impl bevy::app::Plugin for MetalFxPlugin {
     fn build(&self, app: &mut bevy::app::App) {
         assert!(
@@ -321,6 +341,15 @@ impl bevy::app::Plugin for MetalFxPlugin {
             "MetalFxPlugin: render_scale must be in [0.1, 1.0], got {}",
             self.render_scale
         );
+
+        // GPU timing is installed before either early return, for the same
+        // reason `MetalFxRenderScale` is: a resource that only exists on the
+        // active path is a resource that is missing precisely where a benchmark
+        // needs it. `Disabled` is not an absence of measurement — it is the
+        // control arm, and a control that reports nothing is indistinguishable
+        // from a control that reports zero.
+        #[cfg(target_os = "macos")]
+        self.install_gpu_timing(app);
 
         // `MetalFxRenderScale` and `MetalFxModeResource` are this plugin's
         // "what actually happened" surface, and the README promises the plugin
@@ -357,6 +386,27 @@ impl bevy::app::Plugin for MetalFxPlugin {
             } else {
                 log::info!("MetalFX mode is Disabled at full resolution — bypassing");
                 app.insert_resource(MetalFxRenderScale(1.0));
+            }
+
+            // Opt-in only: a host that asked for a timing sink is running a
+            // benchmark and wants the control arm instrumented. Everyone else
+            // gets the historical behaviour, submitting nothing extra.
+            #[cfg(target_os = "macos")]
+            if self.gpu_timing_sink.is_some() {
+                use bevy::core_pipeline::schedule::Core3d;
+                use bevy::core_pipeline::upscaling::upscaling;
+                use bevy::render::RenderApp;
+
+                if let Some(render_app) = app.get_sub_app_mut(RenderApp) {
+                    render_app.add_systems(
+                        Core3d,
+                        node::metalfx_timing_only.in_set(MetalFxLabel).after(upscaling),
+                    );
+                    log::info!(
+                        "MetalFX Disabled + gpu_timing_sink — submitting an empty timed \
+                         command buffer per frame to measure the GPU-timing floor"
+                    );
+                }
             }
             return;
         }
@@ -477,15 +527,10 @@ impl bevy::app::Plugin for MetalFxPlugin {
             use bevy::core_pipeline::upscaling::upscaling;
             use bevy::render::RenderApp;
 
-            // Shared GPU-timing sink: same Arc in main world (debug server reads)
-            // and render world (upscale node pushes). Phase 0 bound-ness bench.
-            // Reuse a host-provided sink if given (so the debug provider shares
-            // the exact Arc), else make our own.
-            let timing = GpuTimingDiag(self.gpu_timing_sink.clone().unwrap_or_default());
-            app.insert_resource(timing.clone());
-
+            // The shared GPU-timing sink is installed at the top of `build`, so
+            // it exists on the Disabled path too. Nothing to do here but wire
+            // the node that pushes into it.
             if let Some(render_app) = app.get_sub_app_mut(RenderApp) {
-                render_app.insert_resource(timing);
                 // Bevy 0.19 drives rendering from schedules, not a graph, so the
                 // node-plus-edge pair below is now a single ordered system. The
                 // ordering constraint is unchanged and still load-bearing: run
@@ -1097,6 +1142,12 @@ mod tests {
                 world.get_resource::<MetalFxModeResource>().map(|m| m.get()),
                 Some(MetalFxMode::Disabled),
                 "the reported mode must say Disabled, not the requested mode"
+            );
+            assert!(
+                world.get_resource::<GpuTimingDiag>().is_some(),
+                "GpuTimingDiag must exist at scale {scale} in Disabled mode — this is \
+                 the control arm of every MetalFX benchmark, and a control that reports \
+                 no samples is indistinguishable from one that reports zero"
             );
         }
     }

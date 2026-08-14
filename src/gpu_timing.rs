@@ -76,11 +76,29 @@ impl GpuTimingSink {
         }
     }
 
-    /// Snapshot the current samples for percentile computation on the reader side.
+    /// Snapshot the current samples, **oldest first**, for percentile
+    /// computation on the reader side.
+    ///
+    /// Chronological order is load-bearing once the ring has wrapped. The
+    /// backing `Vec` is circular: after saturation the oldest sample sits at
+    /// `next`, not at index 0, so returning it raw hands the caller a sequence
+    /// with a discontinuity at an arbitrary offset. Percentiles survive that
+    /// (they sort anyway), but anything that slices by position — "the samples
+    /// after warmup ended", the only way to separate a measurement window from
+    /// pipeline compilation — silently reads the wrong elements.
     pub fn snapshot(&self) -> Vec<f32> {
         self.inner
             .lock()
-            .map(|r| r.samples.clone())
+            .map(|r| {
+                if r.samples.len() < RING_CAPACITY {
+                    r.samples.clone()
+                } else {
+                    let mut v = Vec::with_capacity(r.samples.len());
+                    v.extend_from_slice(&r.samples[r.next..]);
+                    v.extend_from_slice(&r.samples[..r.next]);
+                    v
+                }
+            })
             .unwrap_or_default()
     }
 
@@ -150,4 +168,44 @@ pub unsafe fn add_gpu_timing_handler(cmd_buf_ptr: *mut std::ffi::c_void, sink: A
     // `addCompletedHandler:` copies the block, so passing a borrowed pointer to
     // our RcBlock is sound; Metal retains its own copy for the callback.
     cmd_buf.addCompletedHandler(&*handler as *const _ as *mut _);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A ring that reports its contents in storage order is fine for percentiles
+    /// and wrong for anything positional. The consumer that matters — "the
+    /// samples taken after warmup ended" — is positional, so wrapping must not
+    /// rotate the sequence out from under it.
+    #[test]
+    fn snapshot_reports_samples_oldest_first_after_wrapping() {
+        let sink = GpuTimingSink::new();
+        // Overfill by a quarter so the write head ends mid-buffer, which is the
+        // case a plain `.clone()` of the backing Vec gets wrong.
+        let total = RING_CAPACITY + RING_CAPACITY / 4;
+        for i in 0..total {
+            sink.push(i as f32);
+        }
+
+        let got = sink.snapshot();
+        assert_eq!(got.len(), RING_CAPACITY, "the ring must stay at capacity");
+
+        let expected: Vec<f32> = ((total - RING_CAPACITY)..total).map(|i| i as f32).collect();
+        assert_eq!(
+            got, expected,
+            "snapshot must be oldest-first: the survivors are the last \
+             {RING_CAPACITY} pushed, in push order"
+        );
+    }
+
+    /// Below capacity the ring is a plain append, and must stay one.
+    #[test]
+    fn snapshot_is_push_order_before_wrapping() {
+        let sink = GpuTimingSink::new();
+        for i in 0..8 {
+            sink.push(i as f32);
+        }
+        assert_eq!(sink.snapshot(), vec![0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0]);
+    }
 }
