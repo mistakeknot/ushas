@@ -166,8 +166,12 @@ pub struct MetalFxPlugin {
     /// Which MetalFX mode to use.
     pub mode: MetalFxMode,
     /// Enable adaptive render scale — dynamically adjusts scale based on P99 frame time.
-    /// The initial `render_scale` is snapped to the nearest supported step (0.5 or 0.75).
-    /// The system will not scale outside this range. `MetalFxRenderScale` becomes mutable.
+    ///
+    /// The governor climbs the [`MetalFxQuality`] ladder the device admits
+    /// (see [`MetalFxDeviceScaleBand`]); the initial `render_scale` is snapped
+    /// to the nearest rung. On an M5 that ladder reaches one third resolution;
+    /// on earlier chips it stops at one half. `MetalFxRenderScale` becomes
+    /// mutable.
     pub adaptive: bool,
     /// Optional externally-owned GPU-timing sink (Phase 0 bench). When the host
     /// (e.g. `src-tauri`) wants to read GPU timings over the debug server, it
@@ -203,6 +207,178 @@ impl Default for MetalFxPlugin {
 /// Main-world resource holding the render scale for resolution override systems.
 #[derive(bevy::prelude::Resource, Clone, Copy)]
 pub struct MetalFxRenderScale(pub f32);
+
+/// The render-scale band the active mode will accept on *this device*, as
+/// fractions of the output resolution.
+///
+/// This is the floor the hardware reports, which is a different thing from
+/// [`MetalFxScaleRange`]: that one is the band the plugin was *configured*
+/// with, this one is the band it *could* be configured with. The distinction
+/// matters because the floor moved. Every Apple Silicon generation before M5
+/// reports a maximum temporal upscale ratio of `2.0` — half resolution — and
+/// the M5 family reports `3.0`, one third in each dimension, nine times fewer
+/// rasterized pixels than native. A ladder that stops at `0.5` because it was
+/// written on an M1 leaves that on the table, and nothing complains.
+///
+/// For [`MetalFxMode::Temporal`] and [`MetalFxMode::FrameInterpolation`] the
+/// band is read from `MTLFXTemporalScalerDescriptor` once the render device
+/// exists, in the plugin's `finish`. Until then, and on any machine where the
+/// query is unavailable, it is the assumed pre-M5 band `0.5..=1.0`, and
+/// [`Self::is_from_device`] says which you are looking at. Spatial and
+/// disabled modes have no device floor at all — the spatial scaler accepts any
+/// ratio — so their band is the plugin's own `0.1..=1.0` and is likewise not a
+/// device fact.
+#[derive(bevy::prelude::Resource, Debug, Clone, Copy, PartialEq)]
+pub struct MetalFxDeviceScaleBand {
+    min: f32,
+    max: f32,
+    from_device: bool,
+}
+
+impl MetalFxDeviceScaleBand {
+    /// The band every Apple Silicon device before M5 reports for temporal
+    /// scaling, used until the device has been asked.
+    pub const ASSUMED_TEMPORAL: Self = Self {
+        min: 0.5,
+        max: 1.0,
+        from_device: false,
+    };
+
+    /// The plugin's own accepted range, for modes with no device floor.
+    pub const PLUGIN_RANGE: Self = Self {
+        min: 0.1,
+        max: 1.0,
+        from_device: false,
+    };
+
+    /// Build the band from what MetalFX reports: upscale ratios, `output /
+    /// input`, so the ends swap under the reciprocal. `(1.0, 3.0)` becomes
+    /// `0.333..=1.0`.
+    pub fn from_upscale_ratios(min_ratio: f32, max_ratio: f32) -> Self {
+        Self {
+            min: (1.0 / max_ratio).clamp(0.1, 1.0),
+            max: (1.0 / min_ratio).clamp(0.1, 1.0),
+            from_device: true,
+        }
+    }
+
+    /// The band for a mode, given the device's temporal ratios if they were
+    /// read.
+    pub fn for_mode(mode: MetalFxMode, temporal_ratios: Option<(f32, f32)>) -> Self {
+        match mode {
+            MetalFxMode::Temporal | MetalFxMode::FrameInterpolation => match temporal_ratios {
+                Some((min_ratio, max_ratio)) => Self::from_upscale_ratios(min_ratio, max_ratio),
+                None => Self::ASSUMED_TEMPORAL,
+            },
+            MetalFxMode::Spatial | MetalFxMode::Disabled => Self::PLUGIN_RANGE,
+        }
+    }
+
+    /// Smallest render scale the device will reconstruct from.
+    pub fn min(&self) -> f32 {
+        self.min
+    }
+
+    /// Largest render scale, which is native.
+    pub fn max(&self) -> f32 {
+        self.max
+    }
+
+    /// Whether this came from the device or is the assumed band.
+    pub fn is_from_device(&self) -> bool {
+        self.from_device
+    }
+
+    /// The band as a range of output-resolution fractions.
+    pub fn as_range(&self) -> core::ops::RangeInclusive<f32> {
+        self.min..=self.max
+    }
+
+    /// Whether a render scale is inside the band, with a small tolerance so
+    /// that one third compares equal to the device's `1.0 / 3.0`.
+    pub fn contains(&self, render_scale: f32) -> bool {
+        render_scale >= self.min - 1e-4 && render_scale <= self.max + 1e-4
+    }
+}
+
+/// Quality presets named the way players already know them, pinned to the
+/// render scales those names have meant since DLSS fixed them.
+///
+/// A preset is a render scale and nothing more; the plugin does not change
+/// sharpening, jitter or anything else per preset. What the names buy is a
+/// ladder whose rungs are the ones a settings menu would show, filtered by
+/// what the device can actually do — see [`Self::ladder`].
+///
+/// | Preset | Render scale | Rasterized pixels |
+/// |---|---|---|
+/// | `UltraPerformance` | 1/3 | 11% |
+/// | `Performance` | 1/2 | 25% |
+/// | `Balanced` | 0.58 | 34% |
+/// | `Quality` | 2/3 | 44% |
+/// | `Native` | 1.0 | 100% — MetalFX acts as temporal anti-aliasing |
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum MetalFxQuality {
+    /// One third resolution. Reported available on M5; not on earlier chips.
+    UltraPerformance,
+    /// Half resolution. Every supported device.
+    Performance,
+    /// 0.58 of output.
+    Balanced,
+    /// Two thirds of output.
+    Quality,
+    /// Native resolution, no upscale — temporal accumulation only.
+    Native,
+}
+
+impl MetalFxQuality {
+    /// Every preset, from the lowest render scale to native.
+    pub const ALL: [MetalFxQuality; 5] = [
+        MetalFxQuality::UltraPerformance,
+        MetalFxQuality::Performance,
+        MetalFxQuality::Balanced,
+        MetalFxQuality::Quality,
+        MetalFxQuality::Native,
+    ];
+
+    /// The render scale this preset means, as a fraction of the output.
+    pub const fn render_scale(self) -> f32 {
+        match self {
+            MetalFxQuality::UltraPerformance => 1.0 / 3.0,
+            MetalFxQuality::Performance => 0.5,
+            MetalFxQuality::Balanced => 0.58,
+            MetalFxQuality::Quality => 2.0 / 3.0,
+            MetalFxQuality::Native => 1.0,
+        }
+    }
+
+    /// The same value the way MetalFX takes it: an upscale ratio.
+    pub fn upscale_ratio(self) -> f32 {
+        1.0 / self.render_scale()
+    }
+
+    /// Whether the device band admits this preset.
+    pub fn is_available_on(self, band: &MetalFxDeviceScaleBand) -> bool {
+        band.contains(self.render_scale())
+    }
+
+    /// The render scales of every preset the band admits, ascending — the
+    /// rungs the adaptive governor climbs. Never empty: a band that admits no
+    /// preset yields its own ends.
+    pub fn ladder(band: &MetalFxDeviceScaleBand) -> Vec<f32> {
+        let mut steps: Vec<f32> = Self::ALL
+            .iter()
+            .map(|q| q.render_scale())
+            .filter(|scale| band.contains(*scale))
+            .collect();
+        if steps.is_empty() {
+            steps.push(band.min());
+            if band.max() > band.min() {
+                steps.push(band.max());
+            }
+        }
+        steps
+    }
+}
 
 /// The render-scale band MetalFX is configured to accept, inclusive.
 ///
@@ -335,6 +511,58 @@ impl MetalFxPlugin {
 }
 
 impl bevy::app::Plugin for MetalFxPlugin {
+    /// Ask the device what `build` could not.
+    ///
+    /// There is no render device in `build`; there is one here. Everything
+    /// below corrects a provisional value inserted in `build`, so nothing
+    /// depends on this running — an app that never reaches `finish` keeps the
+    /// assumed band and the ladder built from it.
+    fn finish(&self, app: &mut bevy::app::App) {
+        #[cfg(target_os = "macos")]
+        {
+            if !is_available() || self.mode == MetalFxMode::Disabled {
+                return;
+            }
+            let Some(render_device) = app
+                .world()
+                .get_resource::<bevy::render::renderer::RenderDevice>()
+                .cloned()
+            else {
+                log::warn!("MetalFX: no RenderDevice at finish — keeping the assumed scale band");
+                return;
+            };
+            let band = device_scale_band(&render_device, self.mode);
+            log::info!(
+                "MetalFX: device scale band {:.3}..={:.3} ({})",
+                band.min(),
+                band.max(),
+                if band.is_from_device() {
+                    "reported by the device"
+                } else {
+                    "assumed, not reported"
+                }
+            );
+            app.insert_resource(band);
+
+            if self.adaptive {
+                // The ladder, the scaler's dynamic band and the reported range
+                // are one fact stated three ways; all three move together.
+                let steps = MetalFxQuality::ladder(&band);
+                let (lo, hi) = (steps[0], steps[steps.len() - 1]);
+                app.insert_resource(AdaptiveScaleState::new(self.render_scale, steps.clone()));
+                if let Some(mut config) = app.world_mut().get_resource_mut::<MetalFxConfig>() {
+                    config.dynamic_res_range = Some((lo, hi));
+                }
+                app.insert_resource(MetalFxScaleRange { min: lo, max: hi });
+                log::info!("MetalFX adaptive: ladder {steps:?}");
+            }
+        }
+        #[cfg(not(target_os = "macos"))]
+        {
+            let _ = app;
+        }
+    }
+
     fn build(&self, app: &mut bevy::app::App) {
         assert!(
             (0.1..=1.0).contains(&self.render_scale),
@@ -400,7 +628,9 @@ impl bevy::app::Plugin for MetalFxPlugin {
                 if let Some(render_app) = app.get_sub_app_mut(RenderApp) {
                     render_app.add_systems(
                         Core3d,
-                        node::metalfx_timing_only.in_set(MetalFxLabel).after(upscaling),
+                        node::metalfx_timing_only
+                            .in_set(MetalFxLabel)
+                            .after(upscaling),
                     );
                     log::info!(
                         "MetalFX Disabled + gpu_timing_sink — submitting an empty timed \
@@ -420,11 +650,21 @@ impl bevy::app::Plugin for MetalFxPlugin {
         // Main-world: insert render scale resource and resolution override systems.
         app.insert_resource(MetalFxRenderScale(self.render_scale));
         app.insert_resource(MetalFxModeResource(self.mode));
+        // The device cannot be asked yet — there is no render device in
+        // `build` — so the band and the ladder built from it are provisional
+        // here and corrected in `finish`. The provisional band is the assumed
+        // pre-M5 one, which is the safe direction: it can only widen.
+        let provisional_band = MetalFxDeviceScaleBand::for_mode(self.mode, None);
+        let provisional_ladder = MetalFxQuality::ladder(&provisional_band);
+        app.insert_resource(provisional_band);
         // Main-world MetalFxConfig for render-world extraction. In adaptive mode
         // the temporal scaler is built with dynamic resolution spanning the
         // governor's scale range, so scale changes flex without a scaler rebuild.
         let dynamic_res_range = if self.adaptive {
-            Some((SCALE_STEPS[0], SCALE_STEPS[SCALE_STEPS.len() - 1]))
+            Some((
+                provisional_ladder[0],
+                provisional_ladder[provisional_ladder.len() - 1],
+            ))
         } else {
             None
         };
@@ -457,7 +697,10 @@ impl bevy::app::Plugin for MetalFxPlugin {
 
         // Adaptive render scale (opt-in).
         if self.adaptive {
-            app.insert_resource(AdaptiveScaleState::new(self.render_scale));
+            app.insert_resource(AdaptiveScaleState::new(
+                self.render_scale,
+                provisional_ladder.clone(),
+            ));
             app.add_systems(
                 bevy::app::Update,
                 (
@@ -589,8 +832,11 @@ impl MetalFxModeResource {
 
 // --- Adaptive render scale ---
 
-/// Scale steps from lowest quality (best perf) to highest quality (worst perf).
-const SCALE_STEPS: [f32; 2] = [0.5, 0.75];
+// The governor's rungs are no longer a constant: they are the
+// `MetalFxQuality` presets the device band admits, held in
+// `AdaptiveScaleState::steps` and rebuilt in `finish` once the device can be
+// asked. The constant this replaced was `[0.5, 0.75]`, written on hardware
+// whose floor was one half.
 /// Number of frames in the rolling window (~2 seconds at 60fps).
 const WINDOW_SIZE: usize = 120;
 /// P99 threshold to trigger scale-down (60fps = 16.67ms).
@@ -615,7 +861,9 @@ pub struct AdaptiveScaleState {
     write_idx: usize,
     /// Number of valid samples (grows until buffer is full).
     sample_count: usize,
-    /// Current scale step index into `SCALE_STEPS`.
+    /// The ladder, ascending render scales. See `MetalFxQuality::ladder`.
+    steps: Vec<f32>,
+    /// Current scale step index into `steps`.
     current_step: usize,
     /// Consecutive evaluation windows where P99 exceeded the scale-down threshold.
     consecutive_over: u32,
@@ -628,8 +876,9 @@ pub struct AdaptiveScaleState {
 }
 
 impl AdaptiveScaleState {
-    fn new(initial_scale: f32) -> Self {
-        let current_step = SCALE_STEPS
+    fn new(initial_scale: f32, steps: Vec<f32>) -> Self {
+        assert!(!steps.is_empty(), "the adaptive ladder cannot be empty");
+        let current_step = steps
             .iter()
             .enumerate()
             .min_by(|(_, a), (_, b)| {
@@ -644,6 +893,7 @@ impl AdaptiveScaleState {
             frame_times: [0.0; WINDOW_SIZE],
             write_idx: 0,
             sample_count: 0,
+            steps,
             current_step,
             consecutive_over: 0,
             consecutive_under: 0,
@@ -846,9 +1096,9 @@ fn adaptive_scale_system(
 
     // Scale down: move to lower step.
     if state.consecutive_over >= WINDOWS_TO_SCALE_DOWN && state.current_step > 0 {
-        let old = SCALE_STEPS[state.current_step];
+        let old = state.steps[state.current_step];
         state.current_step -= 1;
-        let new_scale = SCALE_STEPS[state.current_step];
+        let new_scale = state.steps[state.current_step];
         log::info!(
             "MetalFX adaptive: scale DOWN {old} -> {new_scale} (P99={p99:.2}ms > {P99_SCALE_DOWN_MS}ms)"
         );
@@ -857,12 +1107,12 @@ fn adaptive_scale_system(
         state.consecutive_over = 0;
         state.consecutive_under = 0;
     } else if state.consecutive_under >= WINDOWS_TO_SCALE_UP
-        && state.current_step < SCALE_STEPS.len() - 1
+        && state.current_step < state.steps.len() - 1
     {
         // Scale up: move to higher step.
-        let old = SCALE_STEPS[state.current_step];
+        let old = state.steps[state.current_step];
         state.current_step += 1;
-        let new_scale = SCALE_STEPS[state.current_step];
+        let new_scale = state.steps[state.current_step];
         log::info!(
             "MetalFX adaptive: scale UP {old} -> {new_scale} (P99={p99:.2}ms < {P99_SCALE_UP_MS}ms)"
         );
@@ -1003,24 +1253,144 @@ pub fn probe_spatial_scaler(_render_device: &bevy::render::renderer::RenderDevic
     }
 }
 
+/// The render-scale band the device admits for a mode, asked directly.
+///
+/// The plugin calls this in `finish` and publishes the answer as
+/// [`MetalFxDeviceScaleBand`]; it is public so an integration test, or an app
+/// that builds its own settings menu before adding the plugin, can ask the
+/// same question. Modes without a device floor, and platforms without MetalFX,
+/// get the non-device band from [`MetalFxDeviceScaleBand::for_mode`].
+pub fn device_scale_band(
+    _render_device: &bevy::render::renderer::RenderDevice,
+    mode: MetalFxMode,
+) -> MetalFxDeviceScaleBand {
+    #[cfg(all(target_os = "macos", feature = "temporal"))]
+    {
+        if matches!(
+            mode,
+            MetalFxMode::Temporal | MetalFxMode::FrameInterpolation
+        ) && is_available()
+        {
+            use std::ffi::c_void;
+
+            let wgpu_dev = _render_device.wgpu_device();
+            // SAFETY: a query on a live render device, outside the render
+            // graph, so no encoder `as_hal_mut` can be in flight to contend
+            // for the snatch lock — the same footing as `probe_spatial_scaler`.
+            if let Some(hal_dev) = unsafe { wgpu_dev.as_hal::<wgpu_hal::metal::Api>() } {
+                // SAFETY: the pointer does not outlive this function, and the
+                // query retains nothing.
+                let device_ptr = &**hal_dev.raw_device() as *const _ as *mut c_void;
+                let ratios = unsafe { platform::temporal_upscale_ratio_band_from_raw(device_ptr) };
+                return MetalFxDeviceScaleBand::for_mode(mode, ratios);
+            }
+        }
+    }
+    MetalFxDeviceScaleBand::for_mode(mode, None)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    /// The adaptive band must BE the governor's steps, not a copy of them.
+    /// The adaptive band must BE the governor's ladder, not a copy of it.
     ///
-    /// This is the whole point of deriving the range from `dynamic_res_range`:
-    /// if someone widens `SCALE_STEPS` and the reported band does not follow,
+    /// This is the whole point of deriving the range from the ladder: if the
+    /// device widens the ladder and the reported band does not follow,
     /// consumers clamp to a stale window and the bug is invisible.
     #[test]
-    fn adaptive_range_tracks_the_governor_steps() {
+    fn adaptive_range_tracks_the_governor_ladder() {
+        let band = MetalFxDeviceScaleBand::from_upscale_ratios(1.0, 3.0);
+        let steps = MetalFxQuality::ladder(&band);
         let range = MetalFxScaleRange {
-            min: SCALE_STEPS[0],
-            max: SCALE_STEPS[SCALE_STEPS.len() - 1],
+            min: steps[0],
+            max: steps[steps.len() - 1],
         };
-        assert_eq!(range.min(), SCALE_STEPS[0]);
-        assert_eq!(range.max(), SCALE_STEPS[SCALE_STEPS.len() - 1]);
+        assert_eq!(range.min(), steps[0]);
+        assert_eq!(range.max(), steps[steps.len() - 1]);
         assert!(range.min() < range.max(), "steps must be ascending");
+        assert!(steps.windows(2).all(|w| w[0] < w[1]), "{steps:?}");
+    }
+
+    /// The presets are the DLSS factors, ascending, ending at native.
+    #[test]
+    fn presets_are_the_dlss_factors() {
+        let scales: Vec<f32> = MetalFxQuality::ALL
+            .iter()
+            .map(|q| q.render_scale())
+            .collect();
+        assert!((scales[0] - 1.0 / 3.0).abs() < 1e-6, "{scales:?}");
+        assert_eq!(scales[1], 0.5);
+        assert_eq!(scales[2], 0.58);
+        assert!((scales[3] - 2.0 / 3.0).abs() < 1e-6, "{scales:?}");
+        assert_eq!(scales[4], 1.0);
+        assert!(scales.windows(2).all(|w| w[0] < w[1]), "{scales:?}");
+        assert!((MetalFxQuality::UltraPerformance.upscale_ratio() - 3.0).abs() < 1e-5);
+    }
+
+    /// The device reports upscale ratios; the band is their reciprocal with
+    /// the ends swapped. `(1.0, 3.0)` is the M5 answer and it means one third.
+    #[test]
+    fn device_band_is_the_reciprocal_of_the_reported_ratios() {
+        let m5 = MetalFxDeviceScaleBand::from_upscale_ratios(1.0, 3.0);
+        assert!((m5.min() - 1.0 / 3.0).abs() < 1e-6, "{m5:?}");
+        assert_eq!(m5.max(), 1.0);
+        assert!(m5.is_from_device());
+        assert!(m5.contains(1.0 / 3.0));
+        assert!(!m5.contains(0.3));
+
+        let pre_m5 = MetalFxDeviceScaleBand::from_upscale_ratios(1.0, 2.0);
+        assert_eq!(pre_m5.min(), 0.5);
+        assert!(!pre_m5.contains(1.0 / 3.0));
+    }
+
+    /// Before the device is asked, the band is the pre-M5 one and says so.
+    /// Assuming the wider band would be the wrong direction: a scaler asked
+    /// for a ratio its device rejects is nil, silently.
+    #[test]
+    fn the_assumed_band_is_the_narrow_one_and_is_labelled() {
+        let assumed = MetalFxDeviceScaleBand::for_mode(MetalFxMode::Temporal, None);
+        assert_eq!(assumed, MetalFxDeviceScaleBand::ASSUMED_TEMPORAL);
+        assert!(!assumed.is_from_device());
+        assert_eq!(assumed.min(), 0.5);
+
+        // Spatial has no device floor; its band is the plugin's own range.
+        let spatial = MetalFxDeviceScaleBand::for_mode(MetalFxMode::Spatial, Some((1.0, 3.0)));
+        assert_eq!(spatial, MetalFxDeviceScaleBand::PLUGIN_RANGE);
+        assert!(!spatial.is_from_device());
+    }
+
+    /// The ladder is the presets the band admits — no more, and never none.
+    #[test]
+    fn the_ladder_is_clipped_to_the_band() {
+        let m5 = MetalFxDeviceScaleBand::from_upscale_ratios(1.0, 3.0);
+        assert_eq!(
+            MetalFxQuality::ladder(&m5).len(),
+            5,
+            "M5 admits every preset"
+        );
+
+        let pre_m5 = MetalFxDeviceScaleBand::ASSUMED_TEMPORAL;
+        let ladder = MetalFxQuality::ladder(&pre_m5);
+        assert_eq!(ladder.len(), 4, "{ladder:?}");
+        assert_eq!(ladder[0], 0.5, "one third is not admitted: {ladder:?}");
+        assert_eq!(*ladder.last().unwrap(), 1.0);
+
+        // A band that admits no preset still yields rungs, its own ends.
+        let odd = MetalFxDeviceScaleBand::from_upscale_ratios(1.05, 1.1);
+        let ladder = MetalFxQuality::ladder(&odd);
+        assert_eq!(ladder.len(), 2, "{ladder:?}");
+        assert!(ladder[0] < ladder[1]);
+    }
+
+    /// The initial scale snaps to the nearest rung of whatever ladder the
+    /// state was given, so a device with a lower floor changes where 0.4 lands.
+    #[test]
+    fn adaptive_state_snaps_to_the_nearest_rung_of_its_ladder() {
+        let narrow = AdaptiveScaleState::new(0.4, vec![0.5, 0.58, 2.0 / 3.0, 1.0]);
+        assert_eq!(narrow.steps[narrow.current_step], 0.5);
+        let wide = AdaptiveScaleState::new(0.4, vec![1.0 / 3.0, 0.5, 0.58, 2.0 / 3.0, 1.0]);
+        assert!((wide.steps[wide.current_step] - 1.0 / 3.0).abs() < 1e-6);
     }
 
     /// Render scale -> MetalFX upscale ratio is a reciprocal, so the ends swap.

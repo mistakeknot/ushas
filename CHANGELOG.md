@@ -7,6 +7,67 @@ This is a `0.x` crate, so a **minor** bump is the carrier for breaking changes
 and a patch bump never breaks. Entries before 0.3.0 were reconstructed from the
 commit history when this file was added.
 
+## [Unreleased]
+
+### Added
+
+- **`MetalFxDeviceScaleBand`: the render-scale floor the device actually
+  reports, and it moved.** Every Apple Silicon generation before M5 reports a
+  maximum temporal upscale ratio of `2.0`, which is the half-resolution floor
+  this crate has always assumed. An M5 Max reports `3.0`: the temporal scaler
+  will reconstruct from one third of the output resolution in each dimension,
+  nine times fewer rasterized pixels than native against four at one half.
+  Nothing in the crate could reach it. The adaptive ladder was a constant
+  `[0.5, 0.75]` written on a machine whose floor was one half, and
+  `MetalFxScaleRange` reported that constant back as if it were a property of
+  the hardware.
+
+  The plugin now asks. `MTLFXTemporalScalerDescriptor`'s
+  `supportedInputContentMin/MaxScaleForDevice:` are read in the plugin's
+  `finish` — there is no render device in `build` — and published as
+  `MetalFxDeviceScaleBand`, with `is_from_device()` distinguishing a reported
+  band from the assumed pre-M5 one that stands in until the device can be
+  asked. The query is guarded on the selector existing, since it arrived with
+  dynamic resolution in macOS 14 and calling it on 13 would throw. Spatial and
+  disabled modes have no device floor and report the plugin's own `0.1..=1.0`,
+  labelled as not a device fact. `device_scale_band()` exposes the same query
+  to an app that wants it before adding the plugin.
+
+- **`MetalFxQuality`: the DLSS presets, as render scales.** `UltraPerformance`
+  (one third), `Performance` (one half), `Balanced` (0.58), `Quality` (two
+  thirds) and `Native` (1.0, at which the temporal scaler is temporal
+  anti-aliasing). A preset is a render scale and nothing else; what the names
+  buy is `MetalFxQuality::ladder(&band)`, the rungs a settings menu would
+  show, filtered to what the device admits. On an M5 that is all five; on
+  earlier chips, four.
+
+### Changed
+
+- **The adaptive governor climbs the preset ladder the device admits** instead
+  of the constant two steps. Its top rung is now native rather than 0.75, and
+  its bottom rung is the device floor, so on an M5 an app that opts into
+  `adaptive` can be governed down to one third resolution. In `finish` the
+  ladder, the temporal scaler's dynamic-resolution band and `MetalFxScaleRange`
+  are rebuilt together from the device band — they are one fact stated three
+  ways and a test pins that they move together. The initial `render_scale`
+  still snaps to the nearest rung; with a lower floor, a request of 0.4 now
+  lands on one third where it used to land on one half.
+
+  This is the reason for the minor bump: an adaptive consumer's range changed
+  under it. Non-adaptive consumers see no behavioural change — a fixed
+  `render_scale` of 0.333 already worked on an M5, because the scaler was only
+  ever asked for the single ratio it was configured with.
+
+- **The `Disabled` control arm is instrumented** (c786049, previously
+  unreleased). `GpuTimingDiag` is inserted before both early returns in
+  `build`, and when a host supplies a `gpu_timing_sink` in `Disabled` mode a
+  `metalfx_timing_only` system submits an empty timed command buffer per
+  frame, measuring the floor of `GPUEndTime - GPUStartTime` so the enabled arm
+  needs no constant subtracted. A plain `Disabled` consumer submits nothing
+  extra. `GpuTimingSink::snapshot()` returns oldest-first; it used to hand back
+  raw circular-buffer order with a discontinuity at an arbitrary offset, which
+  percentiles survived and every positional query did not.
+
 ## [0.4.2] — 2026-08-06
 
 **Upgrade if you rely on the render scale — which is the entire point of this

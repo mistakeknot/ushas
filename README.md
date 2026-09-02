@@ -197,6 +197,42 @@ With adaptive scaling on, the band is the governor's step range and the scaler
 flexes inside it with no rebuild. With it off, the band is the single configured
 scale — any other value works, but forces the scaler to be rebuilt.
 
+### The device's own floor, and the presets
+
+`MetalFxScaleRange` is the band the plugin was *configured* with.
+`MetalFxDeviceScaleBand` is the band it *could* be configured with — the floor
+the hardware reports, which is not the same on every chip:
+
+| Device | Max temporal upscale ratio | Lowest render scale |
+|---|---|---|
+| Apple Silicon through M4 | 2.0 | 0.5 |
+| M5 family | 3.0 | 0.333 |
+
+At one third the rasterizer touches nine times fewer pixels than at native,
+against four at one half. The band is read from
+`MTLFXTemporalScalerDescriptor` in the plugin's `finish` (there is no render
+device in `build`), so from the first frame on it is a device fact; until then
+it is the assumed pre-M5 band, and `is_from_device()` tells you which.
+
+```rust
+fn settings_menu(band: Res<MetalFxDeviceScaleBand>) {
+    for preset in MetalFxQuality::ALL {
+        if preset.is_available_on(&band) {
+            println!("{preset:?} -> render scale {:.3}", preset.render_scale());
+        }
+    }
+}
+```
+
+`MetalFxQuality` is the DLSS ladder as render scales — `UltraPerformance`
+(1/3), `Performance` (1/2), `Balanced` (0.58), `Quality` (2/3), `Native`
+(1.0, at which the temporal scaler is temporal anti-aliasing). A preset is a
+render scale and nothing more. `MetalFxQuality::ladder(&band)` returns the
+rungs the device admits, ascending, and that ladder is what `adaptive: true`
+climbs: on an M5 it reaches one third, on earlier chips it stops at one half.
+Spatial mode has no device floor — the spatial scaler accepts any ratio — so
+its band is the plugin's own `0.1..=1.0`, labelled as not a device fact.
+
 ### Temporal history reset
 
 Temporal upscaling accumulates across frames, which is wrong across a

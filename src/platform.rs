@@ -183,6 +183,55 @@ pub(crate) unsafe fn try_create_temporal_scaler_from_raw(
     unsafe { descriptor.newTemporalScalerWithDevice(device) }
 }
 
+/// The band of input-content scales the temporal scaler supports on this
+/// device, stated the way MetalFX states it: as upscale ratios, `output /
+/// input`, so `(1.0, 3.0)` means "from native down to one third of the output
+/// resolution in each dimension".
+///
+/// Returns `None` when temporal scaling is unsupported on the device or when
+/// the query itself is missing — it arrived with dynamic resolution in macOS
+/// 14, and on 13 the class exists but the selector does not, so the call is
+/// guarded rather than trusted. The pair is validated: both finite, minimum at
+/// least `1.0` (a ratio below that is not an upscale), maximum not below the
+/// minimum.
+///
+/// # Safety
+/// `device_ptr` must be a valid `id<MTLDevice>` pointer from wgpu-hal's
+/// `raw_device()`.
+#[cfg(feature = "temporal")]
+pub(crate) unsafe fn temporal_upscale_ratio_band_from_raw(
+    device_ptr: *mut c_void,
+) -> Option<(f32, f32)> {
+    use objc2::ClassType;
+
+    if !is_available_impl() {
+        return None;
+    }
+    let device: &ProtocolObject<dyn MTLDevice> =
+        unsafe { &*(device_ptr as *const ProtocolObject<dyn MTLDevice>) };
+
+    // These are class methods, so the question goes to the metaclass:
+    // `responds_to` on the class itself answers for *instance* methods and
+    // says no, which quietly turns every device into a pre-M5 one.
+    let metaclass = MTLFXTemporalScalerDescriptor::class().metaclass();
+    if !metaclass.responds_to(objc2::sel!(supportedInputContentMinScaleForDevice:))
+        || !metaclass.responds_to(objc2::sel!(supportedInputContentMaxScaleForDevice:))
+    {
+        return None;
+    }
+    if !unsafe { MTLFXTemporalScalerDescriptor::supportsDevice(device) } {
+        return None;
+    }
+    let min =
+        unsafe { MTLFXTemporalScalerDescriptor::supportedInputContentMinScaleForDevice(device) };
+    let max =
+        unsafe { MTLFXTemporalScalerDescriptor::supportedInputContentMaxScaleForDevice(device) };
+    if !min.is_finite() || !max.is_finite() || min < 1.0 || max < min {
+        return None;
+    }
+    Some((min, max))
+}
+
 /// Set textures and encode a temporal upscale pass.
 ///
 /// # Safety
@@ -604,5 +653,34 @@ mod tests {
             Some(MTLPixelFormat::Depth32Float)
         );
         assert!(wgpu_format_to_mtl(WF::R8Unorm).is_none());
+    }
+}
+
+#[cfg(all(test, feature = "temporal"))]
+mod device_band_tests {
+    use super::*;
+
+    /// Ask the real device. This runs on whatever Mac executes the suite and
+    /// pins two things: that the query reaches the class method at all — the
+    /// first version asked the class instead of the metaclass, got "does not
+    /// respond", and reported every device as pre-M5 without an error — and
+    /// that the answer has the shape the crate relies on: a floor of exactly
+    /// native and a ceiling of at least the half-resolution every supported
+    /// device provides.
+    #[test]
+    fn the_device_reports_its_temporal_band() {
+        let Some(device) = objc2_metal::MTLCreateSystemDefaultDevice() else {
+            eprintln!("no Metal device; skipping");
+            return;
+        };
+        let device_ptr = &*device as *const ProtocolObject<dyn MTLDevice> as *mut c_void;
+        let band = unsafe { temporal_upscale_ratio_band_from_raw(device_ptr) };
+        let (min, max) = band.expect("a Mac with MetalFX temporal support reports a band");
+        assert_eq!(min, 1.0, "the floor is native");
+        assert!(
+            max >= 2.0,
+            "every supported device reconstructs from at least one half: {max}"
+        );
+        eprintln!("device temporal upscale ratios: {min}..={max}");
     }
 }
