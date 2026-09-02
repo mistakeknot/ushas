@@ -379,11 +379,10 @@ pub fn metalfx_timing_only(mut render_context: RenderContext, world: &World) {
     };
 
     let device = render_context.render_device().clone();
-    let mut encoder = device.create_command_encoder(
-        &bevy::render::render_resource::CommandEncoderDescriptor {
+    let mut encoder =
+        device.create_command_encoder(&bevy::render::render_resource::CommandEncoderDescriptor {
             label: Some("metalfx_timing_only"),
-        },
-    );
+        });
 
     // SAFETY: mirrors the borrow discipline in `encode.rs`. This encoder carries
     // no work, so no texture guard is live and wgpu's snatch lock is untouched.
