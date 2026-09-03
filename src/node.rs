@@ -89,8 +89,9 @@ use bevy::core_pipeline::prepass::ViewPrepassTextures;
 use bevy::prelude::*;
 use bevy::render::camera::TemporalJitter;
 use bevy::render::render_resource::{
-    BindGroup, CachedRenderPipelineId, Extent3d, PipelineCache, RenderPassDescriptor,
-    SpecializedRenderPipeline, TextureView, TextureViewId,
+    BindGroup, CachedRenderPipelineId, Extent3d, LoadOp, Operations, PipelineCache,
+    RenderPassColorAttachment, RenderPassDescriptor, SpecializedRenderPipeline, StoreOp,
+    TextureFormat, TextureUsages, TextureView, TextureViewId,
 };
 // Gated to match its only use site — the dual-present block below is
 // `frame-interpolation`-only, and an import wider than its use is an unused
@@ -106,10 +107,15 @@ use objc2::runtime::ProtocolObject;
 #[cfg(feature = "frame-interpolation")]
 use objc2_metal_fx::MTLFXFrameInterpolator;
 use objc2_metal_fx::MTLFXSpatialScaler;
+// The `*Base` traits carry the usage-requirement getters this node asks of a
+// live scaler (`required_output_usage`).
+use objc2_metal_fx::MTLFXSpatialScalerBase;
 #[cfg(feature = "temporal")]
 use objc2_metal_fx::MTLFXTemporalScaler;
+#[cfg(feature = "temporal")]
+use objc2_metal_fx::MTLFXTemporalScalerBase;
 
-use crate::platform::wgpu_format_to_mtl;
+use crate::platform::{wgpu_format_to_mtl, wgpu_usage_from_mtl};
 use crate::MetalFxMode;
 
 /// Resource holding the MetalFX render configuration.
@@ -173,6 +179,29 @@ pub(crate) enum SendScaler {
 // Practices Guide § "Metal and Multithread Safety".
 unsafe impl Send for SendScaler {}
 unsafe impl Sync for SendScaler {}
+
+impl SendScaler {
+    /// The minimal usage bits MetalFX requires on its output texture, asked of
+    /// the scaler rather than assumed. The framework header calls these a
+    /// minimum and says extra bits are fine. On an M5 Max the spatial scaler
+    /// wants shaderRead|renderTarget, which Bevy's main texture already has,
+    /// and the temporal scaler adds shaderWrite, which it does not — that is
+    /// why the plugin puts `STORAGE_BINDING` on the camera's main texture in
+    /// temporal mode.
+    pub(crate) fn required_output_usage(&self) -> TextureUsages {
+        // SAFETY: a property read on a live scaler object.
+        let usage = unsafe {
+            match self {
+                SendScaler::Spatial(s) => s.outputTextureUsage(),
+                #[cfg(feature = "temporal")]
+                SendScaler::Temporal(s) => s.outputTextureUsage(),
+                #[cfg(feature = "frame-interpolation")]
+                SendScaler::FrameInterpolator { scaler, .. } => scaler.outputTextureUsage(),
+            }
+        };
+        wgpu_usage_from_mtl(usage)
+    }
+}
 
 impl SendScaler {
     /// Whether this scaler consumes depth and motion vectors, and so needs the
@@ -281,7 +310,10 @@ pub struct MetalFxUpscaleNode {
     cached: Mutex<Option<CachedState>>,
     pending: Mutex<Option<PendingScaler>>,
     cached_bind_group: Mutex<Option<(TextureViewId, BindGroup)>>,
-    cached_pipeline: Mutex<Option<CachedRenderPipelineId>>,
+    /// The swapchain blit pipeline, keyed by the format it was specialised
+    /// for: the swapchain's on the frame-interpolation path, the view's on
+    /// the fallback path that blits into the post-process destination.
+    cached_pipeline: Mutex<Option<(TextureFormat, CachedRenderPipelineId)>>,
     /// Depth resolve render pipeline (lazy-init, resolution-independent).
     depth_resolve: Mutex<Option<ResolvePipeline>>,
     /// Cached bind group for depth resolve (keyed on src + dst TextureViewId).
@@ -422,7 +454,27 @@ impl MetalFxUpscaleNode {
         ),
         world: &World,
     ) {
-        let main_tex = target.main_texture();
+        let config = world.get_resource::<MetalFxConfig>();
+        let render_scale = config.map_or(0.5, |c| c.render_scale);
+        let mode = config.map_or(MetalFxMode::Spatial, |c| c.mode);
+        let dynamic_res_range = config.and_then(|c| c.dynamic_res_range);
+
+        // Where the result goes. Spatial and temporal write into the view's
+        // post-process destination and let Bevy's own `upscaling`, which runs
+        // after this system, carry it to the swapchain; the full-resolution
+        // blit this node used to add on top of Bevy's is gone. Frame
+        // interpolation keeps its owned output and blits over the swapchain
+        // after Bevy, because the dual-present path reads the owned textures
+        // from a completion handler.
+        //
+        // `post_process_write` swaps which main texture is current, so the
+        // source is taken from it rather than from `main_texture()` — asking
+        // the target again after the swap would hand back the destination.
+        let post_process =
+            (!matches!(mode, MetalFxMode::FrameInterpolation)).then(|| target.post_process_write());
+        let main_tex = post_process
+            .as_ref()
+            .map_or_else(|| target.main_texture(), |p| p.source_texture);
         let main_size = main_tex.size();
         let main_format = main_tex.format();
 
@@ -430,11 +482,6 @@ impl MetalFxUpscaleNode {
             log::error!("MetalFxUpscaleNode: unsupported format {:?}", main_format);
             return;
         };
-
-        let config = world.get_resource::<MetalFxConfig>();
-        let render_scale = config.map_or(0.5, |c| c.render_scale);
-        let mode = config.map_or(MetalFxMode::Spatial, |c| c.mode);
-        let dynamic_res_range = config.and_then(|c| c.dynamic_res_range);
 
         // main_texture is full physical resolution (e.g., 3024x1800 on Retina).
         // MainPassResolutionOverride renders content at half-res in the top-left corner.
@@ -489,6 +536,30 @@ impl MetalFxUpscaleNode {
         }
 
         let state = cached.as_mut().unwrap();
+
+        // Can MetalFX write the destination itself? Asked of the scaler, and
+        // checked against what Bevy allocated, because the answer differs by
+        // mode and a mismatch does not fail loudly — Metal validation is off in
+        // release builds. When it cannot, the owned output stays and one blit
+        // carries it into the destination.
+        let write_into_view = post_process.as_ref().and_then(|p| {
+            let required = state.scaler.required_output_usage();
+            let offered = p.destination_texture.usage();
+            if offered.contains(required) {
+                Some(p.destination_texture)
+            } else {
+                static WARNED: std::sync::Once = std::sync::Once::new();
+                WARNED.call_once(|| {
+                    log::warn!(
+                        "MetalFxUpscaleNode: the view's main texture lacks {:?}, which MetalFX \
+                         requires on its output; falling back to an extra blit per frame",
+                        required - offered
+                    );
+                });
+                None
+            }
+        });
+        let wrote_into_view = write_into_view.is_some();
 
         // --- Phase B0: GPU-copy color content region into content-sized input texture ---
         // All modes now use the same path: copy the top-left content region from
@@ -571,6 +642,7 @@ impl MetalFxUpscaleNode {
             &device,
             render_context,
             state,
+            write_into_view,
             is_temporal_like,
             temporal_jitter,
             projection,
@@ -585,41 +657,21 @@ impl MetalFxUpscaleNode {
             return;
         }
 
-        // --- Phase C: Blit metalfx_output → out_texture (swapchain) ---
+        // --- Phase C: hand the result to the swapchain ---
+        //
+        // Three cases. Written straight into the view's post-process
+        // destination, the common one: nothing to do here. Bevy's own
+        // `upscaling` runs after this system and blits that texture to the
+        // swapchain, and the full-resolution pass this node used to add on top
+        // of Bevy's is gone. Owned output on the direct path, because the
+        // destination lacked a usage bit MetalFX requires: blit into the
+        // destination so Bevy still carries it, which costs what the old path
+        // cost and no more. Frame interpolation: blit over the swapchain after
+        // Bevy, as before, since the dual-present path reads the owned textures
+        // from a completion handler and the ordering in `build` keeps that mode
+        // after `upscaling`.
         let pipeline_cache = world.resource::<PipelineCache>();
         let blit_pipeline = world.resource::<BlitPipeline>();
-
-        let mut cached_pipeline = self.cached_pipeline.lock().unwrap();
-        let pipeline_id = match *cached_pipeline {
-            Some(id) => id,
-            None => {
-                // wgpu 29 / Bevy 0.19: the output format is now optional,
-                // because a view target can exist without a resolved output.
-                // Skip the frame rather than guessing a format.
-                let Some(target_format) = target.out_texture_view_format() else {
-                    log::error!("MetalFxUpscaleNode: view target has no output format");
-                    return;
-                };
-                let key = BlitPipelineKey {
-                    target_format,
-                    blend_state: None,
-                    samples: 1,
-                    // 0.18's key had no colour-space knob and blitted the source
-                    // through unchanged; `None` is that behaviour, not a new choice.
-                    source_space: None,
-                };
-                let descriptor = blit_pipeline.specialize(key);
-                let id = pipeline_cache.queue_render_pipeline(descriptor);
-                *cached_pipeline = Some(id);
-                id
-            }
-        };
-
-        let Some(pipeline) = pipeline_cache.get_render_pipeline(pipeline_id) else {
-            log::warn!("MetalFxUpscaleNode: blit pipeline not ready yet");
-            drop(cached);
-            return;
-        };
 
         // Cloned out before the state lock is released, so the dual-present
         // path can still reach these views after `cached` is gone.
@@ -639,7 +691,7 @@ impl MetalFxUpscaleNode {
             _ => None,
         };
 
-        // Which frame goes into Bevy's swapchain image?
+        // Which frame goes into Bevy's swapchain image, under interpolation?
         //
         // Bevy presents that image untimed, after the graph, so it always lands
         // on the *earlier* of the two vsyncs. The interpolated frame depicts the
@@ -653,6 +705,12 @@ impl MetalFxUpscaleNode {
         // outright (its presented-handler never fires). Delaying ours to
         // separate them would then display the interpolated frame *after* the
         // real frame it was built from — a backwards step in time.
+        //
+        // Bevy's swapchain image nonetheless always carries the real frame.
+        // Under dual presentation it is not what the user sees — our own layer
+        // sits above wgpu's — so there is nothing to gain from putting the
+        // interpolated frame here, and keeping it uniform means the non-dual
+        // path is byte for byte unchanged.
         #[cfg(feature = "frame-interpolation")]
         let dual_active = interp_view_for_present.is_some()
             && world
@@ -660,50 +718,101 @@ impl MetalFxUpscaleNode {
                 .and_then(|d| d.layer())
                 .is_some();
 
-        // Bevy's swapchain image always carries the real frame. Under dual
-        // presentation it is not what the user sees — our own layer sits above
-        // wgpu's — so there is nothing to gain from putting the interpolated
-        // frame here, and keeping it uniform means the non-dual path is byte
-        // for byte unchanged.
-        let swapchain_view = &state.output_view;
+        let blit_target: Option<(TextureFormat, RenderPassColorAttachment<'_>)> =
+            match &post_process {
+                Some(_) if wrote_into_view => None,
+                Some(p) => Some((
+                    main_format,
+                    RenderPassColorAttachment {
+                        view: p.destination,
+                        depth_slice: None,
+                        resolve_target: None,
+                        ops: Operations {
+                            load: LoadOp::Load,
+                            store: StoreOp::Store,
+                        },
+                    },
+                )),
+                None => {
+                    // wgpu 29 / Bevy 0.19: the output format is now optional,
+                    // because a view target can exist without a resolved output.
+                    // Skip the frame rather than guessing a format.
+                    let Some(target_format) = target.out_texture_view_format() else {
+                        log::error!("MetalFxUpscaleNode: view target has no output format");
+                        return;
+                    };
+                    // Bevy 0.19 returns the attachment already wrapped in `Option`.
+                    let Some(attachment) = target.out_texture_color_attachment(None) else {
+                        return;
+                    };
+                    Some((target_format, attachment))
+                }
+            };
 
-        let mut cached_bg = self.cached_bind_group.lock().unwrap();
-        let bind_group = match &mut *cached_bg {
-            Some((id, bg)) if swapchain_view.id() == *id => bg,
-            slot => {
-                let bg = blit_pipeline.create_bind_group(
-                    render_context.render_device(),
-                    swapchain_view,
-                    pipeline_cache,
-                );
-                let (_, bg) = slot.insert((swapchain_view.id(), bg));
-                bg
-            }
-        };
+        if let Some((blit_format, attachment)) = blit_target {
+            let mut cached_pipeline = self.cached_pipeline.lock().unwrap();
+            let pipeline_id = match *cached_pipeline {
+                Some((format, id)) if format == blit_format => id,
+                _ => {
+                    let key = BlitPipelineKey {
+                        target_format: blit_format,
+                        blend_state: None,
+                        samples: 1,
+                        // 0.18's key had no colour-space knob and blitted the source
+                        // through unchanged; `None` is that behaviour, not a new choice.
+                        source_space: None,
+                    };
+                    let id = pipeline_cache.queue_render_pipeline(blit_pipeline.specialize(key));
+                    *cached_pipeline = Some((blit_format, id));
+                    id
+                }
+            };
+            let Some(pipeline) = pipeline_cache.get_render_pipeline(pipeline_id) else {
+                log::warn!("MetalFxUpscaleNode: blit pipeline not ready yet");
+                drop(cached);
+                return;
+            };
 
-        let pass_descriptor = RenderPassDescriptor {
-            label: Some("metalfx_blit"),
-            // Bevy 0.19 returns the attachment already wrapped in `Option`.
-            color_attachments: &[target.out_texture_color_attachment(None)],
-            depth_stencil_attachment: None,
-            timestamp_writes: None,
-            occlusion_query_set: None,
-            multiview_mask: None,
-        };
+            let source_view = &state.output_view;
+            let mut cached_bg = self.cached_bind_group.lock().unwrap();
+            let bind_group = match &mut *cached_bg {
+                Some((id, bg)) if source_view.id() == *id => bg,
+                slot => {
+                    let bg = blit_pipeline.create_bind_group(
+                        render_context.render_device(),
+                        source_view,
+                        pipeline_cache,
+                    );
+                    let (_, bg) = slot.insert((source_view.id(), bg));
+                    bg
+                }
+            };
 
-        drop(cached);
-        drop(cached_pipeline);
+            let pass_descriptor = RenderPassDescriptor {
+                label: Some("metalfx_blit"),
+                color_attachments: &[Some(attachment)],
+                depth_stencil_attachment: None,
+                timestamp_writes: None,
+                occlusion_query_set: None,
+                multiview_mask: None,
+            };
 
-        let mut render_pass = render_context
-            .command_encoder()
-            .begin_render_pass(&pass_descriptor);
+            drop(cached);
+            drop(cached_pipeline);
 
-        render_pass.set_pipeline(pipeline);
-        render_pass.set_bind_group(0, bind_group, &[]);
-        render_pass.draw(0..3, 0..1);
+            let mut render_pass = render_context
+                .command_encoder()
+                .begin_render_pass(&pass_descriptor);
 
-        drop(render_pass);
-        drop(cached_bg);
+            render_pass.set_pipeline(pipeline);
+            render_pass.set_bind_group(0, bind_group, &[]);
+            render_pass.draw(0..3, 0..1);
+
+            drop(render_pass);
+            drop(cached_bg);
+        } else {
+            drop(cached);
+        }
 
         // --- Phase D: present the real frame, one refresh behind ---
         //

@@ -43,6 +43,28 @@ commit history when this file was added.
 
 ### Changed
 
+- **The pass writes into the view, and Bevy's own upscaling carries it.** In
+  spatial and temporal modes MetalFX now writes its output into the view
+  target's post-process destination, and the system runs after Bevy's
+  post-processing and *before* Bevy's `upscaling` blit instead of after it.
+  Bevy's blit, which used to be redundant work that this node then overwrote
+  with a second full-resolution blit of its own, is now the only blit: one
+  full-resolution fullscreen pass per frame is gone. Frame interpolation keeps
+  the old order and the owned output, because its dual-present path reads
+  those textures from a command-buffer completion handler.
+
+  Whether MetalFX may write Bevy's texture is asked, not assumed. Every scaler
+  exposes `outputTextureUsage`, the minimum `MTLTextureUsage` bits it needs;
+  the node reads it, maps it to wgpu usages, and checks the destination. On an
+  M5 Max the spatial scaler wants shaderRead|renderTarget, which Bevy's default
+  main texture has, and the temporal scaler adds shaderWrite, which it does
+  not — so in temporal mode the plugin ORs `STORAGE_BINDING` into the camera's
+  `CameraMainTextureUsages` (wgpu's Metal backend allows that on Apple GPUs
+  even for the default sRGB format). If a destination ever lacks a required
+  bit the node warns once and falls back to blitting its owned output into the
+  destination, which costs what the old path cost and no more. A test creates
+  a real spatial scaler and pins that Bevy's default usages satisfy it.
+
 - **The adaptive governor climbs the preset ladder the device admits** instead
   of the constant two steps. Its top rung is now native rather than 0.75, and
   its bottom rung is the device floor, so on an M5 an app that opts into

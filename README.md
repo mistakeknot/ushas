@@ -59,14 +59,21 @@ gracefully disables itself — no `#[cfg]` guards needed in your app code.
 
 ```text
 Scene render (low-res via MainPassResolutionOverride)
-  -> MetalFX upscale (raw Metal encode on command buffer)
-    -> Full-res output texture
-      -> Blit to swapchain
+  -> Bevy post-processing (tonemapping ...)
+    -> MetalFX upscale, written into the view's post-process destination
+      -> Bevy's own upscaling blit to the swapchain
 ```
 
-The plugin inserts a render graph node after Bevy's built-in `UpscalingNode`.
-It extracts raw Metal textures and command buffers from wgpu-hal and encodes
-the MetalFX upscale pass directly, then blits the result to the swapchain.
+The pass is a system ordered after Bevy's post-processing and before Bevy's
+`upscaling` blit. It extracts raw Metal textures and command buffers from
+wgpu-hal, encodes the MetalFX upscale directly into the view target's
+post-process destination, and lets Bevy carry that to the swapchain — so the
+only full-resolution blit per frame is Bevy's. Whether MetalFX may write that
+texture is asked of the scaler (`outputTextureUsage`) rather than assumed;
+temporal needs a shader-write bit Bevy's main texture lacks by default, and
+the plugin adds it to the camera. Frame interpolation keeps an owned output
+and overwrites the swapchain after Bevy, because its dual-present path reads
+that texture from a completion handler.
 
 ### Architecture
 

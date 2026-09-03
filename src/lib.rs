@@ -775,15 +775,23 @@ impl bevy::app::Plugin for MetalFxPlugin {
             // the node that pushes into it.
             if let Some(render_app) = app.get_sub_app_mut(RenderApp) {
                 // Bevy 0.19 drives rendering from schedules, not a graph, so the
-                // node-plus-edge pair below is now a single ordered system. The
-                // ordering constraint is unchanged and still load-bearing: run
-                // after Bevy's own `upscaling`, because we overwrite
-                // out_texture with the ML-upscaled result via a Metal blit, and
-                // running first would just have it blitted over.
-                render_app.add_systems(
-                    Core3d,
-                    node::metalfx_upscale.in_set(MetalFxLabel).after(upscaling),
-                );
+                // pass is a single ordered system, and the ordering is the
+                // load-bearing part. Spatial and temporal write the view's
+                // post-process destination and let Bevy's own `upscaling` blit
+                // it to the swapchain, so they run after every post-process and
+                // before that blit; running after it would leave the swapchain
+                // holding Bevy's bilinear result. Frame interpolation still
+                // overwrites the swapchain itself, after Bevy, because its
+                // dual-present path reads owned textures from a completion
+                // handler — so it keeps the old order.
+                use bevy::core_pipeline::schedule::Core3dSystems;
+                let pass = node::metalfx_upscale.in_set(MetalFxLabel);
+                let pass = if self.mode == MetalFxMode::FrameInterpolation {
+                    pass.after(upscaling)
+                } else {
+                    pass.after(Core3dSystems::PostProcess).before(upscaling)
+                };
+                render_app.add_systems(Core3d, pass);
             }
         }
     }
@@ -984,9 +992,13 @@ fn extract_resolution_override(
 /// Insert `MainPassResolutionOverride` on all Camera3d entities at startup.
 fn apply_resolution_override(
     mut commands: Commands,
-    cameras: Query<Entity, (With<Camera3d>, Without<MainPassResolutionOverride>)>,
+    cameras: Query<
+        (Entity, Option<&bevy::camera::CameraMainTextureUsages>),
+        (With<Camera3d>, Without<MainPassResolutionOverride>),
+    >,
     windows: Query<&Window>,
     scale: Res<MetalFxRenderScale>,
+    mode: Res<MetalFxModeResource>,
 ) {
     let Ok(window) = windows.single() else {
         return;
@@ -1000,7 +1012,7 @@ fn apply_resolution_override(
     let override_h = (h as f32 * scale.0).round() as u32;
     let mip_bias = mip_bias_for_scale(scale.0);
 
-    for entity in cameras.iter() {
+    for (entity, usages) in cameras.iter() {
         log::info!(
             "MetalFX: setting MainPassResolutionOverride {override_w}x{override_h} \
              (window {w}x{h}, scale {}, mip_bias {mip_bias:.3})",
@@ -1010,6 +1022,22 @@ fn apply_resolution_override(
             MainPassResolutionOverride(UVec2::new(override_w, override_h)),
             MipBias(mip_bias),
         ));
+
+        // The temporal scaler writes its output the way a compute kernel
+        // does, so the texture it writes into needs `STORAGE_BINDING`. That
+        // texture is now the camera's own main texture (the pass writes the
+        // view's post-process destination and Bevy carries it), and Bevy's
+        // default usages lack the bit. Spatial needs only what Bevy already
+        // gives, measured, not assumed — see `SendScaler::required_output_usage`.
+        // OR'd into whatever the app set, never replacing it.
+        if matches!(mode.get(), MetalFxMode::Spatial | MetalFxMode::Temporal) {
+            use bevy::camera::CameraMainTextureUsages;
+            use bevy::render::render_resource::TextureUsages;
+            let base = usages.map_or_else(|| CameraMainTextureUsages::default().0, |u| u.0);
+            commands.entity(entity).insert(CameraMainTextureUsages(
+                base | TextureUsages::STORAGE_BINDING,
+            ));
+        }
     }
 }
 

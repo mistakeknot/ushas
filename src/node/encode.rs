@@ -45,6 +45,7 @@ impl MetalFxUpscaleNode {
         device: &RenderDevice,
         render_context: &mut RenderContext,
         state: &mut CachedState,
+        output_override: Option<&bevy::render::render_resource::Texture>,
         is_temporal_like: bool,
         temporal_jitter: Option<&TemporalJitter>,
         projection: Option<&Projection>,
@@ -75,11 +76,14 @@ impl MetalFxUpscaleNode {
         };
 
         let out_tex_ptr = {
-            // SAFETY: the texture is owned by CachedState and alive for the whole
-            // frame, and no `as_hal_mut` is live on the encoder at this point — the
-            // guard drops at the end of this scope, before the encode below.
-            let Some(hal) = (unsafe { state.output_texture.as_hal::<wgpu_hal::metal::Api>() })
-            else {
+            // The view's post-process destination when the caller established
+            // MetalFX may write it, else the owned output texture.
+            let out_texture = output_override.unwrap_or(&state.output_texture);
+            // SAFETY: both candidates are alive for the whole frame — the owned
+            // texture through CachedState, the view's through the ViewTarget the
+            // caller borrows — and no `as_hal_mut` is live on the encoder at this
+            // point; the guard drops at the end of this scope, before the encode.
+            let Some(hal) = (unsafe { out_texture.as_hal::<wgpu_hal::metal::Api>() }) else {
                 log::error!("MetalFxUpscaleNode: no Metal HAL for output texture");
                 return false;
             };

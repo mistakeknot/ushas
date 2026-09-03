@@ -11,9 +11,10 @@
 
 use std::ffi::c_void;
 
+use bevy::render::render_resource::TextureUsages;
 use objc2::rc::Retained;
 use objc2::runtime::{AnyClass, ProtocolObject};
-use objc2_metal::{MTLCommandBuffer, MTLDevice, MTLPixelFormat, MTLTexture};
+use objc2_metal::{MTLCommandBuffer, MTLDevice, MTLPixelFormat, MTLTexture, MTLTextureUsage};
 #[cfg(feature = "frame-interpolation")]
 use objc2_metal_fx::{
     MTLFXFrameInterpolatableScaler, MTLFXFrameInterpolator, MTLFXFrameInterpolatorBase,
@@ -27,6 +28,25 @@ use objc2_metal_fx::{MTLFXTemporalScaler, MTLFXTemporalScalerBase, MTLFXTemporal
 // (ObjC runtime dispatch), not direct C linkage, so no unresolved symbols.
 #[link(name = "MetalFX", kind = "framework")]
 extern "C" {}
+
+/// MetalFX states texture requirements as `MTLTextureUsage`; the textures this
+/// crate can offer are described in wgpu's terms. Read is `TEXTURE_BINDING`,
+/// write is `STORAGE_BINDING`, render target is `RENDER_ATTACHMENT`. Bits
+/// MetalFX never asks for (`pixelFormatView`) have no wgpu counterpart here
+/// and are dropped.
+pub(crate) fn wgpu_usage_from_mtl(usage: MTLTextureUsage) -> TextureUsages {
+    let mut out = TextureUsages::empty();
+    if usage.contains(MTLTextureUsage::ShaderRead) {
+        out |= TextureUsages::TEXTURE_BINDING;
+    }
+    if usage.contains(MTLTextureUsage::ShaderWrite) {
+        out |= TextureUsages::STORAGE_BINDING;
+    }
+    if usage.contains(MTLTextureUsage::RenderTarget) {
+        out |= TextureUsages::RENDER_ATTACHMENT;
+    }
+    out
+}
 
 /// Runtime check for MetalFX availability.
 pub(crate) fn is_available_impl() -> bool {
@@ -653,6 +673,80 @@ mod tests {
             Some(MTLPixelFormat::Depth32Float)
         );
         assert!(wgpu_format_to_mtl(WF::R8Unorm).is_none());
+    }
+}
+
+#[cfg(test)]
+mod usage_tests {
+    use super::*;
+
+    /// What Bevy allocates for a camera's main texture unless told otherwise.
+    const BEVY_DEFAULT_MAIN: TextureUsages = TextureUsages::RENDER_ATTACHMENT
+        .union(TextureUsages::TEXTURE_BINDING)
+        .union(TextureUsages::COPY_SRC);
+
+    #[test]
+    fn usage_bits_map_one_to_one() {
+        let all = MTLTextureUsage::ShaderRead
+            | MTLTextureUsage::ShaderWrite
+            | MTLTextureUsage::RenderTarget;
+        assert_eq!(
+            wgpu_usage_from_mtl(all),
+            TextureUsages::TEXTURE_BINDING
+                | TextureUsages::STORAGE_BINDING
+                | TextureUsages::RENDER_ATTACHMENT
+        );
+        assert_eq!(
+            wgpu_usage_from_mtl(MTLTextureUsage::ShaderRead | MTLTextureUsage::RenderTarget),
+            TextureUsages::TEXTURE_BINDING | TextureUsages::RENDER_ATTACHMENT
+        );
+        assert!(wgpu_usage_from_mtl(MTLTextureUsage::empty()).is_empty());
+    }
+
+    /// The reason the plugin adds `STORAGE_BINDING` to the camera in temporal
+    /// mode and leaves spatial alone, pinned against the bits measured on an
+    /// M5 Max: spatial output wants read|renderTarget, temporal adds write.
+    #[test]
+    fn bevys_default_main_texture_satisfies_spatial_but_not_temporal() {
+        let spatial =
+            wgpu_usage_from_mtl(MTLTextureUsage::ShaderRead | MTLTextureUsage::RenderTarget);
+        let temporal = wgpu_usage_from_mtl(
+            MTLTextureUsage::ShaderRead
+                | MTLTextureUsage::ShaderWrite
+                | MTLTextureUsage::RenderTarget,
+        );
+        assert!(BEVY_DEFAULT_MAIN.contains(spatial));
+        assert!(!BEVY_DEFAULT_MAIN.contains(temporal));
+        assert!((BEVY_DEFAULT_MAIN | TextureUsages::STORAGE_BINDING).contains(temporal));
+    }
+
+    /// Ask a real spatial scaler. Whatever it requires must be satisfiable by
+    /// Bevy's default main texture, or the direct-write path would silently
+    /// fall back to a blit on every machine.
+    #[test]
+    fn a_real_spatial_scaler_fits_bevys_default_main_texture() {
+        let Some(device) = objc2_metal::MTLCreateSystemDefaultDevice() else {
+            eprintln!("no Metal device; skipping");
+            return;
+        };
+        let device_ptr = &*device as *const ProtocolObject<dyn MTLDevice> as *mut c_void;
+        let scaler = unsafe {
+            try_create_spatial_scaler_from_raw(
+                device_ptr,
+                640,
+                360,
+                1280,
+                720,
+                MTLPixelFormat::RGBA8Unorm_sRGB,
+                MTLPixelFormat::RGBA8Unorm_sRGB,
+            )
+        }
+        .expect("a spatial scaler on this device");
+        let required = wgpu_usage_from_mtl(unsafe { scaler.outputTextureUsage() });
+        assert!(
+            BEVY_DEFAULT_MAIN.contains(required),
+            "spatial requires {required:?}"
+        );
     }
 }
 
