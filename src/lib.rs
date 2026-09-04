@@ -110,6 +110,24 @@ pub mod gpu_timing;
 #[cfg(target_os = "macos")]
 pub use gpu_timing::{GpuTimingSink, GpuTimingStats};
 
+pub mod effect;
+pub use effect::{
+    MetalFxEffectObservation, MetalFxEffectReason, MetalFxEffectState, MetalFxEffectStatus,
+};
+
+pub mod adaptive;
+pub mod adaptive_runtime;
+#[cfg(test)]
+mod lifecycle_tests;
+pub use adaptive_runtime::{
+    MetalFxAdaptiveConfig, MetalFxAdaptiveContext, MetalFxAdaptiveReason, MetalFxAdaptiveStatus,
+    MetalFxFrameCostInput, ValidatedGpuFrameCost,
+};
+mod effect_runtime;
+#[cfg(target_os = "macos")]
+pub mod frame_timing;
+pub use effect_runtime::MetalFxObservationFrame;
+
 /// Display-timed dual presentation — the half of frame interpolation that
 /// lives below the render graph. Only meaningful when interpolation is built.
 #[cfg(all(target_os = "macos", feature = "frame-interpolation"))]
@@ -165,13 +183,15 @@ pub struct MetalFxPlugin {
     pub render_scale: f32,
     /// Which MetalFX mode to use.
     pub mode: MetalFxMode,
-    /// Enable adaptive render scale — dynamically adjusts scale based on P99 frame time.
+    /// Enable adaptive render scale using fresh, validated GPU frame-cost samples.
     ///
     /// The governor climbs the [`MetalFxQuality`] ladder the device admits
     /// (see [`MetalFxDeviceScaleBand`]); the initial `render_scale` is snapped
     /// to the nearest rung. On an M5 that ladder reaches one third resolution;
     /// on earlier chips it stops at one half. `MetalFxRenderScale` becomes
-    /// mutable.
+    /// mutable. Configure the target and quality floor with [`MetalFxAdaptiveConfig`].
+    /// Without a validated frame signal, adaptation holds scale and reports why;
+    /// app cadence and the MetalFX command-buffer timer are not substitutes.
     pub adaptive: bool,
     /// Optional externally-owned GPU-timing sink (Phase 0 bench). When the host
     /// (e.g. `src-tauri`) wants to read GPU timings over the debug server, it
@@ -531,7 +551,7 @@ impl bevy::app::Plugin for MetalFxPlugin {
                 log::warn!("MetalFX: no RenderDevice at finish — keeping the assumed scale band");
                 return;
             };
-            let band = device_scale_band(&render_device, self.mode);
+            let band = device_scale_band(&render_device, effect_runtime::compiled_mode(self.mode));
             log::info!(
                 "MetalFX: device scale band {:.3}..={:.3} ({})",
                 band.min(),
@@ -549,7 +569,7 @@ impl bevy::app::Plugin for MetalFxPlugin {
                 // are one fact stated three ways; all three move together.
                 let steps = MetalFxQuality::ladder(&band);
                 let (lo, hi) = (steps[0], steps[steps.len() - 1]);
-                app.insert_resource(AdaptiveScaleState::new(self.render_scale, steps.clone()));
+                adaptive_runtime::configure_ladder(app, steps.clone(), self.render_scale);
                 if let Some(mut config) = app.world_mut().get_resource_mut::<MetalFxConfig>() {
                     config.dynamic_res_range = Some((lo, hi));
                 }
@@ -569,6 +589,13 @@ impl bevy::app::Plugin for MetalFxPlugin {
             "MetalFxPlugin: render_scale must be in [0.1, 1.0], got {}",
             self.render_scale
         );
+
+        effect_runtime::install(app, self.mode, self.render_scale);
+        adaptive_runtime::install(
+            app,
+            self.adaptive && is_available() && self.mode != MetalFxMode::Disabled,
+        );
+        let effective_mode = effect_runtime::compiled_mode(self.mode);
 
         // GPU timing is installed before either early return, for the same
         // reason `MetalFxRenderScale` is: a resource that only exists on the
@@ -643,18 +670,18 @@ impl bevy::app::Plugin for MetalFxPlugin {
 
         log::info!(
             "MetalFX plugin initialized: mode={:?}, render_scale={}",
-            self.mode,
+            effective_mode,
             self.render_scale
         );
 
         // Main-world: insert render scale resource and resolution override systems.
         app.insert_resource(MetalFxRenderScale(self.render_scale));
-        app.insert_resource(MetalFxModeResource(self.mode));
+        app.insert_resource(MetalFxModeResource(effective_mode));
         // The device cannot be asked yet — there is no render device in
         // `build` — so the band and the ladder built from it are provisional
         // here and corrected in `finish`. The provisional band is the assumed
         // pre-M5 one, which is the safe direction: it can only widen.
-        let provisional_band = MetalFxDeviceScaleBand::for_mode(self.mode, None);
+        let provisional_band = MetalFxDeviceScaleBand::for_mode(effective_mode, None);
         let provisional_ladder = MetalFxQuality::ladder(&provisional_band);
         app.insert_resource(provisional_band);
         // Main-world MetalFxConfig for render-world extraction. In adaptive mode
@@ -682,7 +709,7 @@ impl bevy::app::Plugin for MetalFxPlugin {
         });
         app.insert_resource(MetalFxConfig {
             render_scale: self.render_scale,
-            mode: self.mode,
+            mode: effective_mode,
             dynamic_res_range,
         });
         // Registered unconditionally, including off macOS: the crate promises a
@@ -697,14 +724,11 @@ impl bevy::app::Plugin for MetalFxPlugin {
 
         // Adaptive render scale (opt-in).
         if self.adaptive {
-            app.insert_resource(AdaptiveScaleState::new(
-                self.render_scale,
-                provisional_ladder.clone(),
-            ));
+            adaptive_runtime::configure_ladder(app, provisional_ladder.clone(), self.render_scale);
             app.add_systems(
                 bevy::app::Update,
                 (
-                    adaptive_scale_system,
+                    adaptive_runtime::adaptive_scale_system,
                     sync_config_scale,
                     update_resolution_on_scale_change,
                 )
@@ -720,19 +744,15 @@ impl bevy::app::Plugin for MetalFxPlugin {
 
         // Temporal + FrameInterpolation modes: add prepass components and jitter system.
         #[cfg(feature = "temporal")]
-        if self.mode == MetalFxMode::Temporal || self.mode == MetalFxMode::FrameInterpolation {
+        if effective_mode == MetalFxMode::Temporal
+            || effective_mode == MetalFxMode::FrameInterpolation
+        {
             app.add_systems(bevy::app::PostStartup, setup_temporal_camera);
-            app.add_systems(bevy::app::Update, jitter::update_jitter);
-        }
-        #[cfg(not(feature = "temporal"))]
-        if self.mode == MetalFxMode::Temporal || self.mode == MetalFxMode::FrameInterpolation {
-            log::warn!(
-                "MetalFX: {:?} mode requested but 'temporal' feature not enabled — falling back to Spatial",
-                self.mode
+            app.add_systems(
+                bevy::app::Update,
+                (setup_temporal_camera, jitter::update_jitter).chain(),
             );
-            app.insert_resource(MetalFxModeResource(MetalFxMode::Spatial));
         }
-
         // Extract MetalFxConfig from main world to render world each frame.
         // Must be added to main app — the plugin internally finds the RenderApp sub-app.
         #[cfg(target_os = "macos")]
@@ -743,7 +763,7 @@ impl bevy::app::Plugin for MetalFxPlugin {
         // Frame interpolation needs the real inter-frame interval; mirror the
         // main world's `Time` delta into the render world (which has no `Time`).
         #[cfg(target_os = "macos")]
-        if self.mode == MetalFxMode::FrameInterpolation {
+        if effective_mode == MetalFxMode::FrameInterpolation {
             app.insert_resource(MetalFxFrameTiming::default());
             app.add_systems(bevy::app::Update, update_frame_timing);
             app.add_plugins(bevy::render::extract_resource::ExtractResourcePlugin::<
@@ -756,7 +776,7 @@ impl bevy::app::Plugin for MetalFxPlugin {
         // extra present is encoded in the render world, so the pointer is
         // captured here and extracted across.
         #[cfg(all(target_os = "macos", feature = "frame-interpolation"))]
-        if self.mode == MetalFxMode::FrameInterpolation {
+        if effective_mode == MetalFxMode::FrameInterpolation {
             app.insert_resource(self.dual_present.clone().unwrap_or_default());
             app.add_systems(bevy::app::Update, present::capture_metal_layer);
             app.add_plugins(bevy::render::extract_resource::ExtractResourcePlugin::<
@@ -830,79 +850,6 @@ impl MetalFxModeResource {
     }
 }
 
-// --- Adaptive render scale ---
-
-// The governor's rungs are no longer a constant: they are the
-// `MetalFxQuality` presets the device band admits, held in
-// `AdaptiveScaleState::steps` and rebuilt in `finish` once the device can be
-// asked. The constant this replaced was `[0.5, 0.75]`, written on hardware
-// whose floor was one half.
-/// Number of frames in the rolling window (~2 seconds at 60fps).
-const WINDOW_SIZE: usize = 120;
-/// P99 threshold to trigger scale-down (60fps = 16.67ms).
-const P99_SCALE_DOWN_MS: f32 = 16.67;
-/// P99 threshold to trigger scale-up (generous margin below 60fps).
-const P99_SCALE_UP_MS: f32 = 12.0;
-/// Consecutive windows over threshold before scaling down.
-const WINDOWS_TO_SCALE_DOWN: u32 = 3;
-/// Consecutive windows under threshold before scaling up.
-const WINDOWS_TO_SCALE_UP: u32 = 5;
-/// Cooldown after a scale change (seconds). 10s covers temporal scaler background creation.
-const SCALE_CHANGE_COOLDOWN: f32 = 10.0;
-/// Evaluate P99 every N frames (half the window — overlapping evaluation).
-const EVAL_CADENCE_FRAMES: u32 = 60;
-
-/// Adaptive render scale state — tracks frame times and manages scale transitions.
-#[derive(Resource)]
-pub struct AdaptiveScaleState {
-    /// Rolling buffer of recent frame times (milliseconds).
-    frame_times: [f32; WINDOW_SIZE],
-    /// Write index into `frame_times` (circular buffer).
-    write_idx: usize,
-    /// Number of valid samples (grows until buffer is full).
-    sample_count: usize,
-    /// The ladder, ascending render scales. See `MetalFxQuality::ladder`.
-    steps: Vec<f32>,
-    /// Current scale step index into `steps`.
-    current_step: usize,
-    /// Consecutive evaluation windows where P99 exceeded the scale-down threshold.
-    consecutive_over: u32,
-    /// Consecutive evaluation windows where P99 was under the scale-up threshold.
-    consecutive_under: u32,
-    /// Cooldown timer (seconds remaining). No scale changes while > 0.
-    cooldown: f32,
-    /// Frame counter for evaluation cadence.
-    frames_since_eval: u32,
-}
-
-impl AdaptiveScaleState {
-    fn new(initial_scale: f32, steps: Vec<f32>) -> Self {
-        assert!(!steps.is_empty(), "the adaptive ladder cannot be empty");
-        let current_step = steps
-            .iter()
-            .enumerate()
-            .min_by(|(_, a), (_, b)| {
-                (*a - initial_scale)
-                    .abs()
-                    .total_cmp(&(*b - initial_scale).abs())
-            })
-            .map(|(i, _)| i)
-            .unwrap_or(0);
-
-        Self {
-            frame_times: [0.0; WINDOW_SIZE],
-            write_idx: 0,
-            sample_count: 0,
-            steps,
-            current_step,
-            consecutive_over: 0,
-            consecutive_under: 0,
-            cooldown: 0.0,
-            frames_since_eval: 0,
-        }
-    }
-}
-
 /// Register the resolution-override systems as a single unit.
 ///
 /// The main-world insert and the render-world extract go in together and never
@@ -912,7 +859,12 @@ impl AdaptiveScaleState {
 /// plugin that reports a render scale it does not apply.
 fn register_resolution_override(app: &mut App) {
     app.add_systems(bevy::app::PostStartup, apply_resolution_override);
-    app.add_systems(bevy::app::Update, update_resolution_on_resize);
+    app.add_systems(
+        bevy::app::Update,
+        (apply_resolution_override, update_resolution_on_resize)
+            .chain()
+            .before(sync_config_scale),
+    );
 
     let Some(render_app) = app.get_sub_app_mut(bevy::render::RenderApp) else {
         // Deliberately loud. Skipping quietly is what the old code effectively
@@ -957,6 +909,8 @@ fn register_resolution_override(app: &mut App) {
 /// What hid it for so long is that `apply_resolution_override` inserts `MipBias`
 /// on the same line — and `MipBias` *is* on the extract list. Half the pair
 /// worked, so nothing downstream looked disconnected.
+// Keep the ECS query filters visible beside this system.
+#[allow(clippy::type_complexity)]
 fn extract_resolution_override(
     mut commands: Commands,
     cameras: Extract<Query<(&RenderEntity, Option<&MainPassResolutionOverride>), With<Camera3d>>>,
@@ -1031,95 +985,11 @@ fn update_resolution_on_resize(
     let override_h = (h as f32 * scale.0).round() as u32;
 
     for mut res_override in cameras.iter_mut() {
+        if res_override.0 == UVec2::new(override_w, override_h) {
+            continue;
+        }
         log::info!("MetalFX: resize -> MainPassResolutionOverride {override_w}x{override_h}");
         res_override.0 = UVec2::new(override_w, override_h);
-    }
-}
-
-/// Adaptive render scale system — adjusts scale based on P99 frame time.
-fn adaptive_scale_system(
-    time: Res<Time>,
-    mut state: ResMut<AdaptiveScaleState>,
-    mut scale: ResMut<MetalFxRenderScale>,
-) {
-    // Record frame time.
-    let dt_ms = time.delta_secs() * 1000.0;
-    let idx = state.write_idx;
-    state.frame_times[idx] = dt_ms;
-    state.write_idx = (idx + 1) % WINDOW_SIZE;
-    if state.sample_count < WINDOW_SIZE {
-        state.sample_count += 1;
-    }
-
-    // Tick cooldown.
-    if state.cooldown > 0.0 {
-        state.cooldown -= time.delta_secs();
-        if state.cooldown > 0.0 {
-            state.frames_since_eval = 0;
-            return;
-        }
-        state.consecutive_over = 0;
-        state.consecutive_under = 0;
-        state.frames_since_eval = 0;
-    }
-
-    // Check evaluation cadence.
-    state.frames_since_eval += 1;
-    if state.frames_since_eval < EVAL_CADENCE_FRAMES {
-        return;
-    }
-    state.frames_since_eval = 0;
-
-    // Need enough samples.
-    if state.sample_count < WINDOW_SIZE / 2 {
-        return;
-    }
-
-    // Compute P99 from rolling window.
-    let count = state.sample_count;
-    let mut sorted = state.frame_times;
-    sorted[..count].sort_by(|a, b| a.total_cmp(b));
-    let p99_idx = ((count as f32 * 0.99) as usize).min(count - 1);
-    let p99 = sorted[p99_idx];
-
-    // Evaluate thresholds with proper hysteresis.
-    // Dead zone (P99_SCALE_UP_MS..=P99_SCALE_DOWN_MS): neither counter advances or resets.
-    // This prevents jitter near the threshold from resetting accumulated evidence.
-    if p99 > P99_SCALE_DOWN_MS {
-        state.consecutive_over += 1;
-        state.consecutive_under = 0;
-    } else if p99 < P99_SCALE_UP_MS {
-        state.consecutive_under += 1;
-        state.consecutive_over = 0;
-    }
-    // Dead zone: no action — counters hold their values.
-
-    // Scale down: move to lower step.
-    if state.consecutive_over >= WINDOWS_TO_SCALE_DOWN && state.current_step > 0 {
-        let old = state.steps[state.current_step];
-        state.current_step -= 1;
-        let new_scale = state.steps[state.current_step];
-        log::info!(
-            "MetalFX adaptive: scale DOWN {old} -> {new_scale} (P99={p99:.2}ms > {P99_SCALE_DOWN_MS}ms)"
-        );
-        scale.0 = new_scale;
-        state.cooldown = SCALE_CHANGE_COOLDOWN;
-        state.consecutive_over = 0;
-        state.consecutive_under = 0;
-    } else if state.consecutive_under >= WINDOWS_TO_SCALE_UP
-        && state.current_step < state.steps.len() - 1
-    {
-        // Scale up: move to higher step.
-        let old = state.steps[state.current_step];
-        state.current_step += 1;
-        let new_scale = state.steps[state.current_step];
-        log::info!(
-            "MetalFX adaptive: scale UP {old} -> {new_scale} (P99={p99:.2}ms < {P99_SCALE_UP_MS}ms)"
-        );
-        scale.0 = new_scale;
-        state.cooldown = SCALE_CHANGE_COOLDOWN;
-        state.consecutive_over = 0;
-        state.consecutive_under = 0;
     }
 }
 
@@ -1129,7 +999,7 @@ fn update_resolution_on_scale_change(
     windows: Query<&Window>,
     scale: Res<MetalFxRenderScale>,
 ) {
-    if !scale.is_changed() || scale.is_added() {
+    if !scale.is_changed() {
         return;
     }
     let Ok(window) = windows.single() else {
@@ -1157,7 +1027,7 @@ fn update_resolution_on_scale_change(
 
 /// Keep main-world MetalFxConfig.render_scale in sync with MetalFxRenderScale.
 fn sync_config_scale(scale: Res<MetalFxRenderScale>, mut config: ResMut<MetalFxConfig>) {
-    if scale.is_changed() && !scale.is_added() {
+    if config.render_scale != scale.0 {
         config.render_scale = scale.0;
     }
 }
@@ -1175,9 +1045,21 @@ fn update_frame_timing(time: Res<Time>, mut timing: ResMut<MetalFxFrameTiming>) 
 
 /// Insert prepass components and jitter on Camera3d for temporal mode.
 #[cfg(feature = "temporal")]
+// Keep the ECS query filters visible beside this system.
+#[allow(clippy::type_complexity)]
 fn setup_temporal_camera(
     mut commands: Commands,
-    cameras: Query<Entity, (With<Camera3d>, Without<MotionVectorPrepass>)>,
+    cameras: Query<
+        Entity,
+        (
+            With<Camera3d>,
+            Or<(
+                Without<MotionVectorPrepass>,
+                Without<DepthPrepass>,
+                Without<TemporalJitter>,
+            )>,
+        ),
+    >,
 ) {
     for entity in cameras.iter() {
         log::info!("MetalFX temporal: adding MotionVectorPrepass + DepthPrepass + TemporalJitter + Msaa::Off");
@@ -1383,14 +1265,34 @@ mod tests {
         assert!(ladder[0] < ladder[1]);
     }
 
-    /// The initial scale snaps to the nearest rung of whatever ladder the
-    /// state was given, so a device with a lower floor changes where 0.4 lands.
+    /// Device admission and user quality floor jointly determine the start.
     #[test]
-    fn adaptive_state_snaps_to_the_nearest_rung_of_its_ladder() {
-        let narrow = AdaptiveScaleState::new(0.4, vec![0.5, 0.58, 2.0 / 3.0, 1.0]);
-        assert_eq!(narrow.steps[narrow.current_step], 0.5);
-        let wide = AdaptiveScaleState::new(0.4, vec![1.0 / 3.0, 0.5, 0.58, 2.0 / 3.0, 1.0]);
-        assert!((wide.steps[wide.current_step] - 1.0 / 3.0).abs() < 1e-6);
+    fn adaptive_state_snaps_to_the_nearest_allowed_rung() {
+        use adaptive::{AdaptiveConfig, AdaptiveController};
+        let config = AdaptiveConfig {
+            minimum_scale: 1.0 / 3.0,
+            ..Default::default()
+        };
+        let narrow =
+            AdaptiveController::new(config.clone(), vec![0.5, 0.58, 2.0 / 3.0, 1.0], 0.4).unwrap();
+        assert_eq!(narrow.current_scale(), 0.5);
+        let wide = AdaptiveController::new(config, vec![1.0 / 3.0, 0.5, 0.58, 2.0 / 3.0, 1.0], 0.4)
+            .unwrap();
+        assert!((wide.current_scale() - 1.0 / 3.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn explicitly_disabled_mode_does_not_wait_for_adaptive_timing() {
+        let mut app = App::new();
+        app.add_plugins(MetalFxPlugin {
+            mode: MetalFxMode::Disabled,
+            adaptive: true,
+            ..default()
+        });
+        assert_eq!(
+            app.world().resource::<MetalFxAdaptiveStatus>().reason,
+            MetalFxAdaptiveReason::Disabled
+        );
     }
 
     /// Render scale -> MetalFX upscale ratio is a reciprocal, so the ends swap.

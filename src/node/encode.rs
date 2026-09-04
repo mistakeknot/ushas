@@ -32,6 +32,34 @@ use crate::platform::encode_spatial_upscale;
 use crate::platform::encode_temporal_upscale;
 use crate::GpuTimingDiag;
 
+fn with_command_buffer<T>(buffer: Option<T>, encode: impl FnOnce(T)) -> bool {
+    let Some(buffer) = buffer else { return false };
+    encode(buffer);
+    true
+}
+
+#[cfg(test)]
+mod tests {
+    use super::with_command_buffer;
+
+    #[test]
+    fn missing_command_buffer_does_not_report_encoding() {
+        assert!(!with_command_buffer(None::<()>, |_| panic!(
+            "no buffer to encode"
+        )));
+    }
+
+    #[test]
+    fn command_buffer_reports_encoding_only_after_the_callback_runs() {
+        let mut encoded = false;
+        assert!(with_command_buffer(Some(42), |buffer| {
+            assert_eq!(buffer, 42);
+            encoded = true;
+        }));
+        assert!(encoded);
+    }
+}
+
 impl MetalFxUpscaleNode {
     /// Encode the MetalFX pass for whichever scaler is cached.
     ///
@@ -110,7 +138,6 @@ impl MetalFxUpscaleNode {
                 state.frame_count
             );
         }
-        state.frame_count += 1;
 
         // Extract temporal texture pointers (content-sized depth + motion).
         let temporal_ptrs = if is_temporal_like {
@@ -277,33 +304,34 @@ impl MetalFxUpscaleNode {
         });
         let encoder = &mut raw_encoder;
 
-        match &state.scaler {
+        let encoded = match &state.scaler {
             SendScaler::Spatial(scaler) => {
                 unsafe {
                     // SAFETY: every raw pointer above was taken in a scope that has already
                     // closed, so no texture guard is live. wgpu's snatch lock is not
                     // reentrant — overlapping the two is a panic, not a recoverable error.
-                    encoder.as_hal_mut::<wgpu_hal::metal::Api, _, ()>(|hal_encoder| {
-                        let Some(enc) = hal_encoder else { return };
-                        let Some(cmd_buf) = enc.raw_command_buffer() else {
-                            return;
-                        };
-                        let cmd_buf_ptr = cmd_buf as *const _ as *mut c_void;
+                    encoder.as_hal_mut::<wgpu_hal::metal::Api, _, bool>(|hal_encoder| {
+                        with_command_buffer(
+                            hal_encoder.and_then(|enc| enc.raw_command_buffer()),
+                            |cmd_buf| {
+                                let cmd_buf_ptr = cmd_buf as *const _ as *mut c_void;
 
-                        encode_spatial_upscale(
-                            scaler,
-                            input_tex_ptr,
-                            out_tex_ptr,
-                            cmd_buf_ptr,
-                            content_w as usize,
-                            content_h as usize,
-                        );
+                                encode_spatial_upscale(
+                                    scaler,
+                                    input_tex_ptr,
+                                    out_tex_ptr,
+                                    cmd_buf_ptr,
+                                    content_w as usize,
+                                    content_h as usize,
+                                );
 
-                        if let Some(sink) = timing_sink.clone() {
-                            // Borrowed cmd buffer, registered pre-commit (Codex review A/B/D).
-                            add_gpu_timing_handler(cmd_buf_ptr, sink);
-                        }
-                    });
+                                if let Some(sink) = timing_sink.clone() {
+                                    // Borrowed cmd buffer, registered pre-commit (Codex review A/B/D).
+                                    add_gpu_timing_handler(cmd_buf_ptr, sink);
+                                }
+                            },
+                        )
+                    })
                 }
             }
             #[cfg(feature = "frame-interpolation")]
@@ -372,59 +400,60 @@ impl MetalFxUpscaleNode {
                     // SAFETY: every raw pointer above was taken in a scope that has already
                     // closed, so no texture guard is live. wgpu's snatch lock is not
                     // reentrant — overlapping the two is a panic, not a recoverable error.
-                    encoder.as_hal_mut::<wgpu_hal::metal::Api, _, ()>(|hal_encoder| {
-                        let Some(enc) = hal_encoder else { return };
-                        let Some(cmd_buf) = enc.raw_command_buffer() else {
-                            return;
-                        };
-                        let cmd_buf_ptr = cmd_buf as *const _ as *mut c_void;
+                    encoder.as_hal_mut::<wgpu_hal::metal::Api, _, bool>(|hal_encoder| {
+                        with_command_buffer(
+                            hal_encoder.and_then(|enc| enc.raw_command_buffer()),
+                            |cmd_buf| {
+                                let cmd_buf_ptr = cmd_buf as *const _ as *mut c_void;
 
-                        // Stage 1 — upscale the low-res render to output size.
-                        // This is the *real* frame, and it is what gets
-                        // presented; it also becomes next frame's history.
-                        encode_temporal_upscale(
-                            scaler,
-                            input_tex_ptr,
-                            depth_ptr,
-                            motion_ptr,
-                            out_tex_ptr,
-                            cmd_buf_ptr,
-                            content_w as usize,
-                            content_h as usize,
-                            jitter.x,
-                            jitter.y,
-                            motion_scale_x,
-                            motion_scale_y,
-                            is_first_frame,
-                        );
+                                // Stage 1 — upscale the low-res render to output size.
+                                // This is the *real* frame, and it is what gets
+                                // presented; it also becomes next frame's history.
+                                encode_temporal_upscale(
+                                    scaler,
+                                    input_tex_ptr,
+                                    depth_ptr,
+                                    motion_ptr,
+                                    out_tex_ptr,
+                                    cmd_buf_ptr,
+                                    content_w as usize,
+                                    content_h as usize,
+                                    jitter.x,
+                                    jitter.y,
+                                    motion_scale_x,
+                                    motion_scale_y,
+                                    is_first_frame,
+                                );
 
-                        // Stage 2 — synthesise the intermediate frame between
-                        // the previous upscaled frame and this one. Both color
-                        // inputs are full-res; depth/motion stay content-sized.
-                        crate::platform::encode_frame_interpolation(
-                            interpolator,
-                            out_tex_ptr,
-                            prev_color_ptr,
-                            depth_ptr,
-                            motion_ptr,
-                            interp_out_ptr,
-                            cmd_buf_ptr,
-                            jitter.x,
-                            jitter.y,
-                            motion_scale_x,
-                            motion_scale_y,
-                            delta_time,
-                            field_of_view,
-                            aspect_ratio,
-                            near_plane,
-                            far_plane,
-                            is_first_frame,
-                        );
+                                // Stage 2 — synthesise the intermediate frame between
+                                // the previous upscaled frame and this one. Both color
+                                // inputs are full-res; depth/motion stay content-sized.
+                                crate::platform::encode_frame_interpolation(
+                                    interpolator,
+                                    out_tex_ptr,
+                                    prev_color_ptr,
+                                    depth_ptr,
+                                    motion_ptr,
+                                    interp_out_ptr,
+                                    cmd_buf_ptr,
+                                    jitter.x,
+                                    jitter.y,
+                                    motion_scale_x,
+                                    motion_scale_y,
+                                    delta_time,
+                                    field_of_view,
+                                    aspect_ratio,
+                                    near_plane,
+                                    far_plane,
+                                    is_first_frame,
+                                );
 
-                        if let Some(sink) = timing_sink.clone() {
-                            add_gpu_timing_handler(cmd_buf_ptr, sink);
-                        }
-                    });
+                                if let Some(sink) = timing_sink.clone() {
+                                    add_gpu_timing_handler(cmd_buf_ptr, sink);
+                                }
+                            },
+                        )
+                    })
                 }
 
                 // Snapshot this frame's upscaled color into the history buffer.
@@ -459,35 +488,39 @@ impl MetalFxUpscaleNode {
                     // SAFETY: every raw pointer above was taken in a scope that has already
                     // closed, so no texture guard is live. wgpu's snatch lock is not
                     // reentrant — overlapping the two is a panic, not a recoverable error.
-                    encoder.as_hal_mut::<wgpu_hal::metal::Api, _, ()>(|hal_encoder| {
-                        let Some(enc) = hal_encoder else { return };
-                        let Some(cmd_buf) = enc.raw_command_buffer() else {
-                            return;
-                        };
-                        let cmd_buf_ptr = cmd_buf as *const _ as *mut c_void;
+                    encoder.as_hal_mut::<wgpu_hal::metal::Api, _, bool>(|hal_encoder| {
+                        with_command_buffer(
+                            hal_encoder.and_then(|enc| enc.raw_command_buffer()),
+                            |cmd_buf| {
+                                let cmd_buf_ptr = cmd_buf as *const _ as *mut c_void;
 
-                        encode_temporal_upscale(
-                            scaler,
-                            input_tex_ptr,
-                            depth_ptr,
-                            motion_ptr,
-                            out_tex_ptr,
-                            cmd_buf_ptr,
-                            content_w as usize,
-                            content_h as usize,
-                            jitter.x,
-                            jitter.y,
-                            motion_scale_x,
-                            motion_scale_y,
-                            is_first_frame,
-                        );
+                                encode_temporal_upscale(
+                                    scaler,
+                                    input_tex_ptr,
+                                    depth_ptr,
+                                    motion_ptr,
+                                    out_tex_ptr,
+                                    cmd_buf_ptr,
+                                    content_w as usize,
+                                    content_h as usize,
+                                    jitter.x,
+                                    jitter.y,
+                                    motion_scale_x,
+                                    motion_scale_y,
+                                    is_first_frame,
+                                );
 
-                        if let Some(sink) = timing_sink.clone() {
-                            add_gpu_timing_handler(cmd_buf_ptr, sink);
-                        }
-                    });
+                                if let Some(sink) = timing_sink.clone() {
+                                    add_gpu_timing_handler(cmd_buf_ptr, sink);
+                                }
+                            },
+                        )
+                    })
                 }
             }
+        };
+        if !encoded {
+            return false;
         }
 
         // Queue the raw-encoded buffer. This flushes the context's still-open
@@ -496,6 +529,7 @@ impl MetalFxUpscaleNode {
         // and the Phase C blit — which opens a fresh encoder after this — is
         // submitted after it.
         render_context.add_command_buffer(raw_encoder.finish());
+        state.frame_count = state.frame_count.saturating_add(1);
 
         // Snapshot this frame's upscaled color into the history buffer.
         //

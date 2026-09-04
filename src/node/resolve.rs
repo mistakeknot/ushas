@@ -96,10 +96,7 @@ impl MetalFxUpscaleNode {
 
         // Get or create cached bind group for motion resolve.
         let mut mr_bg = self.motion_resolve_bind_group.lock().unwrap();
-        let need_new = match &*mr_bg {
-            Some((src_id, _)) if *src_id == src_motion_view.id() => false,
-            _ => true,
-        };
+        let need_new = !matches!(&*mr_bg, Some((src_id, _)) if *src_id == src_motion_view.id());
         if need_new {
             let wgpu_dev = device.wgpu_device();
             let src_view_wgpu: &wgpu::TextureView = &src_motion_view;
@@ -229,14 +226,8 @@ impl MetalFxUpscaleNode {
         // Get or create cached bind group (keyed on src + dst TextureViewId).
         // dst_id is stable (stored in CachedState), src_id changes on prepass recreation.
         let mut dr_bg = self.depth_resolve_bind_group.lock().unwrap();
-        let need_new_bg = match &*dr_bg {
-            Some((src_id, dst_id, _))
-                if *src_id == src_depth_view.id() && *dst_id == content_depth_view.id() =>
-            {
-                false
-            }
-            _ => true,
-        };
+        let need_new_bg = !matches!(&*dr_bg, Some((src_id, dst_id, _))
+            if *src_id == src_depth_view.id() && *dst_id == content_depth_view.id());
         if need_new_bg {
             let wgpu_dev = device.wgpu_device();
             // Extract the raw wgpu TextureView from Bevy's wrapped type.

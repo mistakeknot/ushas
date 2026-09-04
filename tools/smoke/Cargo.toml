@@ -1,0 +1,18 @@
+[package]
+name = "ushas-smoke"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.95"
+publish = false
+
+[workspace]
+
+[dependencies]
+bevy_metalfx = { path = "../..", features = ["frame-interpolation"] }
+bevy = { version = "0.19", default-features = false, features = [
+    "bevy_asset", "bevy_color", "bevy_core_pipeline", "bevy_log",
+    "bevy_pbr", "bevy_render", "bevy_window", "bevy_winit",
+    "bevy_ui", "bevy_ui_render", "bevy_text", "default_font",
+    "multi_threaded", "png", "x11",
+] }
+serde_json = "1"

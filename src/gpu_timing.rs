@@ -1,21 +1,14 @@
-//! GPU timing capture for Phase 0 bound-ness benchmarking.
+//! Dedicated MetalFX command-buffer timing diagnostics.
 //!
-//! Attaches an `addCompletedHandler:` to the MetalFX command buffer and reads
-//! `GPUEndTime - GPUStartTime` to get the *actual GPU active time* for that
-//! command buffer — the primary signal for distinguishing GPU-bound from
-//! CPU/sim/present-bound frames on Apple silicon (Codex plan review: total
-//! frame time is vsync-pinned to ProMotion refresh buckets and cannot
-//! discriminate bound-ness on its own).
+//! `GPUEndTime - GPUStartTime` is the elapsed interval reported for the raw
+//! MetalFX command buffer. Scene rendering is encoded on other buffers, and
+//! upstream dependency waits can extend this interval. It is neither total GPU
+//! frame cost nor isolated MetalFX execution time under load. Do not use it as
+//! the adaptive controller's frame-budget signal.
 //!
-//! ## Metric caveat (Codex review item C)
-//!
-//! `GPUStartTime/GPUEndTime` measure GPU active time for *this one command
-//! buffer*. It captures the MetalFX upscale pass and everything else wgpu
-//! encoded onto the same buffer, but **excludes** any GPU work wgpu split
-//! onto other command buffers / submissions in the same frame. Treat
-//! `gpu_ms` as "GPU cost of the render+upscale command buffer", and verify
-//! against a Metal System Trace once that the frame really is one relevant
-//! command buffer before reading the verdict as total-frame GPU cost.
+//! Disabled mode's optional empty timed command buffer characterizes the timer
+//! floor and dependency behavior. It does not measure a native rendered frame.
+//! Isolated pass attribution and frame coverage require separate validation.
 //!
 //! ## Safety model (Codex review items A/B/D)
 //!
@@ -131,7 +124,7 @@ pub struct GpuTimingStats {
 }
 
 /// Attach a completion handler to a *borrowed* MetalFX command buffer that
-/// records its GPU active time (ms) into `sink`.
+/// records its reported elapsed interval (ms) into `sink`.
 ///
 /// Call this once per frame, before wgpu commits the buffer, from inside the
 /// same `as_hal_mut` closure that already holds the raw command-buffer pointer.

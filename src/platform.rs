@@ -124,6 +124,8 @@ pub(crate) unsafe fn encode_spatial_upscale(
 /// `device_ptr` must be a valid `id<MTLDevice>` pointer from wgpu-hal's
 /// `raw_device().lock().as_ptr()`.
 #[cfg(feature = "temporal")]
+// Preserve the explicit Metal descriptor/encode arguments at this FFI boundary.
+#[allow(clippy::too_many_arguments)]
 pub(crate) unsafe fn try_create_temporal_scaler_from_raw(
     device_ptr: *mut c_void,
     input_width: usize,
@@ -238,6 +240,8 @@ pub(crate) unsafe fn temporal_upscale_ratio_band_from_raw(
 /// - All pointers must be valid Metal objects from wgpu-hal's raw handles.
 /// - No Metal render/compute encoder may be active on the command buffer.
 #[cfg(feature = "temporal")]
+// Preserve the explicit Metal descriptor/encode arguments at this FFI boundary.
+#[allow(clippy::too_many_arguments)]
 pub(crate) unsafe fn encode_temporal_upscale(
     scaler: &ProtocolObject<dyn MTLFXTemporalScaler>,
     color_ptr: *mut c_void,
@@ -329,6 +333,8 @@ unsafe impl Send for SendDevice {}
 /// Takes an owned [`SendDevice`] rather than a raw pointer: the thread is
 /// detached, so it must keep the device alive itself.
 #[cfg(feature = "temporal")]
+// Preserve the explicit Metal descriptor/encode arguments at this FFI boundary.
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn spawn_temporal_scaler_thread(
     device: SendDevice,
     iw: usize,
@@ -403,6 +409,8 @@ pub(crate) unsafe fn is_frame_interpolation_supported(device_ptr: *mut c_void) -
 /// lets the interpolator reuse the scaler's internal history instead of
 /// re-deriving it.
 #[cfg(feature = "frame-interpolation")]
+// Preserve the explicit Metal descriptor/encode arguments at this FFI boundary.
+#[allow(clippy::too_many_arguments)]
 pub(crate) unsafe fn try_create_frame_interpolator_from_raw(
     device_ptr: *mut c_void,
     input_width: usize,

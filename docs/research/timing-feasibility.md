@@ -96,6 +96,38 @@ separate dependency change.
 
 ## Integration route to test next
 
+An opt-in implementation now exists in `src/frame_timing.rs` as
+`ExperimentalFrameTimingPlugin`. It inserts destination-preserving render
+passes before `Core3dSystems::Prepass` and after both Bevy upscaling and
+`MetalFxLabel`. The first pass uses the raw main texture view; the last uses
+the raw output view. Neither consumes Bevy's clear bookkeeping. Both draw a
+full-screen triangle using ZERO source / ONE destination blending with
+Load/Store attachments, creating real render-attachment accesses rather than
+empty command buffers. These accesses still require trace validation of the
+intended GPU dependency envelope.
+
+The plugin exposes `ExperimentalFrameTiming` snapshots with Pending,
+Unavailable, Failed, and ObservedUnvalidated states. It retains original
+application frame ID, main-world camera entity, actual configuration generation,
+mode/scale/dimensions, and a matching frozen adaptive epoch when available.
+Four raw query values retain each marker's own start/end in addition to the
+outer envelope. `marker_ms` reports each marker pass separately; it is not a
+substitute for measuring total perturbation against an uninstrumented arm.
+
+Eight reusable slots move through workload completion, deferred resolution,
+and asynchronous mapping. Render systems never poll or wait for the GPU.
+Storage remains reserved until callbacks complete; a full ring skips samples.
+Missing features, multiple active cameras, incomplete boundaries, stale
+readbacks, and stale query reuse remain explicit failures or unavailable
+states. The plugin never publishes a `ValidatedGpuFrameCost`.
+
+The renderer must request `TIMESTAMP_QUERY` before device creation; the helper
+`frame_timing::requested_features()` supplies that flag. Add the experiment
+after `MetalFxPlugin`, and run matching instrumented and uninstrumented scenes.
+This source and its five CPU tests compile; rendered output, added-pass
+overhead, CPU-delay controls, and trace coverage remain hardware validation
+gates below.
+
 Bevy 0.19 offers useful schedule boundaries without replacing its renderer:
 
 - `RenderGraph` has `Begin`, `Render`, `Submit`, and `Finish` sets.
@@ -145,6 +177,44 @@ control passed. Render-pass descriptors, raw MetalFX ordering, and presentation
 have not passed those gates. A failure there should leave the external-signal
 contract available and automatic collection unavailable, with the failure
 reason retained for diagnosis.
+
+## Capture validity before measuring a window
+
+The first half-resolution smoke captures exposed a separate Bevy 0.19 capture
+failure. `temporal-half`, `spatial-half`, and `bilinear-half` PNGs each contained
+921,600 pixels of exactly RGBA `(0, 0, 0, 0)`; `native-current` contained real
+scene colors and alpha 255 throughout. These files under
+`/private/tmp/ushas-roadmap-evidence/` are invalid captures, not evidence that
+MetalFX produced a black image.
+
+The cached source explains a path that produces this result. wgpu-hal 29.0.4
+checks the macOS window's occlusion state and returns `SurfaceError::Occluded`
+before acquiring a drawable (`metal/surface.rs:123–151`). Bevy silently accepts
+that result and removes `ViewTarget` when no output attachment exists. Main
+application frames continue, but per-view render observations stop. A screenshot
+temporarily supplies its own output attachment, allowing rendering to resume.
+However, Bevy's window screenshot submission checks for a swapchain view before
+issuing either the readback copy or the screen blit; with no drawable it skips
+both (`view/window/screenshot.rs:508–530`). `collect_screenshots` still maps the
+prepared buffer (`:638–700`), producing zero data. In the temporal artifact,
+the effect observation advancing from frame 402 to 952 on screenshot request
+fits this path. A live drawable/occlusion observation remains the confirming
+probe; the PNG's successful map callback alone does not prove a rendered copy.
+
+Keep the test window visible and verify drawable availability throughout the
+measurement and capture, or render the single test camera to an image target
+and capture that image. Report application-update cadence separately from
+actual per-view rendered observations. Do not relabel a capture failure as
+GPU cost, image quality, or successful output evidence.
+
+The control arm also needs an explicit crop-aware upscale. Bevy 0.19's built-in
+blit samples the entire full-size main texture with a default nearest sampler;
+it does not read `MainPassResolutionOverride`. The override only shrinks the
+rendered viewport. `src/control_upscale.rs` expands the actual content crop
+with a linear sampler in `EarlyPostProcess`, before tonemapping and UI. Its
+rendered output must pass the same capture gate. Bevy places UI before its
+final upscaling system, so running a content crop after that system would also
+crop and scale UI.
 
 ## Reproduction and verification
 

@@ -84,14 +84,16 @@ mod scaler;
 use std::ffi::c_void;
 use std::sync::Mutex;
 
+use bevy::camera::MainPassResolutionOverride;
 use bevy::core_pipeline::blit::{BlitPipeline, BlitPipelineKey};
 use bevy::core_pipeline::prepass::ViewPrepassTextures;
 use bevy::prelude::*;
-use bevy::render::camera::TemporalJitter;
+use bevy::render::camera::{ExtractedCamera, TemporalJitter};
 use bevy::render::render_resource::{
     BindGroup, CachedRenderPipelineId, Extent3d, PipelineCache, RenderPassDescriptor,
     SpecializedRenderPipeline, TextureView, TextureViewId,
 };
+use bevy::render::sync_world::MainEntity;
 // Gated to match its only use site — the dual-present block below is
 // `frame-interpolation`-only, and an import wider than its use is an unused
 // import on every other feature combination.
@@ -110,7 +112,10 @@ use objc2_metal_fx::MTLFXSpatialScaler;
 use objc2_metal_fx::MTLFXTemporalScaler;
 
 use crate::platform::wgpu_format_to_mtl;
-use crate::MetalFxMode;
+use crate::{
+    MetalFxEffectObservation, MetalFxEffectReason, MetalFxEffectState, MetalFxEffectStatus,
+    MetalFxMode, MetalFxObservationFrame,
+};
 
 /// Resource holding the MetalFX render configuration.
 /// Extracted from main world each frame via `ExtractResourcePlugin`.
@@ -175,6 +180,16 @@ unsafe impl Send for SendScaler {}
 unsafe impl Sync for SendScaler {}
 
 impl SendScaler {
+    fn mode(&self) -> MetalFxMode {
+        match self {
+            Self::Spatial(_) => MetalFxMode::Spatial,
+            #[cfg(feature = "temporal")]
+            Self::Temporal(_) => MetalFxMode::Temporal,
+            #[cfg(feature = "frame-interpolation")]
+            Self::FrameInterpolator { .. } => MetalFxMode::FrameInterpolation,
+        }
+    }
+
     /// Whether this scaler consumes depth and motion vectors, and so needs the
     /// prepass resolve passes. False on a `spatial`-only build, where neither
     /// variant that answers true is compiled in.
@@ -199,6 +214,7 @@ const PRESENT_FORMAT: bevy::render::render_resource::TextureFormat =
 
 /// Cached state for the MetalFX upscale node.
 struct CachedState {
+    key: scaler::ScalerKey,
     scaler: SendScaler,
     /// Content-sized input texture (copied from main_texture's top-left region).
     input_texture: bevy::render::render_resource::Texture,
@@ -249,11 +265,8 @@ struct CachedState {
 
 /// Pending temporal scaler creation on a background thread.
 struct PendingScaler {
+    key: scaler::ScalerKey,
     receiver: std::sync::mpsc::Receiver<Option<SendScaler>>,
-    input_w: u32,
-    input_h: u32,
-    output_w: u32,
-    output_h: u32,
     /// When the background creation started, so a creation that never returns
     /// can be told apart from one that is merely slow.
     ///
@@ -281,7 +294,12 @@ pub struct MetalFxUpscaleNode {
     cached: Mutex<Option<CachedState>>,
     pending: Mutex<Option<PendingScaler>>,
     cached_bind_group: Mutex<Option<(TextureViewId, BindGroup)>>,
-    cached_pipeline: Mutex<Option<CachedRenderPipelineId>>,
+    cached_pipeline: Mutex<
+        Option<(
+            bevy::render::render_resource::TextureFormat,
+            CachedRenderPipelineId,
+        )>,
+    >,
     /// Depth resolve render pipeline (lazy-init, resolution-independent).
     depth_resolve: Mutex<Option<ResolvePipeline>>,
     /// Cached bind group for depth resolve (keyed on src + dst TextureViewId).
@@ -333,12 +351,17 @@ impl Default for MetalFxUpscaleNode {
 /// because it only ever needed a command encoder and a pair of textures — the
 /// graph was scaffolding around that, not part of it.
 ///
-/// The per-frame caches that used to live in the graph node live in a [`Local`],
-/// which gives them the same per-system persistence the node had.
+/// The caches live in a [`Local`], with one scaler/history set for this system.
+/// The current implementation accepts a single active 3D view covering its
+/// full render target. Additional views and offset/subrectangle viewports fail
+/// closed with an effect-status reason, leaving Bevy's output in place.
 #[allow(clippy::type_complexity)]
 pub fn metalfx_upscale(
     view: ViewQuery<(
+        &'static MainEntity,
+        &'static ExtractedCamera,
         &'static ViewTarget,
+        Option<&'static MainPassResolutionOverride>,
         Option<&'static ViewPrepassTextures>,
         Option<&'static TemporalJitter>,
         // `extract_cameras` clones `Projection` onto the render-world view
@@ -346,26 +369,27 @@ pub fn metalfx_upscale(
         // extract system. Frame interpolation needs FOV/near/far from it.
         Option<&'static Projection>,
     )>,
+    cameras: Query<(&ExtractedCamera, &ViewTarget), With<Camera3d>>,
     state: Local<MetalFxUpscaleNode>,
     mut render_context: RenderContext,
     world: &World,
 ) {
-    state.run(&mut render_context, view.into_inner(), world);
+    // CurrentView selects the render entity; MainEntity in the query provides
+    // the stable public identity shared with main-world camera consumers.
+    state.run(
+        &mut render_context,
+        view.into_inner(),
+        cameras.iter().take(2).count(),
+        world,
+    );
 }
 
 /// Timing-only pass for [`MetalFxMode::Disabled`].
 ///
-/// Submits a command buffer carrying no work whatsoever — nothing rides on it
-/// but an `addCompletedHandler:`. Its `gpu_ms` is therefore the *floor* of
-/// `GPUEndTime - GPUStartTime` on this machine: the fixed cost of dispatching
-/// an empty buffer.
-///
-/// That floor is what makes the upscale arm's `gpu_ms` legible. The enabled
-/// path times `metalfx_raw_encode`, a buffer created solely to carry the
-/// MetalFX encode, so its `gpu_ms` is the pass cost *plus* this same constant.
-/// Without a measured zero there is no way to tell a 0.3 ms upscale from
-/// 0.3 ms of command-buffer dispatch, and the difference is the entire
-/// question a crossover benchmark is asking.
+/// Submits an empty command buffer with a completion timestamp handler. This
+/// characterizes the timer floor and dependency behavior, not a native frame's
+/// GPU cost. The enabled MetalFX buffer can include upstream waits, so these
+/// intervals must not be subtracted as though they were isolated pass costs.
 ///
 /// Registered only when the host explicitly supplied a
 /// [`MetalFxPlugin::gpu_timing_sink`](crate::MetalFxPlugin::gpu_timing_sink).
@@ -414,27 +438,119 @@ impl MetalFxUpscaleNode {
     fn run(
         &self,
         render_context: &mut RenderContext,
-        (target, prepass_textures, temporal_jitter, projection): (
+        (
+            main_entity,
+            camera,
+            target,
+            resolution_override,
+            prepass_textures,
+            temporal_jitter,
+            projection,
+        ): (
+            &MainEntity,
+            &ExtractedCamera,
             &ViewTarget,
+            Option<&MainPassResolutionOverride>,
             Option<&ViewPrepassTextures>,
             Option<&TemporalJitter>,
             Option<&Projection>,
         ),
+        active_views: usize,
         world: &World,
     ) {
         let main_tex = target.main_texture();
         let main_size = main_tex.size();
         let main_format = main_tex.format();
 
-        let Some(color_mtl_fmt) = wgpu_format_to_mtl(main_format) else {
-            log::error!("MetalFxUpscaleNode: unsupported format {:?}", main_format);
-            return;
-        };
-
         let config = world.get_resource::<MetalFxConfig>();
         let render_scale = config.map_or(0.5, |c| c.render_scale);
-        let mode = config.map_or(MetalFxMode::Spatial, |c| c.mode);
-        let dynamic_res_range = config.and_then(|c| c.dynamic_res_range);
+        let mode =
+            crate::effect_runtime::compiled_mode(config.map_or(MetalFxMode::Spatial, |c| c.mode));
+        let requested_mode = world
+            .get_resource::<crate::effect_runtime::MetalFxRequestedEffect>()
+            .map_or(mode, |request| request.mode);
+        let view_id = main_entity.id().to_bits();
+        let output = [main_size.width, main_size.height];
+        let observed_content = resolution_override
+            .map(|resolution| resolution.0.to_array())
+            .unwrap_or(output);
+        let publish = |effective_mode, state, reason| {
+            if let (Some(status), Some(frame)) = (
+                world.get_resource::<MetalFxEffectStatus>(),
+                world.get_resource::<MetalFxObservationFrame>(),
+            ) {
+                status.publish(MetalFxEffectObservation::new(
+                    frame.0,
+                    view_id,
+                    requested_mode,
+                    effective_mode,
+                    render_scale,
+                    observed_content,
+                    output,
+                    state,
+                    reason,
+                ));
+            }
+        };
+        // Publish only the terminal decision for this invocation. The main
+        // world may read concurrently, so intermediate work must not replace
+        // the last completed frame with a transient pending/encoded state.
+        if let Some(reason) = crate::effect_runtime::view_scope_error(active_views) {
+            publish(
+                MetalFxMode::Disabled,
+                if active_views == 0 {
+                    MetalFxEffectState::NoRender
+                } else {
+                    MetalFxEffectState::Unavailable
+                },
+                Some(reason),
+            );
+            return;
+        }
+        let content = match crate::effect_runtime::observed_content_size(
+            output,
+            resolution_override.map(|resolution| resolution.0.to_array()),
+            camera.viewport.as_ref().map(|viewport| {
+                (
+                    viewport.physical_position.to_array(),
+                    viewport.physical_size.to_array(),
+                )
+            }),
+        ) {
+            Ok(content) => content,
+            Err(reason) => {
+                publish(
+                    MetalFxMode::Disabled,
+                    MetalFxEffectState::Unavailable,
+                    Some(reason),
+                );
+                return;
+            }
+        };
+        if mode == MetalFxMode::Disabled {
+            publish(
+                MetalFxMode::Disabled,
+                MetalFxEffectState::Disabled,
+                Some(MetalFxEffectReason::ModeDisabled),
+            );
+            return;
+        }
+        let Some(color_mtl_fmt) = wgpu_format_to_mtl(main_format) else {
+            log::error!("MetalFxUpscaleNode: unsupported format {:?}", main_format);
+            publish(
+                MetalFxMode::Disabled,
+                MetalFxEffectState::Unavailable,
+                Some(MetalFxEffectReason::UnsupportedFormat),
+            );
+            return;
+        };
+        // Only temporal scalers implement a variable content region. Spatial
+        // and interpolation descriptors are built at the actual input size.
+        let dynamic_res_range = if mode == MetalFxMode::Temporal {
+            config.and_then(|c| c.dynamic_res_range)
+        } else {
+            None
+        };
 
         // main_texture is full physical resolution (e.g., 3024x1800 on Retina).
         // MainPassResolutionOverride renders content at half-res in the top-left corner.
@@ -448,8 +564,8 @@ impl MetalFxUpscaleNode {
         let full_w = main_size.width;
         let full_h = main_size.height;
         // Per-frame content dimensions follow the *current* render scale.
-        let input_w = (full_w as f32 * render_scale).round() as u32;
-        let input_h = (full_h as f32 * render_scale).round() as u32;
+        let input_w = content[0];
+        let input_h = content[1];
         let output_w = full_w;
         let output_h = full_h;
         let content_w = input_w;
@@ -469,7 +585,7 @@ impl MetalFxUpscaleNode {
         // --- Phase A: Get or create scaler + output texture ---
         let device = render_context.render_device().clone();
         let mut cached = self.cached.lock().unwrap();
-        if !self.ensure_scaler(
+        let effective_mode = match self.ensure_scaler(
             &device,
             &mut cached,
             scaler::ScalerDims {
@@ -480,13 +596,28 @@ impl MetalFxUpscaleNode {
                 output_w,
                 output_h,
             },
+            view_id,
             mode,
             main_format,
             color_mtl_fmt,
             dynamic_res_range,
         ) {
-            return;
-        }
+            Ok(mode) => mode,
+            Err(reason) => {
+                let state = if matches!(
+                    reason,
+                    MetalFxEffectReason::ScalerPending | MetalFxEffectReason::ScalerCreationSlow
+                ) {
+                    MetalFxEffectState::Pending
+                } else {
+                    MetalFxEffectState::Failed
+                };
+                publish(MetalFxMode::Disabled, state, Some(reason));
+                return;
+            }
+        };
+        let fallback_reason =
+            (effective_mode != requested_mode).then_some(MetalFxEffectReason::FeatureUnavailable);
 
         let state = cached.as_mut().unwrap();
 
@@ -511,14 +642,29 @@ impl MetalFxUpscaleNode {
         if is_temporal_like {
             let Some(prepass) = prepass_textures else {
                 log::warn!("MetalFxUpscaleNode: temporal mode but no prepass textures");
+                publish(
+                    MetalFxMode::Disabled,
+                    MetalFxEffectState::Failed,
+                    Some(MetalFxEffectReason::MissingPrepass),
+                );
                 return;
             };
             let Some(depth_attachment) = &prepass.depth else {
                 log::warn!("MetalFxUpscaleNode: no depth prepass texture");
+                publish(
+                    MetalFxMode::Disabled,
+                    MetalFxEffectState::Failed,
+                    Some(MetalFxEffectReason::MissingPrepass),
+                );
                 return;
             };
             let Some(motion_attachment) = &prepass.motion_vectors else {
                 log::warn!("MetalFxUpscaleNode: no motion vector prepass texture");
+                publish(
+                    MetalFxMode::Disabled,
+                    MetalFxEffectState::Failed,
+                    Some(MetalFxEffectReason::MissingPrepass),
+                );
                 return;
             };
 
@@ -582,24 +728,32 @@ impl MetalFxUpscaleNode {
             output_w,
             output_h,
         ) {
+            publish(
+                MetalFxMode::Disabled,
+                MetalFxEffectState::Failed,
+                Some(MetalFxEffectReason::MetalHandleUnavailable),
+            );
             return;
         }
-
         // --- Phase C: Blit metalfx_output → out_texture (swapchain) ---
         let pipeline_cache = world.resource::<PipelineCache>();
         let blit_pipeline = world.resource::<BlitPipeline>();
 
+        let Some(target_format) = target.out_texture_view_format() else {
+            publish(
+                effective_mode,
+                MetalFxEffectState::Encoded,
+                Some(MetalFxEffectReason::MissingOutput),
+            );
+            return;
+        };
         let mut cached_pipeline = self.cached_pipeline.lock().unwrap();
         let pipeline_id = match *cached_pipeline {
-            Some(id) => id,
-            None => {
+            Some((format, id)) if format == target_format => id,
+            _ => {
                 // wgpu 29 / Bevy 0.19: the output format is now optional,
                 // because a view target can exist without a resolved output.
                 // Skip the frame rather than guessing a format.
-                let Some(target_format) = target.out_texture_view_format() else {
-                    log::error!("MetalFxUpscaleNode: view target has no output format");
-                    return;
-                };
                 let key = BlitPipelineKey {
                     target_format,
                     blend_state: None,
@@ -610,13 +764,21 @@ impl MetalFxUpscaleNode {
                 };
                 let descriptor = blit_pipeline.specialize(key);
                 let id = pipeline_cache.queue_render_pipeline(descriptor);
-                *cached_pipeline = Some(id);
+                *cached_pipeline = Some((target_format, id));
                 id
             }
         };
 
         let Some(pipeline) = pipeline_cache.get_render_pipeline(pipeline_id) else {
-            log::warn!("MetalFxUpscaleNode: blit pipeline not ready yet");
+            let reason = if matches!(
+                pipeline_cache.get_render_pipeline_state(pipeline_id),
+                bevy::render::render_resource::CachedPipelineState::Err(_),
+            ) {
+                MetalFxEffectReason::BlitPipelineFailed
+            } else {
+                MetalFxEffectReason::BlitPipelinePending
+            };
+            publish(effective_mode, MetalFxEffectState::Encoded, Some(reason));
             drop(cached);
             return;
         };
@@ -681,10 +843,18 @@ impl MetalFxUpscaleNode {
             }
         };
 
+        let Some(output_attachment) = target.out_texture_color_attachment(None) else {
+            publish(
+                effective_mode,
+                MetalFxEffectState::Encoded,
+                Some(MetalFxEffectReason::MissingOutput),
+            );
+            return;
+        };
         let pass_descriptor = RenderPassDescriptor {
             label: Some("metalfx_blit"),
             // Bevy 0.19 returns the attachment already wrapped in `Option`.
-            color_attachments: &[target.out_texture_color_attachment(None)],
+            color_attachments: &[Some(output_attachment)],
             depth_stencil_attachment: None,
             timestamp_writes: None,
             occlusion_query_set: None,
@@ -704,6 +874,11 @@ impl MetalFxUpscaleNode {
 
         drop(render_pass);
         drop(cached_bg);
+        publish(
+            effective_mode,
+            MetalFxEffectState::OutputWritten,
+            fallback_reason,
+        );
 
         // --- Phase D: present the real frame, one refresh behind ---
         //

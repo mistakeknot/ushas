@@ -4,8 +4,8 @@
 //! Split out of `run` because it is the one phase that can decline to produce
 //! anything — a temporal scaler takes seconds to compile, so it is built on a
 //! background thread and polled here, and until it arrives the node falls
-//! through to Bevy's own upscaling. Every path that cannot proceed returns
-//! `false` and the frame is skipped.
+//! through to Bevy's own upscaling. Paths that cannot proceed return an explicit
+//! reason so pending work and failed creation cannot look like active MetalFX.
 
 use std::ffi::c_void;
 
@@ -19,7 +19,120 @@ use objc2_metal::MTLPixelFormat;
 use super::PendingScaler;
 use super::{CachedState, MetalFxUpscaleNode, SendScaler};
 use crate::platform::try_create_spatial_scaler_from_raw;
+use crate::MetalFxEffectReason;
 use crate::MetalFxMode;
+
+/// Inputs that define one scaler and its history. A view switch invalidates
+/// temporal history even when dimensions and formats happen to be identical.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(super) struct ScalerKey {
+    pub view_id: u64,
+    pub input: [u32; 2],
+    pub output: [u32; 2],
+    pub format: TextureFormat,
+    pub mode: MetalFxMode,
+    pub dynamic_range: Option<(f32, f32)>,
+}
+
+fn requires_recreate(cached: Option<ScalerKey>, requested: ScalerKey) -> bool {
+    cached != Some(requested)
+}
+
+fn poll_creation<T>(
+    receiver: &std::sync::mpsc::Receiver<Option<T>>,
+    elapsed: std::time::Duration,
+) -> Result<T, MetalFxEffectReason> {
+    match receiver.try_recv() {
+        Ok(Some(scaler)) => Ok(scaler),
+        Ok(None) | Err(std::sync::mpsc::TryRecvError::Disconnected) => {
+            Err(MetalFxEffectReason::ScalerCreationFailed)
+        }
+        Err(std::sync::mpsc::TryRecvError::Empty)
+            if elapsed >= std::time::Duration::from_secs(10) =>
+        {
+            Err(MetalFxEffectReason::ScalerCreationSlow)
+        }
+        Err(std::sync::mpsc::TryRecvError::Empty) => Err(MetalFxEffectReason::ScalerPending),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::time::Duration;
+
+    #[test]
+    fn cache_invalidates_resize_view_mode_format_and_dynamic_range_changes() {
+        let original = ScalerKey {
+            view_id: 7,
+            input: [960, 540],
+            output: [1920, 1080],
+            format: TextureFormat::Rgba16Float,
+            mode: MetalFxMode::Temporal,
+            dynamic_range: None,
+        };
+        assert!(requires_recreate(None, original));
+        assert!(!requires_recreate(Some(original), original));
+        for changed in [
+            ScalerKey {
+                view_id: 8,
+                ..original
+            },
+            ScalerKey {
+                input: [1280, 720],
+                ..original
+            },
+            ScalerKey {
+                output: [2560, 1440],
+                ..original
+            },
+            ScalerKey {
+                format: TextureFormat::Rgba8Unorm,
+                ..original
+            },
+            ScalerKey {
+                mode: MetalFxMode::Spatial,
+                ..original
+            },
+            ScalerKey {
+                dynamic_range: Some((0.5, 1.0)),
+                ..original
+            },
+        ] {
+            assert!(requires_recreate(Some(original), changed));
+        }
+    }
+
+    #[test]
+    fn pending_creation_becomes_slow_without_claiming_failure_or_success() {
+        let (tx, rx) = std::sync::mpsc::channel::<Option<u32>>();
+        assert_eq!(
+            poll_creation(&rx, Duration::from_secs(1)),
+            Err(MetalFxEffectReason::ScalerPending)
+        );
+        assert_eq!(
+            poll_creation(&rx, Duration::from_secs(11)),
+            Err(MetalFxEffectReason::ScalerCreationSlow)
+        );
+        tx.send(Some(42)).unwrap();
+        assert_eq!(poll_creation(&rx, Duration::from_secs(12)), Ok(42));
+    }
+
+    #[test]
+    fn failed_or_disconnected_creation_is_not_pending() {
+        let (tx, rx) = std::sync::mpsc::channel::<Option<u32>>();
+        tx.send(None).unwrap();
+        assert_eq!(
+            poll_creation(&rx, Duration::ZERO),
+            Err(MetalFxEffectReason::ScalerCreationFailed)
+        );
+        drop(tx);
+        assert_eq!(
+            poll_creation(&rx, Duration::ZERO),
+            Err(MetalFxEffectReason::ScalerCreationFailed)
+        );
+    }
+}
 
 /// The six dimensions Phase A juggles, bundled so the signature stays readable.
 ///
@@ -39,19 +152,20 @@ pub(super) struct ScalerDims {
 impl MetalFxUpscaleNode {
     /// Ensure `cached` holds a scaler usable at `dims`.
     ///
-    /// Returns `false` when this frame has nothing to do — creation is still in
-    /// flight, creation failed, or the mode is not built into this binary.
+    /// Returns the cached scaler's actual mode when ready, or a reason why this
+    /// frame cannot encode. A slow creation remains pending and may still finish.
     #[allow(clippy::too_many_arguments)]
     pub(super) fn ensure_scaler(
         &self,
         device: &RenderDevice,
         cached: &mut Option<CachedState>,
         dims: ScalerDims,
+        view_id: u64,
         mode: MetalFxMode,
         main_format: TextureFormat,
         color_mtl_fmt: MTLPixelFormat,
         dynamic_res_range: Option<(f32, f32)>,
-    ) -> bool {
+    ) -> Result<MetalFxMode, MetalFxEffectReason> {
         let ScalerDims {
             scaler_input_w,
             scaler_input_h,
@@ -65,26 +179,28 @@ impl MetalFxUpscaleNode {
         // resize, or the dynamic-res max). Per-frame render-scale changes move
         // `input_w/h` but not `scaler_input_w/h`, so under dynamic resolution they
         // no longer force a rebuild — the scaler flexes via setInputContentWidth.
-        let needs_recreate = cached.as_ref().is_none_or(|c| {
-            c.input_w != scaler_input_w
-                || c.input_h != scaler_input_h
-                || c.output_w != output_w
-                || c.output_h != output_h
-        });
+        let key = ScalerKey {
+            view_id,
+            input: [scaler_input_w, scaler_input_h],
+            output: [output_w, output_h],
+            format: main_format,
+            mode,
+            dynamic_range: dynamic_res_range,
+        };
+        let needs_recreate = requires_recreate(cached.as_ref().map(|cached| cached.key), key);
 
         if needs_recreate {
+            // Never return a mismatched old scaler while a replacement starts.
+            // In particular, a resize with no pending creation must clear it.
+            *cached = None;
             // Check if a background scaler creation is pending.
             let mut pending = self.pending.lock().unwrap();
             if let Some(p) = pending.as_ref() {
                 // Check if dimensions match what we need (scaler-creation dims).
-                if p.input_w == scaler_input_w
-                    && p.input_h == scaler_input_h
-                    && p.output_w == output_w
-                    && p.output_h == output_h
-                {
+                if p.key == key {
                     // Try to receive the scaler (non-blocking).
-                    match p.receiver.try_recv() {
-                        Ok(Some(scaler)) => {
+                    match poll_creation(&p.receiver, p.started.elapsed()) {
+                        Ok(scaler) => {
                             log::info!(
                         "MetalFxUpscaleNode: background scaler ready {input_w}x{input_h} -> {output_w}x{output_h}"
                     );
@@ -194,6 +310,7 @@ impl MetalFxUpscaleNode {
                             *self.motion_resolve_bind_group.lock().unwrap() = None;
 
                             *cached = Some(CachedState {
+                                key,
                                 scaler,
                                 input_texture,
                                 output_texture,
@@ -223,48 +340,26 @@ impl MetalFxUpscaleNode {
                                 frame_count: 0,
                             });
                         }
-                        Ok(None) => {
-                            log::warn!("MetalFxUpscaleNode: background scaler creation failed");
-                            *pending = None;
-                            return false;
-                        }
-                        Err(std::sync::mpsc::TryRecvError::Empty) => {
-                            // Still creating — skip this frame. But say so if it
-                            // has been going long enough to mean something else.
-                            //
-                            // A cold MPSGraph compile takes on the order of a
-                            // second. Against a locked session,
-                            // `newTemporalScalerWithDevice:` was measured not to
-                            // return at all: 121s and 36,052 rendered frames, no
-                            // result, no error, no crash. MetalFX simply never
-                            // engaged and nothing said so — the frames kept
-                            // coming, unscaled, and the only evidence was one
-                            // INFO line saying creation had started.
-                            //
-                            // Keep waiting rather than give up: a genuinely slow
-                            // first compile should still succeed. But a silent
-                            // wait forever is the same unfalsifiable state as a
-                            // guard that never fires, so name it.
-                            const SLOW_CREATE_WARN: std::time::Duration =
-                                std::time::Duration::from_secs(10);
-                            if !p.warned.get() && p.started.elapsed() > SLOW_CREATE_WARN {
+                        Err(
+                            reason @ (MetalFxEffectReason::ScalerPending
+                            | MetalFxEffectReason::ScalerCreationSlow),
+                        ) => {
+                            if reason == MetalFxEffectReason::ScalerCreationSlow && !p.warned.get()
+                            {
                                 p.warned.set(true);
                                 log::warn!(
-                                    "MetalFxUpscaleNode: MetalFX scaler creation has not \
-                                     returned after {:?}. MetalFX is NOT running; frames are \
-                                     being presented unscaled. This is expected while the \
-                                     session is locked or the display is asleep, where \
-                                     newTemporalScalerWithDevice: does not return at all — \
-                                     unlock the session to get a scaler. Still waiting.",
+                                    "MetalFxUpscaleNode: scaler creation has not returned after {:?}; \
+                                     MetalFX has not encoded output. Still waiting; a locked or sleeping \
+                                     display can prevent MetalFX compilation from completing.",
                                     p.started.elapsed()
                                 );
                             }
-                            return false;
+                            return Err(reason);
                         }
-                        Err(std::sync::mpsc::TryRecvError::Disconnected) => {
-                            log::error!("MetalFxUpscaleNode: background thread panicked");
+                        Err(reason) => {
+                            log::warn!("MetalFxUpscaleNode: background scaler creation failed or disconnected");
                             *pending = None;
-                            return false;
+                            return Err(reason);
                         }
                     }
                 } else {
@@ -293,7 +388,7 @@ impl MetalFxUpscaleNode {
                 // any encoder `as_hal_mut` for the frame, so the snatch lock is free.
                 let Some(hal_dev) = (unsafe { wgpu_dev.as_hal::<wgpu_hal::metal::Api>() }) else {
                     log::error!("MetalFxUpscaleNode: no Metal HAL device");
-                    return false;
+                    return Err(MetalFxEffectReason::MetalHandleUnavailable);
                 };
                 // wgpu-hal 29 hands back the objc2 device directly; through 28 it
                 // was behind a Mutex, hence the lock this used to take. Nothing to
@@ -331,7 +426,7 @@ impl MetalFxUpscaleNode {
                         };
                         let Some(scaler) = scaler else {
                             log::error!("MetalFxUpscaleNode: failed to create spatial scaler");
-                            return false;
+                            return Err(MetalFxEffectReason::ScalerCreationFailed);
                         };
 
                         // Content-sized input texture for MetalFX (GPU-copied from main_texture).
@@ -378,6 +473,7 @@ impl MetalFxUpscaleNode {
                         *self.cached_pipeline.lock().unwrap() = None;
 
                         *cached = Some(CachedState {
+                            key,
                             scaler: SendScaler::Spatial(scaler),
                             input_texture,
                             output_texture,
@@ -451,30 +547,31 @@ impl MetalFxUpscaleNode {
                         }
 
                         *pending = Some(PendingScaler {
+                            key,
                             receiver: rx,
-                            input_w: scaler_input_w,
-                            input_h: scaler_input_h,
-                            output_w,
-                            output_h,
                             started: std::time::Instant::now(),
                             warned: std::cell::Cell::new(false),
                         });
 
-                        return false;
+                        return Err(MetalFxEffectReason::ScalerPending);
                     }
                     _ => {
                         log::warn!("MetalFxUpscaleNode: unsupported mode {:?}", mode);
-                        return false;
+                        return Err(MetalFxEffectReason::FeatureUnavailable);
                     }
                 }
             }
 
             // Still no cached scaler after all attempts — skip this frame.
             if cached.is_none() {
-                return false;
+                return Err(MetalFxEffectReason::ScalerCreationFailed);
             }
         }
 
-        true
+        Ok(cached
+            .as_ref()
+            .expect("successful creation installs the scaler")
+            .scaler
+            .mode())
     }
 }
