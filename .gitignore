@@ -3,3 +3,6 @@
 # resolve their own graph and a committed lock here would only ever describe
 # CI's choices, never a consumer's.
 Cargo.lock
+!/tools/smoke/Cargo.lock
+!/tools/timing-probe/Cargo.lock
+/tools/*/target/

@@ -1,0 +1,5 @@
+# Reproducible repository development; the library MSRV remains Cargo.toml's 1.95.
+[toolchain]
+channel = "1.97.1"
+profile = "minimal"
+components = ["rustfmt", "clippy"]

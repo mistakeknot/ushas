@@ -16,7 +16,7 @@ readme = "README.md"
 # issue, referencing scripts that live outside this crate; scripts/ verifies a
 # *published* build and cannot run from inside one. Both stay in the repo and
 # out of the package.
-exclude = ["examples/", "scripts/"]
+exclude = ["examples/", "scripts/", "tools/"]
 
 # docs.rs must build on x86_64-unknown-linux-gnu, where this crate is almost
 # entirely #[cfg]'d out, so the rendered docs show the non-macOS stub rather

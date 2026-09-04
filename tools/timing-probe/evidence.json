@@ -1,0 +1,40 @@
+{
+  "recorded_date_utc": "2026-09-04",
+  "adapter": "Apple M5 Max",
+  "macos": "26.5.2",
+  "macos_build": "25F84",
+  "rustc": "1.94.1 (e408947bf 2026-03-25)",
+  "wgpu": "29.0.4",
+  "baseline_ushas_commit": "c51e941",
+  "probe_independent_of_ushas_sources": true,
+  "windowed_workload": false,
+  "metal_system_trace": false,
+  "runs": [
+    {
+      "command": "tools/timing-probe/target/debug/ushas-timing-probe",
+      "file": "evidence-m5-max.jsonl",
+      "exit_code": 1,
+      "valid_intervals": 1,
+      "invalid_intervals": 15,
+      "verified_workload_outputs": 16,
+      "note": "Initial schema before resolve_strategy and checksum values were added; resolution used the same queue submission."
+    },
+    {
+      "command": "tools/timing-probe/target/debug/ushas-timing-probe --deferred-resolve",
+      "file": "evidence-m5-max-deferred.jsonl",
+      "exit_code": 1,
+      "stderr": "Error: \"frame 11: workload result mismatch\"",
+      "complete": false,
+      "note": "All 8 pass-descriptor samples passed; encoder samples 9 and 10 had zero queries. Aborted on frame 11 checksum mismatch before emitting its sample. Retained as failure evidence, not a complete run. The current probe records invalid outputs instead of aborting early."
+    },
+    {
+      "command": "tools/timing-probe/target/debug/ushas-timing-probe --deferred-resolve --pass-descriptors-only",
+      "file": "evidence-m5-max-pass-deferred.jsonl",
+      "exit_code": 0,
+      "valid_intervals": 8,
+      "invalid_intervals": 0,
+      "verified_workload_outputs": 8,
+      "note": "Only passing control; establishes synthetic dependent compute interval feasibility, not rendered-frame timing."
+    }
+  ]
+}
