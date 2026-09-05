@@ -21,6 +21,8 @@ LIFECYCLES = {
     "inactive-cut-resume": ("InactiveCutResume", {"initial", "restored"}),
     "creation-failure": ("CreationFailure", {"initial", "changed", "restored"}),
     "creation-slow": ("CreationSlow", {"initial", "changed", "restored"}),
+    "window-minimize": ("WindowMinimize", {"initial", "restored"}),
+    "os-sleep-resume": ("OsSleepResume", {"initial", "restored"}),
 }
 
 

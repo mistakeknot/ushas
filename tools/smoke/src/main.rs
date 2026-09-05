@@ -8,6 +8,7 @@ mod metrics;
 mod offscreen;
 mod quality;
 mod scene;
+mod window_lifecycle;
 
 use bevy::app::{AppExit, ScheduleRunnerPlugin};
 use bevy::prelude::*;
@@ -79,6 +80,7 @@ fn main() -> AppExit {
             [--adaptive --target-fps 60 --minimum-scale 0.5]\n\
             [--lifecycle resize|camera-cut|late-camera|multiple-views|inactive-cut-resume]\n\
             [--lifecycle creation-failure|creation-slow: synthetic creation faults, temporal only]\n\
+            [--lifecycle window-minimize|os-sleep-resume: observed native transitions, temporal only]\n\
             [--offscreen: fixed-scale image rendering; no lifecycle/adaptive/interpolation/presentation]\n\
             [--quality-sequence: offscreen deterministic twelve-image Claude sequence]\n\
             [--quality-moving-reset: offscreen Claude sequence with all sixteen moving post-cut steps]\n\

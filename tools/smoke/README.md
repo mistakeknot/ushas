@@ -133,6 +133,15 @@ unconsumed history reset, and real Temporal output after releasing the fault.
 These are simulated creation outcomes; they do not reproduce a driver crash.
 The library feature is off by default.
 
+`window-minimize` requests minimize/restore of its own test window and requires
+both actual `WindowOccluded` events and native minimized-state transitions.
+`os-sleep-resume` observes externally initiated NSWorkspace system sleep/wake
+notifications; it makes no power or lock request. Both require Temporal mode,
+initial and restored opaque captures, and fresh output acknowledging the recovery
+reset. Their deadline is 60 seconds of sleep-inclusive wall time; use the runner's
+90-second timeout. A sleep test must be coordinated with the operator after the
+initial capture. Camera inactivity, screen sleep, and a time gap cannot satisfy it.
+
 Camera inactivity is a render-pause test, not an
 operating-system sleep/resume test. `--hdr` enables Bevy's HDR main texture;
 `--native-aa` selects the native-scale Disabled MSAA4 image-quality control.

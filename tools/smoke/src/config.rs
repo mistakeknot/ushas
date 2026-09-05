@@ -139,10 +139,12 @@ impl Config {
         }
         if matches!(
             c.lifecycle.as_deref(),
-            Some("creation-failure" | "creation-slow")
+            Some("creation-failure" | "creation-slow" | "window-minimize" | "os-sleep-resume")
         ) && c.mode != "temporal"
         {
-            return Err("creation-failure and creation-slow require temporal mode".into());
+            return Err(
+                "creation faults and native lifecycle exercises require temporal mode".into(),
+            );
         }
         if c.offscreen && (c.lifecycle.is_some() || c.adaptive || c.mode == "interpolate") {
             return Err("offscreen supports fixed-scale disabled/spatial/temporal rendering only; lifecycle, adaptive and interpolation require the window fixture".into());
@@ -268,6 +270,18 @@ mod tests {
             assert!(parse(&["--lifecycle", exercise]).is_err());
             assert!(parse(&["--mode", "spatial", "--lifecycle", exercise]).is_err());
             assert!(parse(&["--mode", "temporal", "--lifecycle", exercise]).is_ok());
+        }
+    }
+
+    #[test]
+    fn native_lifecycle_requires_temporal() {
+        for exercise in ["window-minimize", "os-sleep-resume"] {
+            assert!(parse(&["--lifecycle", exercise]).is_err());
+            assert!(parse(&["--mode", "spatial", "--lifecycle", exercise]).is_err());
+            assert!(parse(&["--mode", "temporal", "--lifecycle", exercise]).is_ok());
+            assert!(
+                parse(&["--offscreen", "--mode", "temporal", "--lifecycle", exercise]).is_err()
+            );
         }
     }
 

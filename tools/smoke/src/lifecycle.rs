@@ -24,6 +24,8 @@ pub enum LifecycleExercise {
     InactiveCutResume,
     CreationFailure,
     CreationSlow,
+    WindowMinimize,
+    OsSleepResume,
 }
 
 impl LifecycleExercise {
@@ -36,7 +38,9 @@ impl LifecycleExercise {
             "inactive-cut-resume" => Ok(Self::InactiveCutResume),
             "creation-failure" => Ok(Self::CreationFailure),
             "creation-slow" => Ok(Self::CreationSlow),
-            _ => Err("lifecycle must be resize, camera-cut, late-camera, multiple-views, inactive-cut-resume, creation-failure, or creation-slow".into()),
+            "window-minimize" => Ok(Self::WindowMinimize),
+            "os-sleep-resume" => Ok(Self::OsSleepResume),
+            _ => Err("lifecycle must be resize, camera-cut, late-camera, multiple-views, inactive-cut-resume, creation-failure, creation-slow, window-minimize, or os-sleep-resume".into()),
         }
     }
 
@@ -46,6 +50,10 @@ impl LifecycleExercise {
             Self::CreationSlow => Some(ScalerCreationFault::HoldPending),
             _ => None,
         }
+    }
+
+    fn native_lifecycle(self) -> bool {
+        matches!(self, Self::WindowMinimize | Self::OsSleepResume)
     }
 }
 
@@ -59,6 +67,9 @@ impl LifecyclePlugin {
 
 impl Plugin for LifecyclePlugin {
     fn build(&self, app: &mut App) {
+        if self.0.native_lifecycle() {
+            app.add_plugins(crate::window_lifecycle::WindowLifecyclePlugin);
+        }
         app.insert_resource(LifecycleRun::new(self.0))
             .add_systems(Update, exercise);
     }
@@ -103,6 +114,12 @@ pub struct LifecycleRun {
     reset_was_pending: bool,
     fault_generation: Option<u64>,
     creation_reason_seen: bool,
+    native_cursor: Option<u64>,
+    native_window: Option<Entity>,
+    native_restore_requested: bool,
+    native_hidden_since: Option<Instant>,
+    native_cycle: Option<(u64, u64)>,
+    native_evidence: Option<Value>,
     events: Vec<Value>,
     observations: Vec<Value>,
     captures: Vec<Value>,
@@ -134,6 +151,12 @@ impl LifecycleRun {
             reset_was_pending: false,
             fault_generation: None,
             creation_reason_seen: false,
+            native_cursor: None,
+            native_window: None,
+            native_restore_requested: false,
+            native_hidden_since: None,
+            native_cycle: None,
+            native_evidence: None,
             events: vec![],
             observations: vec![],
             captures: vec![],
@@ -166,8 +189,10 @@ impl LifecycleRun {
         json!({"exercise":format!("{:?}",self.exercise),"valid":self.outcome,"error":self.error,
             "scope":"real lifecycle mutations, render-path observations and captured pixels; not GPU completion or panel delivery",
             "phase":self.phase.name(),"wall_elapsed_s":self.started.elapsed().as_secs_f64(),
+            "wall_elapsed_clock":"wall_elapsed_s and event elapsed_s use Instant, which may exclude OS sleep on macOS; native_lifecycle.wall_elapsed_seconds uses sleep-inclusive SystemTime",
             "initial_size":self.initial_size,"expected_size":self.expected_size,"initial_scale":self.initial_scale,
             "fault_generation":self.fault_generation,"creation_reason_seen":self.creation_reason_seen,
+            "native_lifecycle":self.native_evidence,
             "creation_fault_scope":self.exercise.creation_fault().map(|_|"simulated creation completion only; not a reproduced driver failure or OS sleep; changed-phase pixels exercise the real bilinear fallback"),
             "events":self.events,"observations":self.observations,"captures":self.captures,
             "dropped_observations":self.dropped_observations})
@@ -378,14 +403,15 @@ fn exercise(
     context: Res<MetalFxAdaptiveContext>,
     mut history: Option<ResMut<MetalFxHistoryReset>>,
     mut fault: ResMut<MetalFxDiagnosticFault>,
-    mut windows: Query<&mut Window, With<PrimaryWindow>>,
+    native: Option<Res<crate::window_lifecycle::WindowLifecycle>>,
+    mut windows: Query<(Entity, &mut Window), With<PrimaryWindow>>,
     mut cameras: Query<(Entity, &mut Camera, &mut Transform), With<Camera3d>>,
 ) {
     if run.finished() {
         return;
     }
     let now = Instant::now();
-    let Ok(mut window) = windows.single_mut() else {
+    let Ok((window_entity, mut window)) = windows.single_mut() else {
         fault.clear();
         run.finish(
             now,
@@ -395,6 +421,10 @@ fn exercise(
         return;
     };
     let size = [window.physical_width(), window.physical_height()];
+    let native_mode = run.exercise.native_lifecycle();
+    if native_mode {
+        run.native_evidence = native.as_ref().map(|observer| observer.report());
+    }
     run.initial_size.get_or_insert(size);
     run.expected_size.get_or_insert(size);
     let snapshot = context.snapshot();
@@ -444,17 +474,46 @@ fn exercise(
             | LifecycleExercise::InactiveCutResume
             | LifecycleExercise::CreationFailure
             | LifecycleExercise::CreationSlow
+            | LifecycleExercise::WindowMinimize
+            | LifecycleExercise::OsSleepResume
     );
     let creation_fault = run.exercise.creation_fault();
-    let failure = if now.duration_since(run.started) > DEADLINE {
+    let native_elapsed = native.as_ref().and_then(|observer| observer.wall_elapsed());
+    let failure = if native_mode
+        && native
+            .as_ref()
+            .and_then(|observer| observer.cursor())
+            .is_none()
+    {
+        Some("native lifecycle event ledger is unavailable, poisoned, or overflowed".into())
+    } else if native_mode && native_elapsed.is_none() {
+        Some("native lifecycle wall clock moved backwards or is unavailable".into())
+    } else if run.exercise == LifecycleExercise::OsSleepResume
+        && !native
+            .as_ref()
+            .is_some_and(|observer| observer.native_sleep_available())
+    {
+        Some("native NSWorkspace system sleep/wake observer is unavailable".into())
+    } else if native_mode
+        && run
+            .native_window
+            .is_some_and(|original| original != window_entity)
+    {
+        Some("the native lifecycle test window was replaced".into())
+    } else if (native_mode
+        && native_elapsed.is_some_and(|elapsed| elapsed > Duration::from_secs(60)))
+        || (!native_mode && now.duration_since(run.started) > DEADLINE)
+    {
         Some(format!(
             "lifecycle deadline exceeded in {}",
             run.phase.name()
         ))
     } else if mode.get() == MetalFxMode::Disabled {
         Some("lifecycle exercises require an active MetalFX mode".into())
-    } else if creation_fault.is_some() && mode.get() != MetalFxMode::Temporal {
-        Some("creation fault exercises require Temporal mode".into())
+    } else if (creation_fault.is_some() || native_mode) && mode.get() != MetalFxMode::Temporal {
+        Some("creation fault and native lifecycle exercises require Temporal mode".into())
+    } else if native_mode && fault_snapshot.fault != ScalerCreationFault::Off {
+        Some("native lifecycle exercises require diagnostic creation faults to remain off".into())
     } else if creation_fault.is_some()
         && run.phase == Phase::Initial
         && fault_snapshot.fault != ScalerCreationFault::Off
@@ -546,6 +605,62 @@ fn exercise(
         || run
             .epoch_before_change
             .is_none_or(|old| snapshot.epoch > old);
+    if native_mode && run.phase == Phase::Changed {
+        let observer = native.as_ref().expect("native observer checked above");
+        let cursor = run
+            .native_cursor
+            .expect("initial native phase records a cursor");
+        let recovered = if run.exercise == LifecycleExercise::WindowMinimize {
+            if !run.native_restore_requested {
+                if observer.window_state_since(cursor, window_entity, true) {
+                    if run.native_hidden_since.is_none() {
+                        run.native_hidden_since = Some(now);
+                        run.event(now, frame.0, "window_minimized_observed", json!({
+                            "window":window_entity.to_bits(),"after_sequence":cursor,
+                            "proof":"WindowOccluded(true) and native is_minimized Some(true) observed after the request"}));
+                    }
+                    if run.native_hidden_since.is_some_and(|started| {
+                        now.duration_since(started) >= Duration::from_millis(500)
+                    }) {
+                        run.native_cursor =
+                            observer.record_minimize_request(window_entity, false, frame.0);
+                        window.set_minimized(false);
+                        run.native_restore_requested = true;
+                        run.event(now, frame.0, "window_restore_requested", json!({"window":window_entity.to_bits(),"scope":"request only; native restore observations still required"}));
+                    }
+                } else {
+                    run.native_hidden_since = None;
+                }
+                false
+            } else {
+                observer.window_state_since(cursor, window_entity, false)
+            }
+        } else if let Some(cycle) = observer.sleep_cycle_since(cursor) {
+            run.native_cycle = Some(cycle);
+            run.event(now, frame.0, "system_sleep_wake_observed", json!({
+                "will_sleep_sequence":cycle.0,"did_wake_sequence":cycle.1,
+                "scope":"native NSWorkspace system notifications; no power request was made by this fixture"}));
+            true
+        } else {
+            false
+        };
+        if recovered {
+            history
+                .as_mut()
+                .expect("Temporal history checked above")
+                .request();
+            context.request_reset();
+            run.reset_was_pending = true;
+            run.epoch_before_change = Some(snapshot.epoch);
+            run.event(now, frame.0, "native_recovery_reset_requested", json!({
+                "window":window_entity.to_bits(),"reset_pending":true,
+                "scope":"native exit transition observed; fresh output, reset acknowledgement and restored pixels still required"}));
+            run.transition(Phase::Restored, now, frame.0);
+        }
+        // No screenshot or generic render-readiness inference substitutes for
+        // native enter/exit events. Rendering is allowed to continue while hidden.
+        return;
+    }
     if run.exercise == LifecycleExercise::InactiveCutResume && run.phase == Phase::Changed {
         if !reset_pending {
             restore(&mut run, &mut commands, &mut window, &mut cameras);
@@ -575,6 +690,23 @@ fn exercise(
         }
         return;
     }
+    let native_restored = if native_mode && run.phase == Phase::Restored {
+        let observer = native.as_ref().expect("native observer checked above");
+        let cursor = run
+            .native_cursor
+            .expect("initial native phase records a cursor");
+        match run.exercise {
+            LifecycleExercise::WindowMinimize => {
+                observer.window_state_since(cursor, window_entity, false)
+            }
+            LifecycleExercise::OsSleepResume => {
+                run.native_cycle.is_some() && observer.sleep_cycle_since(cursor) == run.native_cycle
+            }
+            _ => unreachable!(),
+        }
+    } else {
+        true
+    };
     let ready = if run.exercise == LifecycleExercise::MultipleViews && run.phase == Phase::Changed {
         rejected_views(&views, run.phase_frame)
     } else if creation_fault.is_some() && run.phase == Phase::Changed {
@@ -587,6 +719,7 @@ fn exercise(
             && run.primary.is_some_and(|e| e.to_bits() == active[0].entity)
             && run.ready_view(active[0], mode.get(), size, scale.0)
             && (run.phase == Phase::Initial || epoch_ready)
+            && native_restored
             && !(needs_reset && run.phase != Phase::Initial && reset_pending)
     };
     run.stable.observe(ready, &views);
@@ -695,6 +828,19 @@ fn exercise(
                     "mode":format!("{selected:?}"),"generation":fault.snapshot().generation,
                     "reset_pending":true,"scope":"simulated creation result; no driver fault induced"}));
             }
+            LifecycleExercise::WindowMinimize | LifecycleExercise::OsSleepResume => {
+                let observer = native.as_ref().expect("native observer checked above");
+                run.native_window = Some(window_entity);
+                if run.exercise == LifecycleExercise::WindowMinimize {
+                    run.native_cursor =
+                        observer.record_minimize_request(window_entity, true, frame.0);
+                    window.set_minimized(true);
+                    run.event(now, frame.0, "window_minimize_requested", json!({"window":window_entity.to_bits(),"scope":"request only; actual native minimize observations still required"}));
+                } else {
+                    run.native_cursor = observer.cursor();
+                    run.event(now, frame.0, "awaiting_external_system_sleep", json!({"window":window_entity.to_bits(),"scope":"fixture observes only; an externally initiated system sleep and wake must occur before the 60-second wall-clock deadline"}));
+                }
+            }
             LifecycleExercise::LateCamera => unreachable!("late camera starts without a view"),
         }
         run.transition(Phase::Changed, now, frame.0);
@@ -774,6 +920,9 @@ fn restore(
     window: &mut Window,
     cameras: &mut Query<(Entity, &mut Camera, &mut Transform), With<Camera3d>>,
 ) {
+    if run.exercise == LifecycleExercise::WindowMinimize {
+        window.set_minimized(false);
+    }
     if let Some(size) = run.initial_size {
         window.resolution.set_physical_resolution(size[0], size[1]);
     }
@@ -979,6 +1128,14 @@ mod tests {
         assert!(LifecycleExercise::parse("creation-failure").is_ok());
         assert!(LifecycleExercise::parse("creation-slow").is_ok());
         assert!(LifecycleExercise::parse("driver-crash").is_err());
+    }
+
+    #[test]
+    fn native_lifecycle_modes_are_explicit_and_do_not_offer_power_control() {
+        assert!(LifecycleExercise::parse("window-minimize").is_ok());
+        assert!(LifecycleExercise::parse("os-sleep-resume").is_ok());
+        assert!(LifecycleExercise::parse("force-sleep").is_err());
+        assert!(LifecycleExercise::parse("lock-screen").is_err());
     }
 
     #[test]
