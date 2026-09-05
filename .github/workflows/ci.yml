@@ -108,6 +108,29 @@ jobs:
           cargo check --no-default-features --lib
           cargo check --all-features --lib
 
+  smoke-contracts:
+    name: Smoke fixture CPU contracts
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ env.RUST_TOOLCHAIN }}
+          components: clippy, rustfmt
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: tools/smoke -> target
+          key: metalfx-smoke
+      - name: Compile and test the fixture without launching a renderer
+        run: |
+          cargo fmt --manifest-path tools/smoke/Cargo.toml -- --check
+          cargo test --locked --manifest-path tools/smoke/Cargo.toml
+          cargo clippy --locked --manifest-path tools/smoke/Cargo.toml --all-targets -- -D warnings
+      - name: Exercise retained evidence and offline trace analysis
+        run: |
+          python3 tools/smoke/test_runner.py
+          python3 tools/timing-probe/analyze_metal_trace.py --self-test
+
   fmt:
     name: rustfmt
     runs-on: ubuntu-latest
