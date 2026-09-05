@@ -99,3 +99,27 @@ the stage union. This short feasibility probe cannot establish instrumentation
 overhead: that requires the same work without sample attachments in a later
 paired experiment. This trace also contains no Bevy or MetalFX work and cannot
 close those integration gates.
+
+## Current offline parser
+
+The new parser has seven passing CPU regressions and independent code review.
+It validates native records first, joins all 128 named encoder identities, and
+checks all 192 stage pairs against one fixed clock offset. It also reports
+same-device global Idle intersections and foreign/unattributed GPU overlap.
+Its `valid` flag means complete structural scope and timestamp agreement for
+this native capture; `validated_for_governor` always remains false.
+
+```sh
+python3 tools/render-timing-probe/analyze_trace.py --self-test
+python3 tools/render-timing-probe/analyze_trace.py \
+  --samples /private/tmp/ushas-roadmap-evidence/stage-probe-traced-02/samples.jsonl \
+  --encoders /private/tmp/ushas-roadmap-evidence/stage-probe-trace-02.encoders.xml \
+  --gpu /private/tmp/ushas-roadmap-evidence/stage-probe-trace-02.gpu-intervals.xml \
+  --states /private/tmp/ushas-roadmap-evidence/stage-probe-trace-02.gpu-states.xml \
+  --out /private/tmp/ushas-roadmap-evidence/stage-probe-trace-02.fresh-audit.json
+```
+
+The parser hashes all input files and refuses to overwrite its output. The
+retained reviewed result is `stage-probe-trace-02.audit-v2.json`; earlier audit
+output remains untouched. `stage_row_gap_ns` includes diagnostic readback;
+global/per-frame rendering-stage unions exclude readback.

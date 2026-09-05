@@ -1,6 +1,6 @@
 # GPU-cost producer, second investigation
 
-Status: **design/prototype, not validated**. Base Ushas revision
+Status: **native stage controls and trace agree; full producer not validated**. Base Ushas revision
 `9e254c9c397e955cac15cd531ffa4696e5880b33`; Bevy 0.19.0 and
 wgpu/wgpu-hal 29.0.4 are the inspected dependency versions. Root alone schedules
 compilation and GPU experiments. Nothing in this investigation supplies the
@@ -120,7 +120,87 @@ submission timestamps verify that the requested negative-control gap occurred.
 Cross-frame intersections and the global interval union are retained separately
 from each frame's union. Structural validity does not certify control response.
 
-Root compiled the native source successfully with ARC, blocks and strict
-warnings (`-Wall -Wextra -Werror`), with no diagnostics. The optimized build and
-GPU execution are still pending. There is no current hardware result for this
-second producer investigation.
+Root compiled the native source successfully with ARC, blocks, `-O2` and strict
+warnings (`-Wall -Wextra -Werror`), with no diagnostics. The recorded source is
+`58326f8b4f01d5adfcd8091ecb79ef2ca19469b2`; optimized binary SHA-256 is
+`99e0d3d4068a3422bb9bf64f723b8b4b8df3edf2c7fad74b49116bca857f2172`.
+The run used Apple M5 Max, macOS 26.5.2 build 25F84 and `MTL_DEBUG_LAYER=1`.
+The initial SDK-version query failed and its error is retained in the build
+receipt; compiler and OS identification succeeded.
+
+## Observed native controls
+
+The untraced run exited 0, completed all 32 admitted frames, retained no command
+errors and never exceeded four live slots. Its maximum sample delivery age was
+25.843 ms; 27 full-ring admission ticks were skipped. Every per-frame union was
+independently recomputed with a separate sweep-line calculation. Four saved
+PNGs independently decoded as 320×180 RGBA with frame sentinels 29–32, no
+nonopaque pixels, and the expected nonuniform gradients.
+
+Each cell below contains eight frames. These are descriptive feasibility
+observations, not independent benchmark replicates or a calibrated forecast.
+
+| Fragment iterations | Requested CPU gap | Observed submission gap, median ms | Stage union, median ms | Outer envelope, median ms |
+|---:|---:|---:|---:|---:|
+| 0 | 0 ms | 0.044896 | 0.050396 | 0.052063 |
+| 1000 | 0 ms | 0.044750 | 1.297438 | 1.301042 |
+| 0 | 20 ms | 21.228854 | 0.061416 | 21.512125 |
+| 1000 | 20 ms | 21.199417 | 1.308689 | 21.450980 |
+
+High fragment load raises the zero-gap stage median about 25.7×. The CPU-gap
+arms add roughly 11 µs to their stage medians while expanding outer envelopes
+to about 21.5 ms. That is useful discrimination from the failed outer markers.
+It does not imply zero perturbation: the low-load relative shift is about 22%,
+and high-load zero-gap frames range from 0.690 to 2.274 ms. Scene-fragment
+medians are 0.013397/1.258500 ms without the gap and 0.013833/1.261271 ms with it.
+
+The untraced run has 15 cross-frame stage-overlap pairs. Its summed per-frame
+unions are 21.353501 ms, whereas the global union is 19.572290 ms. The larger
+sum must not be presented as exclusive hardware occupancy.
+
+Raw data is under `/private/tmp/ushas-roadmap-evidence/stage-probe-02/`;
+build/run/source/binary receipts are under
+`/private/tmp/ushas-stage-probe-artifacts-02/`. The original execution receipt's
+`valid:false` remains intact because it preceded evidence review. The separate
+`native-review.json` combines child exit 0, structural record validation,
+independent interval recomputation and decoded images, while retaining
+`validated_for_governor:false`.
+
+## Observed Metal System Trace
+
+Root separately traced the same frozen binary. Instruments exited 0; all 32
+native records again passed structural checks. Its immediate-recording log
+contains a backdated-signpost warning, which remains retained. Coverage here is
+established from the exact named encoders and GPU stage rows, not signposts or
+CPU creation order.
+
+The [new trace join parser](../../tools/render-timing-probe/analyze_trace.py)
+matches all 128 expected encoder identities and 192 stage pairs: scene vertex
+and fragment, dependent compute, composition vertex and fragment, and the
+separately excluded readback. One clock offset is fixed from frame 1's scene
+vertex start; all 383 remaining endpoints match exactly, with zero nanosecond
+residual. There are no split-stage gaps in this capture; that check includes
+the diagnostic readback pairs, while the rendering-stage unions exclude them.
+
+Counter and trace global rendering-stage unions both equal **17.814666 ms**.
+The sum of per-frame unions is 22.188333 ms, with 26 cross-frame overlap pairs.
+The global state table covers all owned stages and shows **0 ns Idle** inside
+their union. The capture also contains 200 GPU rows from other named processes
+and three unattributed rows on the same device; none overlap the owned stage
+union. These results support the declared synthetic stage boundaries. Trace
+`Active` rows are not independent exclusive-busy hardware counters.
+
+The trace and separate exports are
+`/private/tmp/ushas-roadmap-evidence/stage-probe-trace-02.*`; traced records and
+images are in the sibling `stage-probe-traced-02/` directory. The current audit
+is `stage-probe-trace-02.audit-v2.json`. The parser's seven CPU tests cover XML
+references, complete identities, unmatched/extra stages, command-buffer
+agreement, a fixed offset, split-stage gaps, device-specific state coverage and
+foreign-process overlap. Independent review reproduced the actual audit
+exactly and checked interval math against 500 discrete-interval oracle cases;
+the review found no blocking issue for this explicitly synthetic scope.
+
+The next discriminating gate is the same observed timing path over complete
+Bevy plus raw MetalFX work, followed by a matching uninstrumented overhead arm.
+Neither is supplied by this native probe. No library timing source, public API,
+adaptive governor or production renderer behavior changed in this slice.

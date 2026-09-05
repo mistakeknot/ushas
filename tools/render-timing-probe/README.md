@@ -15,11 +15,12 @@ in-flight ownership; a full ring skips admissions. No frame-loop GPU wait or
 later query-resolve submission is used. The program has a 15-second deadline
 after pipeline setup and retains a failed summary if admitted work is pending.
 
-Root schedules compilation and all GPU runs. Root compiled the frozen source
-with ARC, blocks, `-Wall -Wextra -Werror` and the four frameworks: exit 0, no
-diagnostics. That first CPU build omitted `-O2`; its log is retained at
-`/private/tmp/ushas-roadmap-evidence/stage-probe-build-02.log`. The optimized
-build and GPU execution below are still pending. Use fresh output paths; the probe refuses an existing
+Root schedules compilation and all GPU runs. The frozen source compiled with
+ARC, blocks, `-O2 -Wall -Wextra -Werror` and the four frameworks: exit 0, no
+diagnostics. Both the untraced and traced hardware runs completed all 32 frames.
+The trace matched all 192 stage pairs exactly; complete Bevy/MetalFX scope and
+instrumentation overhead remain unvalidated. See the design document for exact
+receipts and quantitative limits. Use fresh output paths; the probe refuses an existing
 output directory, and the analyzer refuses to overwrite its output file.
 
 ```sh
