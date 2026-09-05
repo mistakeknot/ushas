@@ -1,0 +1,135 @@
+{
+  "archive_final_manifest": {
+    "path": "/Users/sma/projects/docs/ushas/evidence/metalfx-proxy-02/archive-manifest.json",
+    "payload_bytes": 30998835,
+    "payload_files": 150,
+    "sha256": "f3204077e2d0745775591533e1bfa74441e69f3a1d12e8feec51049f85e31ea0"
+  },
+  "archive_initial_payload": {
+    "copy_receipt_sha256": "f9dc0db8713cd077f54aafa5585c8234aa286117b2eac6ae5186e071d8cb3512",
+    "scope": "Initial immutable copy-receipt payload only; later named reviews are hashed separately and root owns final manifest.",
+    "verified_payload_bytes": 30844812,
+    "verified_payload_files": 144
+  },
+  "archive_path": "/Users/sma/projects/docs/ushas/evidence/metalfx-proxy-02",
+  "audit_consistent": true,
+  "audit_script_sha256": "fc70a148b6898d58304b5aad2538f35223e71b0a26a6753903d5415a867ff921",
+  "builds": {
+    "02": {
+      "binary_sha256": "e2cbdfb9c083a6445749b2a3c0fbc81c2117c2b598bb5dd5c07592f4dcf9ec24",
+      "build_receipt_sha256": "2ebca74f05f7047a132b5e25ea870a2f5ed189e8e1944930798e8b6c16d9fa15",
+      "sdk": "26.2",
+      "source_revision": "75577e1cd0c6ff3941b422d012b024b5a7dd9327"
+    },
+    "03": {
+      "binary_sha256": "aed166fdb283eb88197d0dca3819d7c57df0d5054f5572cceaab461a84c2fec5",
+      "build_receipt_sha256": "a5eeb46c316ede56045f46e7222864693a50066de783822934bb2545aece4b93",
+      "sdk": "26.2",
+      "source_revision": "b4484a17469aa3b62c181287e46277f792a70d33"
+    }
+  },
+  "calls_observed_facts": {
+    "complete_scope_validated": false,
+    "completed_command_buffers": 48,
+    "labels": [
+      "MetalFX_Normalize",
+      "MetalFX_Scale",
+      "MetalFX_Sharpen"
+    ],
+    "max_delivery_age_ms": 11.588667,
+    "observed_render_encoders": 48,
+    "reason": "unsupported_selector",
+    "sampled_gpu_timestamps": 0,
+    "selector_calls": 16,
+    "unavailable_frames": 16,
+    "unsupported_selector": "globalTraceObjectID"
+  },
+  "disposition": {
+    "bevy_integration_run": false,
+    "calls": "stopped_unsupported_selector",
+    "compatibility_accepted": false,
+    "complete_scope_validated": false,
+    "corrected_off": "strict_reference_valid",
+    "counter_arm_run": false,
+    "original_off": "schema_failure_preserved",
+    "temporal_arm_run": false,
+    "validated_for_governor": false
+  },
+  "experiment_valid": false,
+  "original_schema_mismatches": {
+    "admitted.identity.reset": 16,
+    "completed.identity.reset": 16,
+    "completed.within_delivery_age_limit": 16,
+    "header.timestamp_counter_set": 1
+  },
+  "pixel_equality_observed": {
+    "equal_frames": {
+      "composed_rgba_sha256": 16,
+      "png_sha256": 16,
+      "raw_sha256": 16
+    },
+    "scope": "Observed byte/pixel equality only; strict compatibility remains rejected."
+  },
+  "review_sha256": {
+    "proxy-compatibility-review-03.json": "1b07f6c25a1c020c07004c423917dc263131e9ec35476a41450949bb5e467f60",
+    "proxy-spatial-off-pixels-review-02.json": "ee448de32df827f0a01a94484f952065d74291a4f03e22440a4099a4f99c80ea",
+    "proxy-watchdog-review-02.json": "6f9a7fd05be153eb5ef5c73c23e81198b4fda402b53b81509ed76354870f8f72",
+    "root-visual-review-03.json": "271a023234caef117e3f296bbfb45414af260972ae2cd44fd41aaebae78f1b57"
+  },
+  "runs": {
+    "proxy-spatial-calls-03": {
+      "child_exit_code": 1,
+      "pixel_audit": {
+        "scope": "Exact retained pixels only; does not override failed protocol or establish timing coverage.",
+        "verified_frames": 16
+      },
+      "run_receipt_sha256": "e58ae22670541353b1fcdce537f4bcc0e5b02fab0b6931c248a96b5c03f5eb73",
+      "strict_analysis": {
+        "errors": [
+          "unavailable or unsealed observation"
+        ],
+        "parity": {
+          "errors": [
+            "invalid run cannot establish parity"
+          ],
+          "scope": "Exact per-frame raw MetalFX output and composed pixel parity only; not GPU coverage or overhead.",
+          "valid": false
+        },
+        "samples_sha256": "4c272d89069e3530e563146b39c3a79e26f5d0c560d85c96f876a54add2444fa",
+        "valid": false
+      }
+    },
+    "proxy-spatial-off-02": {
+      "child_exit_code": 0,
+      "pixel_audit": {
+        "scope": "Exact retained pixels only; does not override failed protocol or establish timing coverage.",
+        "verified_frames": 16
+      },
+      "run_receipt_sha256": "45ecdfba2ba7ede25f0732ac76eae6dcb8fbb80b4534bcc2c6502cb27ce8ce79",
+      "strict_analysis": {
+        "errors": [
+          "untyped capability"
+        ],
+        "samples_sha256": "4cb0f18ea994f540418e00dff3cb9c80d4bb2f0c50e11699c972cf3e719bbc16",
+        "valid": false
+      }
+    },
+    "proxy-spatial-off-03": {
+      "child_exit_code": 0,
+      "pixel_audit": {
+        "scope": "Exact retained pixels only; does not override failed protocol or establish timing coverage.",
+        "verified_frames": 16
+      },
+      "run_receipt_sha256": "2909187a2d203080356f679ce612ba9e37c72a78f0aac5d61059136da10b2c5f",
+      "strict_analysis": {
+        "complete_frames": 16,
+        "errors": [],
+        "samples_sha256": "9918b5a2b8c9a4b64f156c5f7dc63bc5768eb8e390c5abecff2dea82bee0b39d",
+        "valid": true
+      }
+    }
+  },
+  "schema": 1,
+  "scope": "Bounded failed Spatial calls-only compatibility experiment; no counters, Temporal, trace, Bevy integration or governor validation.",
+  "validated_for_governor": false
+}
