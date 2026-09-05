@@ -21,6 +21,8 @@ local implementation. Ushas was at `7db0818b6374f99475995b9939afdf9032aa18ce`
 when its current sink and CI invariants were inspected. Subsequent candidate
 builds must record their own exact source state and executable hash. Unrelated
 untracked files exist in the consumer worktree and were left untouched.
+The historical-result recovery and `PresentSink` semantics below were checked
+again against Ushas `28c7de3db78635e17f36eccfbad45b3ec9e30025`.
 
 | Inspected consumer file | SHA-256 |
 | --- | --- |
@@ -40,6 +42,92 @@ not re-run those historical revisions or recover a new immutable historical
 binary. Current static reconstruction and marker-trace evidence have their own
 scope in [temporal-quality.md](temporal-quality.md) and
 [marker-scope-01.md](marker-scope-01.md).
+
+## Recovered historical results
+
+The following are immutable **committed accounts of runs**, recovered from
+Shadow Work's git history. They are not newly reproduced measurements or a
+recovered collection of raw logs and executable hashes.
+
+| Revision and date | Recorded result | Disposition |
+| --- | --- | --- |
+| [`05f81248ecdc2750922fb33898c4dfeec66903a1`](https://github.com/mistakeknot/shadow-work/commit/05f81248ecdc2750922fb33898c4dfeec66903a1), July 25, 2026 | Single: 403 presents, 403 callbacks, 26.9 render fps. Dual: 802 presents, 801 callbacks, 26.7 render fps. Both use the owned layer and compute interpolation; cap 30 fps. | The recorded 1.99× gain is accepted presents. The account explicitly withholds a presented-fps pass and records a separate positive control with 881 callbacks and zero positive presentation timestamps. Identical configured interpolation work does not establish identical measured GPU cost. |
+| [`4253273976ba58a454b6cf00ceaa11bd896db8a1`](https://github.com/mistakeknot/shadow-work/commit/4253273976ba58a454b6cf00ceaa11bd896db8a1), July 27, 2026 | Awake: **13 passed / 0 failed / 0 skipped, PASS (strong)**. Same tree asleep: **10 passed / 0 failed / 3 skipped, PASS (weak)**. | This fixes D1's double-counted rate, D2's ring-occupancy counter, and D3's unbounded bench exit. It records the frozen external gate's outcomes and a subsequent repair to two shell-comment apostrophes. The asleep result deliberately withholds the three presentation criteria. |
+| [`493a06f83f9edf65b10a297281ffe6a166233f37`](https://github.com/mistakeknot/shadow-work/commit/493a06f83f9edf65b10a297281ffe6a166233f37), July 27, 2026 | Both pilot arms independently rerun by the validator: **13 passed / 0 failed / 0 skipped, PASS (strong)**. | The merge records a tied gauge result. Arm B was selected on implementation and harness quality, not a larger measured performance gain. |
+
+The July 27 merge explicitly describes a run that measured positive drawable
+timestamps. It supersedes the earlier account's claim that timestamps never
+populate on this machine. That older claim also remained in the
+[research document at the merge revision](https://github.com/mistakeknot/shadow-work/blob/493a06f83f9edf65b10a297281ffe6a166233f37/crates/bevy_metalfx/docs/m5-max-performance-research.md);
+its persistence is documentation drift, not evidence of a permanent hardware
+limitation.
+
+The [frozen gauge at that revision](https://github.com/mistakeknot/shadow-work/blob/493a06f83f9edf65b10a297281ffe6a166233f37/crates/sw-renderer/scripts/gate1-gauge.sh)
+has ten general checks and three presentation checks. The latter test that the
+cumulative displayed counter can exceed 480, that single-present rate is no
+more than 1.15× render rate, and that dual-present rate is between 1.7× and
+2.3× render rate. Single-present has no lower-bound check. The gauge checks
+display state at the end rather than continuously. Its strong result therefore
+establishes the historical gauge's criteria, including reported presentation
+cadence; it does not independently establish frame content, real/interpolated
+ordering, input latency, or physical scanout.
+
+The original **27.1 → 54.1 fps** claim remains **uncorroborated at that numerical
+precision**. Targeted recovery of the gauge, relevant research documents,
+commit messages, and tracked result paths found the accounts above, but no raw
+record or immutable binary for those two numbers. Neither the 26.9/26.7
+render-rate account nor a count of thirteen passing checks reconstructs them.
+Preserve the claim as historical and unresolved; do not silently replace it
+with accepted callbacks or promote it to current-candidate evidence.
+
+## PresentSink measurement semantics
+
+The [audited current sink](https://github.com/mistakeknot/ushas/blob/28c7de3db78635e17f36eccfbad45b3ec9e30025/src/present/sink.rs)
+shares one callback across real and interpolated drawables. It retains positive
+timestamps and aggregate counters, without source-frame ID, frame kind, view,
+configuration epoch, or drawable ID.
+
+Apple defines [`presentedTime`](https://developer.apple.com/documentation/metal/mtldrawable/presentedtime)
+as the host timestamp of reported onscreen presentation; zero means not yet
+presented or dropped. A positive value is consequently stronger evidence than
+callback receipt alone. It is Metal's presentation report, not an independent
+measurement of panel pixels, content correctness, or end-to-end input latency.
+The [`addPresentedHandler` documentation](https://developer.apple.com/documentation/metal/mtldrawable/addpresentedhandler(_:))
+describes per-drawable notification, but the inspected documentation provides
+no cross-drawable callback delivery-order guarantee.
+
+The current `inversions` counter increments when a retained positive timestamp
+is less than **or equal to** the previous retained callback's timestamp. Its
+actual meaning is **non-increasing timestamps in callback lock-acquisition
+order**. The source comment equating this to out-of-order displayed frames is
+too strong: reordered callback delivery could trigger it, while wrong
+real/interpolated content order could still have increasing timestamps and
+zero inversions. Equal timestamps also count. This audit identifies the
+semantic limitation; it does not assert observed callback reordering or alter
+the implementation.
+
+Other limits matter when interpreting a run:
+
+- `stats()` sorts the latest 480 retained timestamps and drops nonpositive
+  intervals. Its rate and interval spread describe that timestamp sample,
+  combining both frame kinds. Sorting cannot recover intended content order.
+- Callback and positive-timestamp counters use separate nonblocking locks.
+  Contention can lose either update independently, with no telemetry-loss
+  counter. `dropped` instead counts presents that could not be issued; it does
+  not account for those lost samples. Treat the counters as observed events,
+  not complete lossless accounting.
+- `committed` counts command-buffer completion callbacks, which do not prove
+  presentation. Reset clears counters and samples but retains the prior
+  timestamp; callbacks from pre-reset work can enter the new window because
+  they carry no measurement epoch.
+
+Before an ordering or precise loss-rate gate, record an intended presentation
+ordinal, real/interpolated kind, source frame/view/configuration identity,
+drawable ID, requested presentation time, reported presentation time, and CPU
+callback-receipt time. Track telemetry loss separately and attribute in-flight
+callbacks to their original measurement epoch. Compare intended order against
+reported presentation times rather than assuming callback arrival order is
+display order.
 
 ## Smallest useful repairs
 
@@ -189,3 +277,45 @@ geometry, disocclusion, real/interpolated ordering, UI, and latency on the actua
 visible output before making a product claim. An offscreen trial cannot close
 presentation gates. Preserve skips and failures; no fresh panel result is
 asserted by this document.
+
+## Current candidate disposition and remaining gates
+
+At the audited Ushas revision, the `0.5.0-rc.1` frame-interpolation path remains
+**experimental, with no fresh candidate presentation verdict**. The historical
+strong pass is preserved above. It does not transfer across the renderer,
+dependency, timing, and history changes to this candidate. Spatial/Temporal
+reconstruction now runs before postprocessing and UI, while interpolation
+retains the late presentation path; early reconstruction's native UI and HDR
+evidence does not validate that separate composition path. An offscreen
+consumer camera-cut trial or fixed-scale CPU-cadence campaign cannot close
+these presentation gates.
+
+The remaining acceptance work is bounded and separable:
+
+1. **Freeze the repaired gauge and candidate.** Satisfy the relocated invariant
+   against the exact dependency, retain executable/source/lock hashes and
+   distinct arm artifacts, and require fresh render observations. Record actual
+   display refresh, dimensions, and HDR/format configuration. Verify display
+   awake/unlocked/visible throughout; an unavailable state probe stays unknown.
+2. **Reproduce the presentation-rate comparison.** Run the single/dual arms
+   above with the same interpolation work and owned layer, first forward and
+   then reversed, with no competing GPU workload. Require positive timestamp
+   evidence and explicit measurement-window attribution. Keep callback rate,
+   timestamp cadence, telemetry loss, and render cadence separate. The
+   historical 13-check gauge needs the lower-bound and ordering limitations
+   above addressed before a stronger current acceptance claim.
+3. **Verify delivered content and latency independently.** Use identifiable
+   real/interpolated frame content and an owned-layer capture/trace to check
+   order and pacing. A physical-panel delivery or input-to-photon claim needs
+   a suitable external capture and timing reference; OS screenshots or screen
+   recording alone establish neither physical scanout nor that latency.
+4. **Check the product path.** Inspect motion/disocclusion, camera cuts and
+   history resets, native-resolution UI, HDR/exposure composition, resize,
+   occlusion/minimize, and resume on the actual output. Retain failures and
+   unavailable cases as such. Do not infer these properties from accepted
+   callbacks, zero `inversions`, or a rate near twice the render-loop rate.
+
+These gates leave the candidate usable for explicit experiments while
+withholding a production frame-generation, physical-panel, or latency claim.
+Neither dedicated MetalFX buffer timing nor the current marker envelope is a
+validated full-frame GPU cost signal or permission for autonomous adaptation.

@@ -108,16 +108,13 @@ extern "C" {
     fn CGDisplayIsAsleep(display: u32) -> i32;
 }
 
-/// Whether the main display is awake enough for presentation to mean anything.
+/// Whether CoreGraphics reports the main display as awake.
 ///
-/// This exists because presentation telemetry is silently meaningless on a
-/// sleeping or locked machine: the compositor sends nothing to a panel, so
-/// `MTLDrawable.presentedTime` stays 0 and presented-handlers never fire for
-/// *any* drawable — the engine's own included. Every configuration then measures
-/// identically zero, which reads exactly like a code defect and is not one.
-///
-/// Uniform null results across independent mechanisms are the tell. Check this
-/// before believing any of them.
+/// This does not test session lock, application visibility, or panel delivery.
+/// A sleeping or unavailable display can prevent rendering or leave presentation
+/// telemetry absent. Preserve that environmental failure instead of treating
+/// missing callbacks as a fast run or a renderer defect. An awake result still
+/// needs separate surface, image, and presentation checks.
 pub fn display_awake() -> bool {
     // SAFETY: both are pure CoreGraphics queries over a valid display ID.
     unsafe { CGDisplayIsAsleep(CGMainDisplayID()) == 0 }

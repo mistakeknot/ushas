@@ -32,12 +32,11 @@ pub struct PresentSink {
 
 #[derive(Debug, Default)]
 struct Ring {
-    /// `presentedTime` of each frame that actually reached the display, in
-    /// CoreAnimation's timebase.
+    /// Retained positive `presentedTime` reports in CoreAnimation's timebase.
     ///
-    /// Every drawable presented on the owned layer lands here — interpolated
-    /// and real alike, since one presented-handler serves both — so this is the
-    /// whole presentation record, not the synthesised half of it.
+    /// One handler serves both real and interpolated drawables on the owned
+    /// layer. Samples can be lost under lock contention; frame kind and source
+    /// identity are not retained.
     ///
     /// It is a ring: the most recent `RING_CAPACITY` samples and no more, which
     /// is the window the interval statistics are computed over. Anything that
@@ -45,7 +44,7 @@ struct Ring {
     /// length.
     presented: Vec<f64>,
     next: usize,
-    /// Frames displayed since the last reset — cumulative, unbounded.
+    /// Retained positive presentation reports since reset, cumulative.
     ///
     /// `presented.len()` saturates at `RING_CAPACITY`, so past 480 presents it
     /// reads 480 for the rest of the run while `encoded` and `callbacks` keep
@@ -56,21 +55,20 @@ struct Ring {
     /// sample dropped for contention is not counted, exactly as for
     /// `callbacks`.
     displayed: u64,
-    /// Interpolated frames skipped because no drawable was available.
+    /// Presents skipped because no drawable was available.
     dropped: u64,
     /// Presents actually encoded onto a command buffer. Distinguishes "the
     /// path never ran" from "it ran but nothing reached the display".
     encoded: u64,
-    /// Presentation callbacks received, regardless of whether the frame was
-    /// actually shown. Metal reports `presentedTime == 0` for a frame it
-    /// skipped, so callbacks-without-times is the signature of a frame that
-    /// was superseded before it reached the panel.
+    /// Retained presentation callbacks, regardless of their timestamp.
+    /// Zero `presentedTime` means not yet presented or dropped. This counter
+    /// and the positive-timestamp update can lose samples independently.
     callbacks: u64,
-    /// Completions of the command buffer the present was encoded onto. Proves
-    /// whether that buffer reaches the GPU at all.
+    /// Retained completion callbacks for the presentation command buffer.
+    /// Completion alone does not establish successful work or presentation.
     committed: u64,
-    /// Presentation callbacks that arrived with a non-increasing timestamp —
-    /// i.e. a frame reached the display out of order.
+    /// Non-increasing positive timestamps in callback lock-acquisition order.
+    /// Without frame identities this cannot establish content ordering.
     inversions: u64,
     /// Most recent presentation time seen, for inversion detection.
     last_presented: f64,
@@ -95,8 +93,8 @@ impl PresentSink {
             return;
         };
         ring.displayed += 1;
-        // A presentation timestamp that does not advance means this frame
-        // reached the display no later than the one before it.
+        // Compare callback observations, not intended frame/content order.
+        // Equal times and reordered callback delivery can both increment this.
         if ring.last_presented > 0.0 && t <= ring.last_presented {
             ring.inversions += 1;
         }
@@ -200,7 +198,7 @@ impl PresentSink {
         }
     }
 
-    /// Summarise the interpolated-frame presentation record.
+    /// Summarise retained presentation reports for both frame kinds.
     ///
     /// Returns `None` until at least two frames have been presented, since
     /// every statistic here is defined over *intervals*.
@@ -247,11 +245,12 @@ impl PresentSink {
     }
 }
 
-/// Summary of how the frames presented on the owned layer reached the display.
+/// Summary of retained presentation reports and counters for the owned layer.
 ///
-/// Every field is derived from `MTLDrawable.presentedTime` — the time the
-/// compositor reports for a frame that was really shown — not from render-loop
-/// timing, which cannot see drops or compositor decisions.
+/// Rate and interval fields derive from positive `MTLDrawable.presentedTime`
+/// reports, not render-loop timing. These are Metal's reported onscreen times,
+/// not independent panel, content-order, or input-latency measurements. Lock
+/// contention can lose telemetry, and callbacks carry no measurement epoch.
 ///
 /// One presented-handler serves every drawable this crate presents, so these
 /// cover the real frames as well as the synthesised ones and there is no
@@ -259,7 +258,8 @@ impl PresentSink {
 /// manufacture one counts the real frames twice.
 #[derive(Debug, Clone, Copy)]
 pub struct PresentStats {
-    /// Frames presented in the sample window.
+    /// Number of positive intervals used by the summary, plus one.
+    /// Duplicate or nonfinite intervals are excluded.
     pub count: usize,
     /// Rate at which frames reached the display, over the most recent 480
     /// samples: the *total* through the owned layer, real and interpolated
@@ -268,13 +268,13 @@ pub struct PresentStats {
     pub mean_interval_ms: f32,
     pub p50_interval_ms: f32,
     pub p99_interval_ms: f32,
-    /// Standard deviation of the presentation interval. Even pacing drives
-    /// this toward zero; visible judder shows up here before anywhere else.
+    /// Standard deviation of retained positive presentation intervals.
+    /// This is a pacing diagnostic, not a complete visual judder assessment.
     pub judder_ms: f32,
     /// Presents skipped for want of a drawable — either frame of a pair.
     pub dropped: u64,
-    /// Frames whose presentation timestamp did not advance — out-of-order
-    /// display. Structurally should be zero; measured rather than assumed.
+    /// Non-increasing positive timestamps in callback lock-acquisition order.
+    /// This includes equal timestamps and does not establish content order.
     pub inversions: u64,
 }
 
