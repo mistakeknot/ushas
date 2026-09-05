@@ -1,0 +1,146 @@
+{
+  "schema": 1,
+  "kind": "matched_moving_reset_quality_review",
+  "protocol": "claude-60hz-moving-cut-v2",
+  "source_revision": "9a90c3d83c71a5083bad160af7cbd445409970c1",
+  "source_status_at_build": "",
+  "binary_sha256": "29a28b2a15a0b7663c6b2d662d8cfea2861577afbf0703c22bffe83a1fc54c7d",
+  "runner_sha256": "4839e7abff54c891d643ba9271db2c0483acc24bdc2266add7eb52d9286b07fe",
+  "archive": "/Users/sma/projects/docs/ushas/evidence/claude-moving-quality-02",
+  "archive_manifest_sha256": "0b98522bcea2b74778627efe8ec48170f5130a8c22e9bf422665ddc037757794",
+  "archive_payload_files": 104,
+  "archive_payload_bytes": 126160873,
+  "environment": {
+    "gpu": "Apple M5 Max",
+    "backend": "Metal",
+    "metal_api_validation_logged": true,
+    "per_run_os_driver_thermal_metadata": null,
+    "scope": "Three sequential offscreen runs; no display, session unlock or panel claim"
+  },
+  "data_validation": {
+    "valid": true,
+    "scope": "Hash, opaque-PNG and matched render-identity audit; not a visual verdict",
+    "decoded_pngs": 69,
+    "render_proofs": 435,
+    "matched_logical_ticks": 145,
+    "camera_model_jitter_index_match": true,
+    "temporal_jitter_reset_match": true,
+    "arms": [
+      {
+        "arm": "native",
+        "mode": "Disabled",
+        "scale": 1.0,
+        "msaa_samples": 4,
+        "valid": true,
+        "render_proofs": 145,
+        "captures": 23,
+        "first_render_frame": 94,
+        "last_render_frame": 238,
+        "wall_seconds": 5.8708093340000005
+      },
+      {
+        "arm": "native-temporal",
+        "mode": "Temporal",
+        "scale": 1.0,
+        "msaa_samples": 1,
+        "valid": true,
+        "render_proofs": 145,
+        "captures": 23,
+        "first_render_frame": 325,
+        "last_render_frame": 469,
+        "wall_seconds": 5.905991208
+      },
+      {
+        "arm": "temporal-half",
+        "mode": "Temporal",
+        "scale": 0.5,
+        "msaa_samples": 1,
+        "valid": true,
+        "render_proofs": 145,
+        "captures": 23,
+        "first_render_frame": 356,
+        "last_render_frame": 500,
+        "wall_seconds": 5.848411542
+      }
+    ]
+  },
+  "author_gates": {
+    "native": {
+      "settled_readability": "pass",
+      "five_pre_cut_motion_samples": "pass",
+      "all_seventeen_post_cut_readability_and_feature_integrity": "pass",
+      "every_cut8_through_cut16_readability": "pass",
+      "immediate_cut0_native_quality": "reference",
+      "first_post_cut_readable_sample": 0,
+      "old_pose_overlay_observed": false,
+      "duplicate_contour_observed": false,
+      "missing_or_merged_facial_mark_observed": false,
+      "missing_reference_visible_rail_segment_observed": false,
+      "ui_corruption_observed": false
+    },
+    "native-temporal": {
+      "settled_readability": "pass",
+      "five_pre_cut_motion_samples": "pass",
+      "all_seventeen_post_cut_readability_and_feature_integrity": "pass",
+      "every_cut8_through_cut16_readability": "pass",
+      "immediate_cut0_native_quality": "fail",
+      "first_post_cut_readable_sample": 0,
+      "old_pose_overlay_observed": false,
+      "duplicate_contour_observed": false,
+      "missing_or_merged_facial_mark_observed": false,
+      "missing_reference_visible_rail_segment_observed": false,
+      "ui_corruption_observed": false
+    },
+    "temporal-half": {
+      "settled_readability": "pass",
+      "five_pre_cut_motion_samples": "pass",
+      "all_seventeen_post_cut_readability_and_feature_integrity": "pass",
+      "every_cut8_through_cut16_readability": "pass",
+      "immediate_cut0_native_quality": "fail",
+      "first_post_cut_readable_sample": 0,
+      "old_pose_overlay_observed": false,
+      "duplicate_contour_observed": false,
+      "missing_or_merged_facial_mark_observed": false,
+      "missing_reference_visible_rail_segment_observed": false,
+      "ui_corruption_observed": false
+    }
+  },
+  "independent_visual_review": {
+    "complete": true,
+    "reviewer": "adaptive_core independent reviewer",
+    "images_inspected": 69,
+    "gates": {
+      "native-temporal": {
+        "settled_readability": "pass",
+        "five_sampled_motion_readability": "pass",
+        "immediate_cut0_quality": "fail",
+        "all_seventeen_post_cut_feature_integrity": "pass",
+        "every_cut8_through_cut16_readability": "pass",
+        "first_narrow_feature_readability_sample": "moving-cut0",
+        "first_narrow_feature_readability_scope": "Feature legibility only. Cut0 remains unacceptable for immediate-quality equivalence because of visible reset aliasing; no exact wall-clock recovery duration or native-quality recovery point is asserted."
+      },
+      "temporal-half": {
+        "settled_readability": "pass",
+        "five_sampled_motion_readability": "pass",
+        "immediate_cut0_quality": "fail",
+        "all_seventeen_post_cut_feature_integrity": "pass",
+        "every_cut8_through_cut16_readability": "pass",
+        "first_narrow_feature_readability_sample": "moving-cut0",
+        "first_narrow_feature_readability_scope": "Feature legibility only. Cut0 remains unacceptable for immediate-quality equivalence because of visible reset aliasing; no exact wall-clock recovery duration or native-quality recovery point is asserted."
+      }
+    },
+    "archive_record": "review/independent-inspection.json",
+    "archive_record_sha256": "e36e483ee2cc041a2556dc1945d5a14ecc462f54b54a1150cfa6411ddf775aad",
+    "recorded_before_reading_author_verdict": true,
+    "blinded": false
+  },
+  "quality_decision": "Both independent reviewers accept this bounded moving sequence for readability and every cut8..16 recovery state. Immediate-cut native quality fails both Temporal arms; half has stronger reset aliasing and residual softness. This is fixture-specific conditional acceptance.",
+  "limitations": [
+    "One short deterministic sequence, not continuous real-time video",
+    "No adaptive transitions, HDR, GPU-cost or presentation acceptance",
+    "No general consumer enablement recommendation",
+    "Readability at cut0 is not native-quality recovery",
+    "Temporal half remains softer than native controls; reset aliasing is stronger at half"
+  ],
+  "reviewer_gate_disagreements": []
+}
