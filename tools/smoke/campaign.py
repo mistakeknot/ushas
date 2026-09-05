@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
-"""Serial fixed-scale smoke campaign and paired run-level CPU-loop analysis.
+"""Serial fixed-scale smoke campaign with separate CPU-loop and completion modes.
 
 Default: Claude, offscreen 1280x720, five arms, three loads, four repetitions,
 4s warmup + 6s measurement. No experimental timestamps unless explicitly requested.
+Opt-in --completion measures serial completed-render cadence with frame fences.
 Use --dry-run to inspect commands or --analyze-existing DIR for read-only analysis.
 """
 import argparse
@@ -46,8 +47,10 @@ def digest(path):
 
 
 def make_plan(binary, directory, loads=(0, 8000, 20000), warmup=4, seconds=6,
-              timeout=90, experimental=False):
+              timeout=90, experimental=False, completion=False):
     binary, directory = binary.resolve(), directory.resolve()
+    if completion and experimental:
+        raise ValueError('completion campaigns cannot include experimental timestamps')
     if (not 1 <= len(loads) <= 4 or len(set(loads)) != len(loads)
             or any(type(load) is not int or not 0 <= load <= 100000 for load in loads)):
         raise ValueError('loads must be one to four unique integers in 0..100000')
@@ -76,6 +79,8 @@ def make_plan(binary, directory, loads=(0, 8000, 20000), warmup=4, seconds=6,
                     arguments.append('--native-aa')
                 if experimental:
                     arguments.append('--experimental-timing')
+                if completion:
+                    arguments.append('--completion')
                 expected = {'subject': 'claude', 'offscreen': True, 'render_target': 'image',
                             'mode': mode, 'initial_scale': float(scale), 'final_scale': float(scale),
                             'native_aa': native_aa, 'width': 1280, 'height': 720,
@@ -83,12 +88,14 @@ def make_plan(binary, directory, loads=(0, 8000, 20000), warmup=4, seconds=6,
                             'cpu_delay_ms': 0, 'moving': False, 'hdr': False,
                             'adaptive_requested': False, 'lifecycle': None, 'target_fps': 60.0,
                             'minimum_scale': .5, 'presentation_requested': 'unavailable_offscreen'}
+                if completion:
+                    expected['completion_requested'] = True
                 jobs.append({'id': identity, 'repetition': repetition, 'load': load, 'arm': arm,
                              'position': position, 'output': str(output), 'expected': expected,
                              'arguments': arguments,
                              'argv': [sys.executable, str(RUNNER), '--timeout', str(timeout),
                                       '--binary', str(binary), '--', *arguments]})
-    return {'schema': 1, 'binary': str(binary), 'binary_sha256': digest(binary),
+    plan = {'schema': 1, 'binary': str(binary), 'binary_sha256': digest(binary),
             'campaign_script_sha256': digest(Path(__file__)),
             'runner_sha256': digest(RUNNER), 'run_dir': str(directory), 'loads': list(loads),
             'repetitions': REPETITIONS, 'warmup_s': warmup, 'measurement_s': seconds,
@@ -98,6 +105,9 @@ def make_plan(binary, directory, loads=(0, 8000, 20000), warmup=4, seconds=6,
             'order': 'Two forward/reverse pairs for arm and load order; the second pair rotates the base order. '
                      'Every arm/load combination has the same mean global position over four independent runs.',
             'jobs': jobs}
+    if completion:
+        plan['completion'] = True
+    return plan
 
 
 def paired_summary(ratios):
@@ -146,11 +156,103 @@ def marker_summary(report, requested):
             'scope': 'Experimental elapsed marker envelope; not GPU busy cost or panel delivery.'}
 
 
+def completion_metric(report, job):
+    """Validate the retained fence ledger before deriving one run-level metric."""
+    def require(condition, message):
+        if not condition:
+            raise ValueError('serial completion: ' + message)
+
+    def number(value, positive=False):
+        return (type(value) in (int, float) and math.isfinite(value)
+                and (value > 0 if positive else value >= 0))
+
+    serial = report.get('serial_completion')
+    require(isinstance(serial, dict), 'missing or malformed ledger')
+    require(serial.get('errors') == [] and 'in_flight' in serial and serial['in_flight'] is None,
+            'errors or an unfinished frame remain')
+    require(type(serial.get('max_render_frames_in_flight')) is int
+            and serial['max_render_frames_in_flight'] == 1, 'rendering was not serial')
+    epochs, frames = serial.get('epochs'), serial.get('frames')
+    phases = {1: 'Warmup', 2: 'Measure', 3: 'Drain'}
+    require(isinstance(epochs, list) and len(epochs) == 3, 'missing drained epoch closure')
+    require(isinstance(frames, list) and 20 <= len(frames) <= 65_536, 'invalid retained frame list')
+    previous_drain = 0
+    for index, epoch in enumerate(epochs, 1):
+        require(isinstance(epoch, dict) and type(epoch.get('epoch')) is int
+                and epoch['epoch'] == index and epoch.get('phase') == phases[index],
+                'epoch identity or order mismatch')
+        start, end = epoch.get('drain_started_ms'), epoch.get('drain_completed_ms')
+        require(number(start) and number(end) and previous_drain <= start <= end,
+                'invalid epoch drain timestamps')
+        previous_drain = end
+    grouped = {epoch: [] for epoch in phases}
+    previous_frame, previous_epoch, previous_callback = -1, 1, 0
+    for frame in frames:
+        require(isinstance(frame, dict), 'malformed frame record')
+        epoch, identity = frame.get('epoch'), frame.get('frame_id')
+        require(type(epoch) is int and epoch in phases and epoch >= previous_epoch
+                and frame.get('phase') == phases[epoch], 'frame epoch mismatch')
+        require(type(identity) is int and identity > previous_frame, 'frame identity did not advance')
+        admitted, callback = frame.get('admitted_ms'), frame.get('callback_observed_ms')
+        require(number(admitted) and number(callback) and previous_callback <= admitted <= callback,
+                'missing callback or overlapping frame intervals')
+        require(epochs[epoch - 1]['drain_completed_ms'] <= admitted,
+                'frame began before its epoch drained')
+        require(epoch == 3 or callback <= epochs[epoch]['drain_started_ms'],
+                'next epoch began before the frame completed')
+        require(type(frame.get('qualified')) is bool, 'invalid frame qualification')
+        grouped[epoch].append(frame)
+        previous_frame, previous_epoch, previous_callback = identity, epoch, callback
+    for epoch in epochs:
+        records = grouped[epoch['epoch']]
+        count, qualified = epoch.get('completed_frame_fences'), epoch.get('qualified_render_frames')
+        require(type(count) is int and count == len(records) and type(qualified) is int
+                and qualified == sum(frame['qualified'] for frame in records), 'counter/record mismatch')
+    measured, measurement = grouped[2], epochs[1]
+    require(len(measured) >= 20 and measurement.get('valid') is True
+            and all(frame['qualified'] and frame.get('failure') is None for frame in measured),
+            'measurement is invalid or has fewer than twenty qualified frames')
+    camera = report.get('camera')
+    require(isinstance(camera, dict) and type(camera.get('entity')) is int, 'missing camera identity')
+    expected = job['expected']
+    expected_mode = expected['mode'].capitalize()
+    expected_content = [math.floor(n * expected['initial_scale'] + .5) for n in (1280, 720)]
+    first_scope = None
+    for frame in measured:
+        scope, effect = frame.get('scope'), frame.get('effect')
+        require(isinstance(scope, dict) and isinstance(effect, dict), 'missing frame/effect scope')
+        require(type(scope.get('view_id')) is int and scope['view_id'] == camera['entity']
+                and isinstance(scope.get('image_target'), str) and bool(scope['image_target'])
+                and scope.get('mode') == expected_mode
+                and matches(scope.get('scale'), expected['initial_scale'])
+                and scope.get('output_size') == [1280, 720]
+                and scope.get('content_size') == expected_content, 'frame scope differs from the planned arm')
+        if first_scope is None:
+            first_scope = scope
+        require(scope == first_scope, 'view or image target changed within measurement')
+        require(type(effect.get('frame_id')) is int and effect['frame_id'] == frame['frame_id']
+                and effect.get('scope') == scope and effect.get('ready') is True
+                and effect.get('state') == ('Disabled' if expected_mode == 'Disabled' else 'OutputWritten'),
+                'effect evidence does not match its completed frame')
+    elapsed = (measured[-1]['callback_observed_ms'] - measured[0]['admitted_ms']) / 1000
+    seconds, fps = measurement.get('elapsed_seconds'), measurement.get('completed_render_fps')
+    require(number(elapsed, True) and number(seconds, True) and number(fps, True),
+            'missing positive finite elapsed time or completed rate')
+    require(math.isclose(seconds, elapsed, rel_tol=1e-8, abs_tol=1e-9)
+            and math.isclose(fps, len(measured) / seconds, rel_tol=1e-8, abs_tol=1e-9),
+            'completed rate or duration disagrees with the fence records')
+    return {'epoch': 2, 'closed_by_epoch': 3, 'completed_frame_fences': len(measured),
+            'qualified_render_frames': len(measured), 'elapsed_seconds': seconds,
+            'completed_render_fps': fps, 'mean_completed_render_ms': 1000 / fps}
+
+
 def inspect_run(plan, job, result):
     row = {key: job[key] for key in ('id', 'repetition', 'load', 'arm', 'position', 'output')}
     errors = []
     row.update({'errors': errors, 'mean_loop_ms': None, 'loop_samples': None,
                 'experimental_markers': marker_summary({}, plan['experimental_timing'])})
+    if plan.get('completion', False):
+        row.update({'mean_completed_render_ms': None, 'serial_completion': None})
     if result is None or result.get('wrapper_exit_code') != 0:
         errors.append('run was not attempted successfully; see campaign execution record')
     output = Path(job['output'])
@@ -221,6 +323,17 @@ def inspect_run(plan, job, result):
     row['experimental_markers'] = marker_summary(report, plan['experimental_timing'])
     if not plan['experimental_timing'] and report.get('experimental_timing') is not None:
         errors.append('unexpected timestamp instrumentation in the throughput campaign')
+    requested_completion = report.get('completion_requested', False)
+    if type(requested_completion) is not bool or requested_completion != plan.get('completion', False):
+        errors.append('completion mode differs from the campaign plan')
+    if plan.get('completion', False):
+        try:
+            row['serial_completion'] = completion_metric(report, job)
+            row['mean_completed_render_ms'] = row['serial_completion']['mean_completed_render_ms']
+        except ValueError as error:
+            errors.append(str(error))
+    elif report.get('serial_completion') is not None:
+        errors.append('unexpected completion instrumentation in the CPU-loop campaign')
     fingerprint = {key: report.get(key) for key in ('source_revision', 'source_dirty_at_build',
                    'subject', 'scene_version', 'adapter')}
     fingerprint['runtime'] = {key: environment.get(key) for key in ('rustc', 'features', 'os', 'metal_debug_layer')}
@@ -244,6 +357,13 @@ def analyze(state):
     plan, results = state['plan'], state.get('results', [])
     jobs = plan['jobs']
     global_errors = []
+    completion = plan.get('completion', False)
+    if type(completion) is not bool:
+        raise ValueError('completion mode must be a boolean')
+    if completion and plan['experimental_timing']:
+        global_errors.append('completion and experimental timing cannot share a campaign')
+    if any(job['arguments'].count('--completion') != int(completion) for job in jobs):
+        global_errors.append('completion launch modes differ within the campaign')
     expected_keys = {(load, repetition, arm[0]) for load in plan['loads']
                      for repetition in range(REPETITIONS) for arm in ARMS}
     actual_keys = [(j['load'], j['repetition'], j['arm']) for j in jobs]
@@ -277,9 +397,12 @@ def analyze(state):
                 comparison.update({'paired_runs': sum(not a['errors'] and not b['errors'] for a, b in pairs),
                                    'mean_ratio': None, 'ratio_ci95': None, 'decision': 'incomplete_or_invalid'})
             else:
-                comparison.update(paired_summary([b['mean_loop_ms'] / a['mean_loop_ms'] for a, b in pairs]))
+                metric = 'mean_completed_render_ms' if completion else 'mean_loop_ms'
+                comparison.update(paired_summary([b[metric] / a[metric] for a, b in pairs]))
+                if completion:
+                    comparison['mean_completed_render_time_reduction'] = comparison.pop('mean_loop_time_reduction')
             comparisons.append(comparison)
-    return {'schema': 1, 'valid': all(not row['errors'] for row in rows),
+    analysis = {'schema': 1, 'valid': all(not row['errors'] for row in rows),
             'scope': 'Paired run-level mean CPU-loop time ratios, candidate/native-MSAA4; lower is faster. '
                      'These are not GPU cost, GPU completion rate, or panel delivery measurements.',
             'limitations': ['Four repetitions provide limited uncertainty resolution.',
@@ -294,6 +417,17 @@ def analyze(state):
                                           for row in rows if 'runner_checkout' in row}) > 1,
             'errors': global_errors, 'planned_runs': len(jobs), 'execution_records': len(results),
             'runs': rows, 'comparisons': comparisons}
+    if completion:
+        analysis['completion'] = True
+        analysis['scope'] = ('Paired run-level serial completed-render time ratios, candidate/native-MSAA4; '
+                             'each run uses 1000/completed_render_fps. Lower is faster. '
+                             'Includes CPU preparation, scheduling, callback delivery and polling; '
+                             'not normal pipelined FPS, GPU busy cost, GPU hardware latency or presentation.')
+        analysis['limitations'][2:4] = [
+            'Every admitted render frame is drained before the next; this deliberately disables rendering overlap.',
+            'Elapsed time spans first measured admission to last measured callback, including interframe CPU gaps.',
+            'Completion fences and matching render evidence establish completed-view cadence, not a GPU busy-time signal.']
+    return analysis
 
 
 def run_job(job, deadline):
@@ -391,6 +525,8 @@ def main(argv=None):
     parser.add_argument('--timeout', type=float, default=90)
     parser.add_argument('--experimental-timing', action='store_true',
                         help='separate instrumented control; markers remain unvalidated')
+    parser.add_argument('--completion', action='store_true',
+                        help='serial offscreen completed-render campaign; incompatible with experimental timestamps')
     args = parser.parse_args(argv)
     previous_sigterm = signal.getsignal(signal.SIGTERM)
 
@@ -400,6 +536,8 @@ def main(argv=None):
     signal.signal(signal.SIGTERM, interrupted)
     try:
         if args.analyze_existing:
+            if args.completion or args.experimental_timing:
+                raise ValueError('existing analysis uses its retained mode; omit instrumentation flags')
             result = analyze(load_object(args.analyze_existing / 'campaign.json'))
             print(json.dumps(result, indent=2))
             return 0 if result['valid'] else 1
@@ -407,7 +545,7 @@ def main(argv=None):
             'ushas-campaign-' + datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ-') + uuid.uuid4().hex[:8])
         loads = tuple(int(value) for value in args.loads.split(','))
         plan = make_plan(args.binary, directory, loads, args.warmup, args.seconds,
-                         args.timeout, args.experimental_timing)
+                         args.timeout, args.experimental_timing, args.completion)
         if args.dry_run:
             print(json.dumps(plan, indent=2))
             return 0
@@ -680,6 +818,145 @@ class CampaignTests(unittest.TestCase):
         for ratios in ([.8] * 3, [.8, .8, 0, .8], [.8, .8, float('nan'), .8]):
             with self.subTest(ratios=ratios), self.assertRaises(ValueError):
                 paired_summary(ratios)
+
+    def completion_fixture(self):
+        import copy
+        state = self.fixture()
+        state['plan']['completion'] = True
+        for job in state['plan']['jobs']:
+            job['arguments'].append('--completion')
+            job['argv'].append('--completion')
+            job['expected']['completion_requested'] = True
+            period = 10 if job['arm'] == ARMS[0][0] else 5
+            scope = {'view_id': 7, 'image_target': 'image:test',
+                     'mode': job['expected']['mode'].capitalize(), 'scale': job['expected']['initial_scale'],
+                     'content_size': [math.floor(n * job['expected']['initial_scale'] + .5) for n in (1280, 720)],
+                     'output_size': [1280, 720]}
+            frames = [{'epoch': 2, 'phase': 'Measure', 'frame_id': i + 10,
+                       'scope': copy.deepcopy(scope), 'admitted_ms': 100 + i * period,
+                       'callback_observed_ms': 100 + (i + 1) * period,
+                       'qualified': True, 'failure': None,
+                       'effect': {'frame_id': i + 10, 'scope': copy.deepcopy(scope), 'ready': True,
+                                  'state': 'Disabled' if scope['mode'] == 'Disabled' else 'OutputWritten',
+                                  'reason': 'ModeDisabled' if scope['mode'] == 'Disabled' else None}}
+                      for i in range(20)]
+            epochs = [{'epoch': epoch, 'phase': phase, 'drain_started_ms': at,
+                       'drain_completed_ms': at + 1, 'completed_frame_fences': 0,
+                       'qualified_render_frames': 0, 'elapsed_seconds': None,
+                       'completed_render_fps': None, 'valid': False}
+                      for epoch, phase, at in [(1, 'Warmup', 0), (2, 'Measure', 10),
+                                                (3, 'Drain', 101 + 20 * period)]]
+            epochs[1].update({'completed_frame_fences': 20, 'qualified_render_frames': 20,
+                              'elapsed_seconds': period * 20 / 1000,
+                              'completed_render_fps': 1000 / period, 'valid': True})
+            serial = {'max_render_frames_in_flight': 1, 'errors': [], 'in_flight': None,
+                      'epochs': epochs, 'frames': frames}
+            self.rewrite_report(job, lambda report: report.update({
+                'completion_requested': True, 'serial_completion': serial,
+                'camera': {**report['camera'], 'entity': 7},
+                'environment': {**report['environment'], 'arguments': job['arguments']}}))
+            path = Path(job['output'] + '.manifest.json')
+            manifest = load_object(path)
+            manifest['argv'] = [state['plan']['binary'], *job['arguments']]
+            path.write_text(json.dumps(manifest))
+        return state
+
+    def test_completion_ratios_use_closed_fences_instead_of_cpu_loop_means(self):
+        result = analyze(self.completion_fixture())
+        self.assertTrue(result['valid'])
+        for comparison in result['comparisons']:
+            self.assertEqual(comparison['mean_ratio'], .5)
+            self.assertEqual(comparison['ratio_ci95'], [.5, .5])
+            self.assertEqual(comparison['mean_completed_render_time_reduction'], .5)
+            self.assertNotIn('mean_loop_time_reduction', comparison)
+        self.assertEqual(result['runs'][1]['mean_loop_ms'], 7)
+        self.assertEqual(result['runs'][1]['mean_completed_render_ms'], 5)
+
+    def test_completion_rejects_missing_invalid_undrained_or_malformed_evidence(self):
+        def nineteen_frames(report):
+            serial = report['serial_completion']
+            serial['frames'].pop()
+            elapsed = (serial['frames'][-1]['callback_observed_ms'] - serial['frames'][0]['admitted_ms']) / 1000
+            serial['epochs'][1].update({'completed_frame_fences': 19, 'qualified_render_frames': 19,
+                                        'elapsed_seconds': elapsed, 'completed_render_fps': 19 / elapsed})
+
+        changes = {
+            'absent': lambda r: r.pop('serial_completion'),
+            'malformed': lambda r: r.update({'serial_completion': []}),
+            'invalid': lambda r: r['serial_completion']['epochs'][1].update({'valid': False}),
+            'undrained': lambda r: r['serial_completion']['epochs'].pop(),
+            'inflight': lambda r: r['serial_completion'].update({'in_flight': {}}),
+            'parallel': lambda r: r['serial_completion'].update({'max_render_frames_in_flight': 2}),
+            'error': lambda r: r['serial_completion'].update({'errors': ['poll failure']}),
+            'fence_count': lambda r: r['serial_completion']['epochs'][1].update({'completed_frame_fences': 21}),
+            'counter_type': lambda r: r['serial_completion']['epochs'][1].update({'completed_frame_fences': 20.0}),
+            'too_few': nineteen_frames,
+            'qualified_count': lambda r: r['serial_completion']['epochs'][1].update({'qualified_render_frames': 19}),
+            'rate': lambda r: r['serial_completion']['epochs'][1].update({'completed_render_fps': 1}),
+            'zero_rate': lambda r: r['serial_completion']['epochs'][1].update({'completed_render_fps': 0}),
+            'nan_rate': lambda r: r['serial_completion']['epochs'][1].update({'completed_render_fps': float('nan')}),
+            'elapsed': lambda r: r['serial_completion']['epochs'][1].update({'elapsed_seconds': .001}),
+            'null_frame': lambda r: r['serial_completion']['frames'].__setitem__(0, None),
+            'duplicate': lambda r: r['serial_completion']['frames'][1].update({'frame_id': 10}),
+            'overlap': lambda r: r['serial_completion']['frames'][1].update({'admitted_ms': 101}),
+            'scope': lambda r: r['serial_completion']['frames'][0]['scope'].update({'view_id': 9}),
+            'proof': lambda r: r['serial_completion']['frames'][0]['effect'].update({'frame_id': 11}),
+            'not_ready': lambda r: r['serial_completion']['frames'][0]['effect'].update({'ready': False}),
+            'early_drain': lambda r: r['serial_completion']['epochs'][2].update({'drain_started_ms': 101}),
+            'mixed_request': lambda r: r.update({'completion_requested': False}),
+            'mixed_timing': lambda r: r.update({'experimental_timing': {}}),
+        }
+        for name, change in changes.items():
+            with self.subTest(case=name):
+                state = self.completion_fixture()
+                self.rewrite_report(state['plan']['jobs'][1], change)
+                result = analyze(state)
+                self.assertFalse(result['valid'])
+                self.assertEqual(result['comparisons'][0]['decision'], 'incomplete_or_invalid')
+                self.assertEqual(len(result['runs']), 20)
+
+    def test_cpu_campaign_rejects_completion_instrumentation(self):
+        state = self.fixture()
+        self.rewrite_report(state['plan']['jobs'][1], lambda r: r.update({'completion_requested': True}))
+        self.assertFalse(analyze(state)['valid'])
+
+    def test_completion_plan_is_opt_in_and_cannot_mix_experimental_timing(self):
+        plan = make_plan(Path('/missing/binary'), Path('/tmp/unused-completion'), completion=True)
+        self.assertTrue(plan['completion'])
+        self.assertEqual(len(plan['jobs']), 60)
+        for job in plan['jobs']:
+            self.assertIn('--completion', job['arguments'])
+            self.assertNotIn('--experimental-timing', job['arguments'])
+        with self.assertRaises(ValueError):
+            make_plan(Path('/missing/binary'), Path('/tmp/unused-completion'), completion=True, experimental=True)
+
+    def test_completion_dry_run_has_no_process_or_evidence_side_effects(self):
+        from unittest import mock
+        import contextlib
+        import io
+        import tempfile
+        with tempfile.TemporaryDirectory(prefix='completion dry run ') as temporary:
+            directory = Path(temporary) / 'must-not-exist'
+            output = io.StringIO()
+            with mock.patch.object(subprocess, 'Popen', side_effect=AssertionError('must not launch')):
+                with contextlib.redirect_stdout(output):
+                    code = main(['--completion', '--dry-run', '--run-dir', str(directory),
+                                 '--binary', str(Path(temporary) / 'missing-binary')])
+            self.assertEqual(code, 0)
+            self.assertFalse(directory.exists())
+            plan = json.loads(output.getvalue())
+            self.assertEqual(len(plan['jobs']), 60)
+            self.assertTrue(all('--completion' in job['arguments'] for job in plan['jobs']))
+
+    def test_existing_analysis_cannot_be_reinterpreted_with_a_mode_flag(self):
+        import contextlib
+        import io
+        state = self.fixture()
+        directory = Path(state['plan']['run_dir'])
+        (directory / 'campaign.json').write_text(json.dumps(state))
+        with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+            code = main(['--analyze-existing', str(directory), '--completion'])
+        self.assertEqual(code, 1)
 
 
 if __name__ == '__main__':
