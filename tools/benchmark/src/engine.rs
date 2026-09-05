@@ -167,7 +167,42 @@ struct MainOutcome {
     evicted_stress_samples: u64,
 }
 
+/// Prevent only user-idle sleep while a renderer is running. This local guard
+/// survives App::run's ownership transfer and releases the exact activity token
+/// on a normal return or Rust unwind; it changes no persistent power settings.
+#[cfg(target_os = "macos")]
+struct IdleSleepActivity {
+    process: objc2::rc::Retained<objc2_foundation::NSProcessInfo>,
+    token:
+        objc2::rc::Retained<objc2::runtime::ProtocolObject<dyn objc2::runtime::NSObjectProtocol>>,
+}
+
+#[cfg(target_os = "macos")]
+impl IdleSleepActivity {
+    fn begin() -> Self {
+        use objc2_foundation::{NSActivityOptions, NSProcessInfo, NSString};
+        let process = NSProcessInfo::processInfo();
+        let token = process.beginActivityWithOptions_reason(
+            NSActivityOptions::IdleDisplaySleepDisabled
+                | NSActivityOptions::IdleSystemSleepDisabled,
+            &NSString::from_str("Ushas Bench active render workload"),
+        );
+        Self { process, token }
+    }
+}
+
+#[cfg(target_os = "macos")]
+impl Drop for IdleSleepActivity {
+    fn drop(&mut self) {
+        // SAFETY: token is the retained object returned by this process's
+        // beginActivity call. The non-Clone guard ends it exactly once.
+        unsafe { self.process.endActivity(&self.token) };
+    }
+}
+
 pub fn run(config: RunConfig) -> EngineResult {
+    #[cfg(target_os = "macos")]
+    let _idle_sleep_activity = IdleSleepActivity::begin();
     let shared = Shared::default();
     let captures = CaptureResults::default();
     let origin = Instant::now();
@@ -377,6 +412,7 @@ pub fn run(config: RunConfig) -> EngineResult {
         "output_physical_pixels":[config.width,config.height],
         "stress_retention":{"maximum_samples":8192,"evicted_completed_samples":evicted_stress_samples,"retained_completed_cohort_details":8},
         "adapter":data.adapter,"platform":platform(),"cohorts":cohort_records,"readiness":data.readiness,
+        "idle_sleep_prevention":{"requested":cfg!(target_os="macos"),"mechanism":"NSProcessInfo scoped activity","options":["IdleDisplaySleepDisabled","IdleSystemSleepDisabled"],"scope":"engine lifetime; no persistent OS setting changes; does not prevent explicit user sleep or lock"},
         "capture_scope":"separate deterministic image-target replay; no capture in scored intervals"});
     result.captures = captures.0.lock().expect("capture results poisoned").clone();
     for capture in &mut result.captures {
