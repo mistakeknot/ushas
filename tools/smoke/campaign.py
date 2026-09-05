@@ -30,6 +30,20 @@ ARMS = (
     ("temporal-third", "temporal", "0.3333333333333333", False),
     ("bilinear-half", "disabled", "0.5", False),
 )
+MIDDLE_ARMS = (
+    ("native-disabled-msaa4", "disabled", "1", True),
+    ("temporal-quality", "temporal", "0.6666666666666666", False),
+    ("temporal-balanced", "temporal", "0.58", False),
+    ("bilinear-quality", "disabled", "0.6666666666666666", False),
+    ("bilinear-balanced", "disabled", "0.58", False),
+)
+MIDDLE_BUDGET = {
+    'fps': 60.0, 'milliseconds': 1000 / 60, 'minimum_scale': .5,
+    'metric': 'equal-weight run-level mean serial completed-render milliseconds',
+    'criterion': 'upper pointwise 95% bootstrap bound <= budget milliseconds',
+    'tails': 'completion_budget.py reports nearest-rank P95/P99 and strict > budget misses separately',
+    'quality': 'requires separate matched image review; mean budget is not smooth pacing',
+}
 REPETITIONS = 4
 BOOTSTRAP_SEED = 21434
 BOOTSTRAP_DRAWS = 10000
@@ -47,8 +61,11 @@ def digest(path):
 
 
 def make_plan(binary, directory, loads=(0, 8000, 20000), warmup=4, seconds=6,
-              timeout=90, experimental=False, completion=False):
+              timeout=90, experimental=False, completion=False, middle_presets=False):
     binary, directory = binary.resolve(), directory.resolve()
+    if middle_presets and (not completion or experimental or tuple(loads) != (8000,)):
+        raise ValueError('middle presets require completion, no timestamps, and only load 8000')
+    selected_arms = MIDDLE_ARMS if middle_presets else ARMS
     if completion and experimental:
         raise ValueError('completion campaigns cannot include experimental timestamps')
     if (not 1 <= len(loads) <= 4 or len(set(loads)) != len(loads)
@@ -65,8 +82,8 @@ def make_plan(binary, directory, loads=(0, 8000, 20000), warmup=4, seconds=6,
         if repetition % 2:
             load_order = tuple(reversed(load_order))
         for load in load_order:
-            arm_offset = (pair + loads.index(load)) % len(ARMS)
-            arms = (*ARMS[arm_offset:], *ARMS[:arm_offset])
+            arm_offset = (pair + loads.index(load)) % len(selected_arms)
+            arms = (*selected_arms[arm_offset:], *selected_arms[:arm_offset])
             if repetition % 2:
                 arms = tuple(reversed(arms))
             for position, (arm, mode, scale, native_aa) in enumerate(arms):
@@ -107,7 +124,62 @@ def make_plan(binary, directory, loads=(0, 8000, 20000), warmup=4, seconds=6,
             'jobs': jobs}
     if completion:
         plan['completion'] = True
+    if middle_presets:
+        plan.update({'profile': 'middle-presets-v1', 'arms': [list(arm) for arm in selected_arms],
+                     'budget': dict(MIDDLE_BUDGET)})
     return plan
+
+
+
+def retained_arms(plan):
+    """Legacy plans retain their historical arms; a named profile records its own."""
+    if 'profile' not in plan:
+        if 'arms' in plan or 'budget' in plan:
+            raise ValueError('arm or budget overrides require a named retained profile')
+        return ARMS
+    if (plan['profile'] != 'middle-presets-v1' or plan.get('completion') is not True
+            or plan.get('experimental_timing') is not False or plan.get('loads') != [8000]
+            or plan.get('repetitions') != REPETITIONS
+            or plan.get('arms') != [list(arm) for arm in MIDDLE_ARMS]
+            or plan.get('budget') != MIDDLE_BUDGET):
+        raise ValueError('invalid or mixed middle-preset plan')
+    # Read identities/parameters from the retained plan, never an active global selection.
+    arms = tuple(tuple(arm) for arm in plan['arms'])
+    by_name = {arm[0]: arm for arm in arms}
+    for job in plan['jobs']:
+        arm = by_name.get(job['arm'])
+        if arm is None:
+            raise ValueError('unplanned middle-preset arm')
+        _, mode, scale, native_aa = arm
+        expected = job['expected']
+        required = {'mode': mode, 'initial_scale': float(scale), 'final_scale': float(scale),
+                    'native_aa': native_aa, 'completion_requested': True,
+                    'width': 1280, 'height': 720, 'pixel_iterations': 8000,
+                    'target_fps': 60.0, 'minimum_scale': .5, 'adaptive_requested': False,
+                    'offscreen': True, 'render_target': 'image', 'subject': 'claude',
+                    'moving': False, 'hdr': False, 'lifecycle': None, 'cpu_delay_ms': 0}
+        if any(not matches(expected.get(key), value) for key, value in required.items()):
+            raise ValueError('middle-preset arm configuration differs from its retained definition')
+    return arms
+
+
+def mean_budget_summary(arm, rows, budget_ms):
+    failures = [row['id'] for row in rows if row['errors']]
+    summary = {'arm': arm, 'budget_ms': budget_ms, 'failed_or_missing_runs': failures,
+               'per_run': [{'id': row['id'], 'mean_completed_render_ms': row['mean_completed_render_ms']}
+                           for row in rows if not row['errors']]}
+    if failures or len(rows) != REPETITIONS:
+        return {**summary, 'mean_completed_render_ms': None, 'mean_ci95_ms': None,
+                'decision': 'incomplete_or_invalid'}
+    means = [row['mean_completed_render_ms'] for row in rows]
+    rng = random.Random(BOOTSTRAP_SEED)
+    samples = sorted(statistics.mean(rng.choices(means, k=REPETITIONS))
+                     for _ in range(BOOTSTRAP_DRAWS))
+    low, high = (samples[round((len(samples) - 1) * q)] for q in (.025, .975))
+    decision = ('meets_mean_budget' if high <= budget_ms else
+                'misses_mean_budget' if low > budget_ms else 'uncertain_mean_budget')
+    return {**summary, 'mean_completed_render_ms': statistics.mean(means),
+            'mean_ci95_ms': [low, high], 'decision': decision}
 
 
 def paired_summary(ratios):
@@ -356,6 +428,7 @@ def inspect_run(plan, job, result):
 def analyze(state):
     plan, results = state['plan'], state.get('results', [])
     jobs = plan['jobs']
+    arms = retained_arms(plan)
     global_errors = []
     completion = plan.get('completion', False)
     if type(completion) is not bool:
@@ -365,7 +438,7 @@ def analyze(state):
     if any(job['arguments'].count('--completion') != int(completion) for job in jobs):
         global_errors.append('completion launch modes differ within the campaign')
     expected_keys = {(load, repetition, arm[0]) for load in plan['loads']
-                     for repetition in range(REPETITIONS) for arm in ARMS}
+                     for repetition in range(REPETITIONS) for arm in arms}
     actual_keys = [(j['load'], j['repetition'], j['arm']) for j in jobs]
     if set(actual_keys) != expected_keys or len(actual_keys) != len(expected_keys):
         raise ValueError('campaign plan must contain every arm/load/repetition exactly once')
@@ -386,12 +459,16 @@ def analyze(state):
             row['errors'].extend(global_errors)
     by_pair = {(row['load'], row['repetition'], row['arm']): row for row in rows}
     comparisons = []
+    comparison_arms = [(arms[0][0], arm[0]) for arm in arms[1:]]
+    if plan.get('profile') == 'middle-presets-v1':
+        comparison_arms += [('bilinear-quality', 'temporal-quality'),
+                            ('bilinear-balanced', 'temporal-balanced')]
     for load in plan['loads']:
-        for arm, *_ in ARMS[1:]:
-            pairs = [(by_pair[(load, repetition, ARMS[0][0])], by_pair[(load, repetition, arm)])
+        for baseline, arm in comparison_arms:
+            pairs = [(by_pair[(load, repetition, baseline)], by_pair[(load, repetition, arm)])
                      for repetition in range(REPETITIONS)]
             failures = [row['id'] for pair in pairs for row in pair if row['errors']]
-            comparison = {'load': load, 'baseline': ARMS[0][0], 'candidate': arm,
+            comparison = {'load': load, 'baseline': baseline, 'candidate': arm,
                           'failed_or_missing_runs': failures}
             if failures:
                 comparison.update({'paired_runs': sum(not a['errors'] and not b['errors'] for a, b in pairs),
@@ -427,6 +504,13 @@ def analyze(state):
             'Every admitted render frame is drained before the next; this deliberately disables rendering overlap.',
             'Elapsed time spans first measured admission to last measured callback, including interframe CPU gaps.',
             'Completion fences and matching render evidence establish completed-view cadence, not a GPU busy-time signal.']
+    if plan.get('profile') == 'middle-presets-v1':
+        analysis.update({'profile': plan['profile'], 'arms': plan['arms'], 'budget': plan['budget'],
+                         'mean_budget': [mean_budget_summary(arm[0],
+                             [by_pair[(8000, repetition, arm[0])] for repetition in range(REPETITIONS)],
+                             plan['budget']['milliseconds']) for arm in arms]})
+        analysis['scope'] = analysis['scope'].replace('candidate/native-MSAA4;',
+            'candidate/declared-baseline (native MSAA4 or same-resolution bilinear);')
     return analysis
 
 
@@ -519,7 +603,7 @@ def main(argv=None):
     action.add_argument('--analyze-existing', type=Path)
     parser.add_argument('--run-dir', type=Path)
     parser.add_argument('--binary', type=Path, default=RUNNER.parent / 'target/release/ushas-smoke')
-    parser.add_argument('--loads', default='0,8000,20000')
+    parser.add_argument('--loads', help='default 0,8000,20000; middle presets require only 8000')
     parser.add_argument('--warmup', type=float, default=4)
     parser.add_argument('--seconds', type=float, default=6)
     parser.add_argument('--timeout', type=float, default=90)
@@ -527,6 +611,8 @@ def main(argv=None):
                         help='separate instrumented control; markers remain unvalidated')
     parser.add_argument('--completion', action='store_true',
                         help='serial offscreen completed-render campaign; incompatible with experimental timestamps')
+    parser.add_argument('--middle-presets', action='store_true',
+                        help='20-run completion-only refinement at load 8000: 2/3 and .58 with bilinear controls')
     args = parser.parse_args(argv)
     previous_sigterm = signal.getsignal(signal.SIGTERM)
 
@@ -536,16 +622,17 @@ def main(argv=None):
     signal.signal(signal.SIGTERM, interrupted)
     try:
         if args.analyze_existing:
-            if args.completion or args.experimental_timing:
-                raise ValueError('existing analysis uses its retained mode; omit instrumentation flags')
+            if args.completion or args.experimental_timing or args.middle_presets:
+                raise ValueError('existing analysis uses its retained mode/profile; omit override flags')
             result = analyze(load_object(args.analyze_existing / 'campaign.json'))
             print(json.dumps(result, indent=2))
             return 0 if result['valid'] else 1
         directory = args.run_dir or Path('/tmp') / (
             'ushas-campaign-' + datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ-') + uuid.uuid4().hex[:8])
-        loads = tuple(int(value) for value in args.loads.split(','))
+        loads = tuple(int(value) for value in
+                      (args.loads or ('8000' if args.middle_presets else '0,8000,20000')).split(','))
         plan = make_plan(args.binary, directory, loads, args.warmup, args.seconds,
-                         args.timeout, args.experimental_timing, args.completion)
+                         args.timeout, args.experimental_timing, args.completion, args.middle_presets)
         if args.dry_run:
             print(json.dumps(plan, indent=2))
             return 0
@@ -560,14 +647,15 @@ def main(argv=None):
 
 
 class CampaignTests(unittest.TestCase):
-    def fixture(self):
+    def fixture(self, middle_presets=False):
         import tempfile
         directory = tempfile.TemporaryDirectory(prefix='ushas campaign CPU ')
         self.addCleanup(directory.cleanup)
         root = Path(directory.name)
         binary = root / 'never-executed-binary'
         binary.write_bytes(b'CPU analysis fixture; not executable')
-        plan = make_plan(binary, root / 'runs', loads=(0,))
+        plan = make_plan(binary, root / 'runs', loads=(8000,) if middle_presets else (0,),
+                         completion=middle_presets, middle_presets=middle_presets)
         Path(plan['run_dir']).mkdir()
         results = []
         for job in plan['jobs']:
@@ -819,13 +907,14 @@ class CampaignTests(unittest.TestCase):
             with self.subTest(ratios=ratios), self.assertRaises(ValueError):
                 paired_summary(ratios)
 
-    def completion_fixture(self):
+    def completion_fixture(self, middle_presets=False):
         import copy
-        state = self.fixture()
+        state = self.fixture(middle_presets)
         state['plan']['completion'] = True
         for job in state['plan']['jobs']:
-            job['arguments'].append('--completion')
-            job['argv'].append('--completion')
+            if '--completion' not in job['arguments']:
+                job['arguments'].append('--completion')
+                job['argv'].append('--completion')
             job['expected']['completion_requested'] = True
             period = 10 if job['arm'] == ARMS[0][0] else 5
             scope = {'view_id': 7, 'image_target': 'image:test',
@@ -957,6 +1046,120 @@ class CampaignTests(unittest.TestCase):
         with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
             code = main(['--analyze-existing', str(directory), '--completion'])
         self.assertEqual(code, 1)
+
+
+    def test_middle_presets_choose_only_the_two_boundary_rungs_and_controls(self):
+        plan = make_plan(Path('/missing/binary'), Path('/tmp/unused-refinement'),
+                         loads=(8000,), completion=True, middle_presets=True)
+        expected = {'native-disabled-msaa4', 'temporal-quality', 'temporal-balanced',
+                    'bilinear-quality', 'bilinear-balanced'}
+        self.assertEqual({j['arm'] for j in plan['jobs']}, expected)
+        self.assertEqual(len(plan['jobs']), 20)
+        self.assertEqual({tuple(a) for a in plan['arms']}, set(MIDDLE_ARMS))
+        self.assertEqual(plan['budget']['fps'], 60.0)
+        for arm in expected:
+            self.assertEqual(sum(j['position'] for j in plan['jobs'] if j['arm'] == arm), 8)
+            self.assertEqual(sum(i for i, j in enumerate(plan['jobs']) if j['arm'] == arm), 38)
+        orders = [[j['arm'] for j in plan['jobs'] if j['repetition'] == r] for r in range(4)]
+        self.assertEqual(orders[1], list(reversed(orders[0])))
+        self.assertEqual(orders[3], list(reversed(orders[2])))
+
+    def test_middle_presets_reject_other_measurement_modes_or_loads(self):
+        for args in ({'completion': False}, {'completion': True, 'experimental': True},
+                     {'completion': True, 'loads': (0, 8000)},
+                     {'completion': True, 'loads': (20000,)}):
+            options = {'loads': (8000,), **args}
+            with self.subTest(options=options), self.assertRaises(ValueError):
+                make_plan(Path('/missing'), Path('/tmp/unused'), middle_presets=True, **options)
+
+    def test_middle_analysis_provides_same_scale_controls_and_separate_budget_evidence(self):
+        result = analyze(self.completion_fixture(middle_presets=True))
+        self.assertEqual(len(result['comparisons']), 6)
+        self.assertTrue(result['valid'])
+        pairs = {(c['baseline'], c['candidate']) for c in result['comparisons']}
+        self.assertIn(('bilinear-quality', 'temporal-quality'), pairs)
+        self.assertIn(('bilinear-balanced', 'temporal-balanced'), pairs)
+        self.assertEqual(len(result['mean_budget']), 5)
+        for arm in result['mean_budget']:
+            self.assertEqual(arm['decision'], 'meets_mean_budget')
+            self.assertEqual(len(arm['per_run']), 4)
+            self.assertTrue(all(r['mean_completed_render_ms'] <= 10 for r in arm['per_run']))
+
+
+
+    def test_middle_retained_plan_rejects_mixed_or_altered_profiles(self):
+        import copy
+        state = self.completion_fixture(middle_presets=True)
+        changes = [lambda p: p.update({'completion': False}),
+                   lambda p: p.update({'profile': 'unknown'}),
+                   lambda p: p.update({'loads': [8000, 20000]}),
+                   lambda p: p['arms'][1].__setitem__(2, '0.5'),
+                   lambda p: p.update({'arms': list(reversed(p['arms']))}),
+                   lambda p: p.pop('arms'),
+                   lambda p: p['budget'].update({'fps': 120}),
+                   lambda p: p['jobs'][1]['expected'].update({'initial_scale': .5}),
+                   lambda p: p['jobs'][1]['expected'].update({'mode': 'disabled'}),
+                   lambda p: p['jobs'][1]['expected'].update({'target_fps': 120}),
+                   lambda p: p['jobs'][1].update({'arm': 'temporal-half'}),
+                   lambda p: p['jobs'].__setitem__(1, copy.deepcopy(p['jobs'][0]))]
+        for change in changes:
+            candidate = copy.deepcopy(state)
+            change(candidate['plan'])
+            with self.subTest(change=change), self.assertRaises(ValueError):
+                analyze(candidate)
+
+    def test_middle_analysis_uses_retained_arms_after_default_changes(self):
+        from unittest import mock
+        state = self.completion_fixture(middle_presets=True)
+        expected = analyze(state)
+        with mock.patch.dict(globals(), {'ARMS': (('future-default', 'disabled', '1', True),)}):
+            self.assertEqual(analyze(state), expected)
+
+    def test_middle_budget_classifies_run_means_and_withholds_incomplete_cells(self):
+        rows = [{'id': str(i), 'errors': [], 'mean_completed_render_ms': 10} for i in range(4)]
+        self.assertEqual(mean_budget_summary('test', rows, 1000 / 60)['decision'], 'meets_mean_budget')
+        for row in rows:
+            row['mean_completed_render_ms'] = 20
+        self.assertEqual(mean_budget_summary('test', rows, 1000 / 60)['decision'], 'misses_mean_budget')
+        rows[0]['mean_completed_render_ms'] = 10
+        self.assertEqual(mean_budget_summary('test', rows, 1000 / 60)['decision'], 'uncertain_mean_budget')
+        rows[1]['errors'].append('missing capture')
+        result = mean_budget_summary('test', rows, 1000 / 60)
+        self.assertEqual(result['decision'], 'incomplete_or_invalid')
+        self.assertIsNone(result['mean_ci95_ms'])
+
+    def test_middle_cli_dry_run_is_cpu_only_and_existing_profile_is_immutable(self):
+        import contextlib
+        import io
+        from unittest import mock
+        directory = Path('/tmp') / ('ushas-never-launch-middle-' + uuid.uuid4().hex)
+        with mock.patch.object(subprocess, 'Popen', side_effect=AssertionError('must not launch')):
+            with contextlib.redirect_stdout(io.StringIO()) as output:
+                self.assertEqual(main(['--middle-presets', '--completion', '--dry-run',
+                                       '--run-dir', str(directory)]), 0)
+            plan = json.loads(output.getvalue())
+            self.assertEqual(plan['loads'], [8000])
+            self.assertEqual(len(plan['jobs']), 20)
+            self.assertFalse(directory.exists())
+            with contextlib.redirect_stderr(io.StringIO()):
+                self.assertEqual(main(['--middle-presets', '--dry-run']), 1)
+        state = self.completion_fixture(middle_presets=True)
+        path = Path(state['plan']['run_dir'])
+        (path / 'campaign.json').write_text(json.dumps(state))
+        before = {p.name: (p.stat().st_mtime_ns, digest(p)) for p in path.iterdir()}
+        with contextlib.redirect_stdout(io.StringIO()) as output:
+            self.assertEqual(main(['--analyze-existing', str(path)]), 0)
+        self.assertEqual(json.loads(output.getvalue())['profile'], 'middle-presets-v1')
+        with contextlib.redirect_stderr(io.StringIO()):
+            self.assertEqual(main(['--analyze-existing', str(path), '--middle-presets']), 1)
+        self.assertEqual(before, {p.name: (p.stat().st_mtime_ns, digest(p)) for p in path.iterdir()})
+
+    def test_legacy_completion_analysis_has_no_refinement_fields(self):
+        result = analyze(self.completion_fixture())
+        self.assertTrue(result['valid'])
+        self.assertNotIn('profile', result)
+        self.assertNotIn('mean_budget', result)
+        self.assertTrue(all('completed_cadence' not in row for row in result['runs']))
 
 
 if __name__ == '__main__':
