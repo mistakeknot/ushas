@@ -1,0 +1,47 @@
+{
+  "scope": "Unpaired Metal-validation pilots establishing bounded completion and successful shutdown, not a performance comparison.",
+  "runs": [
+    {
+      "run": "completion-native-heavy-pilot-01",
+      "source_revision": "56a3b16c8c1c8f12a5320adc5082c6d20b6378c1",
+      "source_dirty_at_build": "false",
+      "binary_sha256": "5c773aba90f70229d03f1ac87045045f11a6f2e435bb9bc21f55e1b0266b4744",
+      "child_exit_code": 0,
+      "valid": true,
+      "measurement": {
+        "completed_frame_fences": 94,
+        "completed_render_fps": 15.65750115692693,
+        "drain_completed_ms": 5016.527875,
+        "drain_started_ms": 5016.521667,
+        "elapsed_seconds": 6.00351225,
+        "epoch": 2,
+        "phase": "Measure",
+        "qualified_render_frames": 94,
+        "valid": true
+      },
+      "report_sha256": "1a101a21ad0b5d3c6188965a3caee511a995db771e3c6e7331665ef31da89c77",
+      "capture_sha256": "0878c0deaff87588d410061a033b71b017faef472ffa0f9ff6a8f6059d25f2ef"
+    },
+    {
+      "run": "completion-temporal-native-heavy-pilot-01",
+      "source_revision": "56a3b16c8c1c8f12a5320adc5082c6d20b6378c1",
+      "source_dirty_at_build": "false",
+      "binary_sha256": "5c773aba90f70229d03f1ac87045045f11a6f2e435bb9bc21f55e1b0266b4744",
+      "child_exit_code": 0,
+      "valid": true,
+      "measurement": {
+        "completed_frame_fences": 90,
+        "completed_render_fps": 14.876637243580245,
+        "drain_completed_ms": 3198.734542,
+        "drain_started_ms": 3198.731084,
+        "elapsed_seconds": 6.049754291,
+        "epoch": 2,
+        "phase": "Measure",
+        "qualified_render_frames": 90,
+        "valid": true
+      },
+      "report_sha256": "fe863becd6de75acb85a23c5aa7bf4e31503c39a9662d9401bf6350486bd92d5",
+      "capture_sha256": "cb45d4cd69c3e8bf479832a9964b654ea296e5df165bafc2eee031621f2aadb9"
+    }
+  ]
+}

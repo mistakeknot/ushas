@@ -118,3 +118,27 @@ window fixture and are rejected with `--offscreen`.
 python3 tools/smoke/run.py -- --offscreen --mode temporal --scale 0.5 \
   --experimental-timing --out /tmp/ushas-offscreen-001.json
 ```
+
+For completed-render throughput, use the optional serial mode:
+
+```sh
+python3 tools/smoke/run.py -- --offscreen --completion \
+  --mode temporal --scale 0.5 --pixel-iterations 8000 \
+  --warmup 4 --seconds 6 --out /tmp/ushas-completed-001.json
+```
+
+`--completion` disables pipelined rendering and waits for the full render
+submission, including final screenshot/readback work, before another frame.
+Each wait is bounded at five seconds; missing completion or a wait error fails
+the process and remains in the wrapper's evidence. The measured epoch requires
+matching frame/view/image/effect identities and a drained closing boundary.
+It is incompatible with experimental timestamps, interpolation, and window mode.
+
+`serial_completion` retains frame fences, epoch boundaries and actual elapsed
+time. Its rate is **serial completed-render cadence**, including CPU scheduling,
+render preparation and callback polling. It is neither normal pipelined app FPS
+nor GPU busy time, hardware latency or presentation. No completion measurement
+is sent to the adaptive controller. See [CAMPAIGN.md](CAMPAIGN.md) for balanced
+comparisons. The original unpaced mode remains useful for CPU-cadence diagnostics;
+its [heavy-load shutdown failures](../../docs/research/claude-campaign-01.md)
+show why a valid capture alone is insufficient.

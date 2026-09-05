@@ -24,8 +24,8 @@ The default [campaign protocol](../../tools/smoke/CAMPAIGN.md) supplied five
 arms, three fragment loads, and four balanced repetitions at 1280×720. Claude
 geometry was `claude-toy-v1`, static, LDR, offscreen, with four seconds of warmup
 and six seconds of measurement after readiness. Experimental marker passes and
-Metal validation were disabled. No second GPU job or heavy Cargo build ran
-during the campaign; small CPU-only development commands continued. This does
+Metal validation were disabled. This task launched no second GPU job or heavy
+Cargo build during the campaign; small CPU-only development commands continued. This does
 not establish an interference-free or thermally identical machine.
 
 ## Valid lower-load observations
@@ -78,6 +78,24 @@ completion and drained measurement boundaries. Its metric must include CPU
 scheduling and polling overhead and remain separate from normal pipelined app
 FPS, GPU busy cost, and presentation. Increasing a timeout or bypassing orderly
 shutdown would not establish the required result.
+
+### Bounded completion follow-up
+
+The optional `--offscreen --completion` mode at clean revision
+`56a3b16c8c1c8f12a5320adc5082c6d20b6378c1` passed both previously failing heavy
+configurations with Metal validation enabled. Native MSAA4 retained 94 qualified
+measured frame fences; native Temporal retained 90. Both produced opaque Claude
+captures, closed their measurement epochs with a drained boundary, and exited
+normally with status 0. Each frame wait is bounded at five seconds. The source's
+full CI matrix also passed.
+
+These are unpaired diagnostic pilots, not a speed comparison or a repair claim
+for the original unpaced mode. Their [compact provenance](completion-pilots-01.json)
+includes the exact executable, report and capture hashes. All 12 raw reports,
+images and logs are archived with verified hashes at
+`/Users/sma/projects/docs/ushas/evidence/completion-pilots-01/`.
+Repeated completed-render comparisons and a current consumer trial remain
+separate gates.
 
 ## Retained artifacts
 
