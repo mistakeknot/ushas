@@ -19,7 +19,10 @@ use objc2_metal_fx::{
     MTLFXFrameInterpolatableScaler, MTLFXFrameInterpolator, MTLFXFrameInterpolatorBase,
     MTLFXFrameInterpolatorDescriptor,
 };
-use objc2_metal_fx::{MTLFXSpatialScaler, MTLFXSpatialScalerBase, MTLFXSpatialScalerDescriptor};
+use objc2_metal_fx::{
+    MTLFXSpatialScaler, MTLFXSpatialScalerBase, MTLFXSpatialScalerColorProcessingMode,
+    MTLFXSpatialScalerDescriptor,
+};
 #[cfg(feature = "temporal")]
 use objc2_metal_fx::{MTLFXTemporalScaler, MTLFXTemporalScalerBase, MTLFXTemporalScalerDescriptor};
 
@@ -27,6 +30,37 @@ use objc2_metal_fx::{MTLFXTemporalScaler, MTLFXTemporalScalerBase, MTLFXTemporal
 // (ObjC runtime dispatch), not direct C linkage, so no unresolved symbols.
 #[link(name = "MetalFX", kind = "framework")]
 extern "C" {}
+
+/// Describe the values stored in the texture handed directly to MetalFX.
+/// Apple's spatial sample pairs an sRGB pixel format with Perceptual mode;
+/// plain UNORM textures require the explicit Bevy compositing space instead.
+pub(crate) fn scaler_color_processing(
+    format: bevy::render::render_resource::TextureFormat,
+    space: Option<bevy::camera::CompositingSpace>,
+) -> Result<MTLFXSpatialScalerColorProcessingMode, crate::MetalFxEffectReason> {
+    use bevy::camera::CompositingSpace as Space;
+    use bevy::render::render_resource::TextureFormat as Format;
+    use MTLFXSpatialScalerColorProcessingMode as Mode;
+    if space == Some(Space::Oklab) {
+        return Err(crate::MetalFxEffectReason::UnsupportedColorSpace);
+    }
+    match format {
+        // Floating-point sRGB values may exceed [0,1], while MetalFX's HDR
+        // contract requires linear light. Neither HDR nor Perceptual mode
+        // describes that combination without an additional conversion pass.
+        Format::Rgba16Float if space == Some(Space::Srgb) => {
+            Err(crate::MetalFxEffectReason::UnsupportedColorSpace)
+        }
+        Format::Rgba16Float => Ok(Mode::HDR),
+        Format::Rgba8UnormSrgb | Format::Bgra8UnormSrgb => Ok(Mode::Perceptual),
+        Format::Rgba8Unorm | Format::Bgra8Unorm => Ok(if space == Some(Space::Srgb) {
+            Mode::Perceptual
+        } else {
+            Mode::Linear
+        }),
+        _ => Err(crate::MetalFxEffectReason::UnsupportedFormat),
+    }
+}
 
 /// Runtime check for MetalFX availability.
 pub(crate) fn is_available_impl() -> bool {
@@ -41,6 +75,7 @@ pub(crate) fn is_available_impl() -> bool {
 /// # Safety
 /// `device_ptr` must be a valid `id<MTLDevice>` pointer from wgpu-hal's
 /// `raw_device().lock().as_ptr()`.
+#[allow(clippy::too_many_arguments)] // Explicit descriptor fields at the Objective-C boundary.
 pub(crate) unsafe fn try_create_spatial_scaler_from_raw(
     device_ptr: *mut c_void,
     input_width: usize,
@@ -49,6 +84,7 @@ pub(crate) unsafe fn try_create_spatial_scaler_from_raw(
     output_height: usize,
     color_format: MTLPixelFormat,
     output_format: MTLPixelFormat,
+    color_processing: MTLFXSpatialScalerColorProcessingMode,
 ) -> Option<Retained<ProtocolObject<dyn MTLFXSpatialScaler>>> {
     if !is_available_impl() {
         return None;
@@ -71,6 +107,7 @@ pub(crate) unsafe fn try_create_spatial_scaler_from_raw(
         descriptor.setOutputHeight(output_height);
         descriptor.setColorTextureFormat(color_format);
         descriptor.setOutputTextureFormat(output_format);
+        descriptor.setColorProcessingMode(color_processing);
     }
 
     // Spatial scaler does NOT take a depth texture — that is temporal-only.
@@ -637,6 +674,45 @@ pub(crate) fn wgpu_format_to_mtl(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn scaler_color_processing_matches_the_actual_render_texture() {
+        use bevy::camera::CompositingSpace as Space;
+        use bevy::render::render_resource::TextureFormat as Format;
+        use MTLFXSpatialScalerColorProcessingMode as Mode;
+
+        for format in [Format::Rgba8UnormSrgb, Format::Bgra8UnormSrgb] {
+            assert_eq!(scaler_color_processing(format, None), Ok(Mode::Perceptual));
+        }
+        for format in [Format::Rgba8Unorm, Format::Bgra8Unorm] {
+            assert_eq!(
+                scaler_color_processing(format, Some(Space::Srgb)),
+                Ok(Mode::Perceptual)
+            );
+            assert_eq!(
+                scaler_color_processing(format, Some(Space::Linear)),
+                Ok(Mode::Linear)
+            );
+            assert_eq!(scaler_color_processing(format, None), Ok(Mode::Linear));
+        }
+        assert_eq!(
+            scaler_color_processing(Format::Rgba16Float, None),
+            Ok(Mode::HDR)
+        );
+        assert_eq!(
+            scaler_color_processing(Format::Rgba16Float, Some(Space::Linear)),
+            Ok(Mode::HDR)
+        );
+    }
+
+    #[test]
+    fn scaler_rejects_color_spaces_without_a_matching_metalfx_contract() {
+        use bevy::camera::CompositingSpace as Space;
+        use bevy::render::render_resource::TextureFormat as Format;
+        assert!(scaler_color_processing(Format::Rgba16Float, Some(Space::Oklab)).is_err());
+        assert!(scaler_color_processing(Format::Rgba16Float, Some(Space::Srgb)).is_err());
+        assert!(scaler_color_processing(Format::Depth32Float, None).is_err());
+    }
 
     #[test]
     fn test_metalfx_availability() {

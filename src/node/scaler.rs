@@ -32,6 +32,7 @@ pub(super) struct ScalerKey {
     pub format: TextureFormat,
     pub mode: MetalFxMode,
     pub dynamic_range: Option<(f32, f32)>,
+    pub color_processing: objc2_metal_fx::MTLFXSpatialScalerColorProcessingMode,
 }
 
 fn requires_recreate(cached: Option<ScalerKey>, requested: ScalerKey) -> bool {
@@ -70,6 +71,7 @@ mod tests {
             format: TextureFormat::Rgba16Float,
             mode: MetalFxMode::Temporal,
             dynamic_range: None,
+            color_processing: objc2_metal_fx::MTLFXSpatialScalerColorProcessingMode::HDR,
         };
         assert!(requires_recreate(None, original));
         assert!(!requires_recreate(Some(original), original));
@@ -96,6 +98,10 @@ mod tests {
             },
             ScalerKey {
                 dynamic_range: Some((0.5, 1.0)),
+                ..original
+            },
+            ScalerKey {
+                color_processing: objc2_metal_fx::MTLFXSpatialScalerColorProcessingMode::Linear,
                 ..original
             },
         ] {
@@ -164,6 +170,7 @@ impl MetalFxUpscaleNode {
         mode: MetalFxMode,
         main_format: TextureFormat,
         color_mtl_fmt: MTLPixelFormat,
+        color_processing: objc2_metal_fx::MTLFXSpatialScalerColorProcessingMode,
         dynamic_res_range: Option<(f32, f32)>,
     ) -> Result<MetalFxMode, MetalFxEffectReason> {
         let ScalerDims {
@@ -186,6 +193,7 @@ impl MetalFxUpscaleNode {
             format: main_format,
             mode,
             dynamic_range: dynamic_res_range,
+            color_processing,
         };
         let needs_recreate = requires_recreate(cached.as_ref().map(|cached| cached.key), key);
 
@@ -422,6 +430,7 @@ impl MetalFxUpscaleNode {
                                 output_h as usize,
                                 color_mtl_fmt,
                                 color_mtl_fmt,
+                                color_processing,
                             )
                         };
                         let Some(scaler) = scaler else {

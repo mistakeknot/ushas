@@ -38,9 +38,46 @@ fn with_command_buffer<T>(buffer: Option<T>, encode: impl FnOnce(T)) -> bool {
     true
 }
 
+fn acknowledge_encoded_reset(
+    request: Option<crate::history::HistoryResetRequest>,
+    is_temporal_like: bool,
+) -> bool {
+    if let (true, Some(request)) = (is_temporal_like, request) {
+        request.acknowledge();
+        return true;
+    }
+    false
+}
+
 #[cfg(test)]
 mod tests {
-    use super::with_command_buffer;
+    use super::{acknowledge_encoded_reset, with_command_buffer};
+
+    #[test]
+    fn spatial_work_cannot_consume_a_temporal_history_reset() {
+        let mut reset = crate::MetalFxHistoryReset::default();
+        reset.request();
+        assert!(!acknowledge_encoded_reset(reset.pending_request(), false));
+        assert!(reset.is_requested());
+        assert!(acknowledge_encoded_reset(reset.pending_request(), true));
+        assert!(!reset.is_requested());
+    }
+
+    #[test]
+    fn missing_raw_command_leaves_reset_pending_for_the_retry() {
+        let mut reset = crate::MetalFxHistoryReset::default();
+        reset.request();
+        let request = reset.pending_request();
+        assert!(!with_command_buffer(None::<()>, |_| {
+            acknowledge_encoded_reset(request, true);
+        }));
+        assert!(reset.is_requested());
+        let retry = reset.pending_request();
+        assert!(with_command_buffer(Some(()), |_| {
+            acknowledge_encoded_reset(retry, true);
+        }));
+        assert!(!reset.is_requested());
+    }
 
     #[test]
     fn missing_command_buffer_does_not_report_encoding() {
@@ -84,6 +121,11 @@ impl MetalFxUpscaleNode {
         output_w: u32,
         output_h: u32,
     ) -> bool {
+        // Capture the extracted request once. Dropping this token on any
+        // failed path preserves the request for the next actual encode.
+        let history_reset_request = world
+            .get_resource::<crate::MetalFxHistoryReset>()
+            .and_then(crate::MetalFxHistoryReset::pending_request);
         // --- Phase B: MetalFX encode ---
         // CRITICAL: Extract ALL raw texture pointers in isolated scopes BEFORE
         // calling encoder.as_hal_mut(). wgpu uses a "snatch lock" internally;
@@ -119,25 +161,10 @@ impl MetalFxUpscaleNode {
         // (camera cut, teleport, scene load). Both mean the same thing to
         // MetalFX, so they collapse into one flag here.
         //
-        // The request clears itself in the main world at the top of the next
-        // frame, so this reads true for exactly one rendered frame.
-        let history_reset_requested = world
-            .get_resource::<crate::MetalFxHistoryReset>()
-            .is_some_and(crate::MetalFxHistoryReset::is_requested);
+        // A request remains pending through unavailable views, missing
+        // prepasses and scaler compilation, until its encode acknowledges it.
+        let history_reset_requested = history_reset_request.is_some();
         let is_first_frame = state.frame_count == 0 || history_reset_requested;
-        // Log the honoured request, not the requested one. The main world can
-        // say `request()` and still have the flag never arrive — extraction
-        // runs after the whole main schedule, so a mistimed clear would drop it
-        // silently and the only visible symptom would be ghosting nobody
-        // connects to the flag. This line is what distinguishes "the reset did
-        // not help" from "the reset never reached the scaler".
-        if history_reset_requested {
-            log::info!(
-                "MetalFxUpscaleNode: honouring MetalFxHistoryReset — dropping temporal history \
-                 for frame {}",
-                state.frame_count
-            );
-        }
 
         // Extract temporal texture pointers (content-sized depth + motion).
         let temporal_ptrs = if is_temporal_like {
@@ -529,6 +556,12 @@ impl MetalFxUpscaleNode {
         // and the Phase C blit — which opens a fresh encoder after this — is
         // submitted after it.
         render_context.add_command_buffer(raw_encoder.finish());
+        if acknowledge_encoded_reset(history_reset_request, is_temporal_like) {
+            log::info!(
+                "MetalFxUpscaleNode: encoded MetalFxHistoryReset for temporal frame {}",
+                state.frame_count
+            );
+        }
         state.frame_count = state.frame_count.saturating_add(1);
 
         // Snapshot this frame's upscaled color into the history buffer.

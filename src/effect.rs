@@ -46,6 +46,8 @@ pub enum MetalFxEffectReason {
     ScalerCreationFailed,
     /// A required texture format is unsupported.
     UnsupportedFormat,
+    /// The view stores colors without a matching MetalFX processing contract.
+    UnsupportedColorSpace,
     /// Depth or motion-vector inputs needed for temporal work are absent.
     MissingPrepass,
     /// A raw Metal device, texture, or command-buffer handle was unavailable.

@@ -148,7 +148,7 @@ fn resize_updates_existing_render_inputs() {
 }
 
 #[test]
-fn camera_cut_requested_during_update_survives_until_extraction_then_clears() {
+fn camera_cut_requested_during_update_persists_without_render_ack() {
     #[derive(Resource, Default)]
     struct ResetAtExtraction(Vec<bool>);
     fn request_once(mut reset: ResMut<MetalFxHistoryReset>, mut requested: Local<bool>) {
@@ -171,6 +171,6 @@ fn camera_cut_requested_during_update_survives_until_extraction_then_clears() {
     app.update();
     assert_eq!(
         app.world().resource::<ResetAtExtraction>().0,
-        vec![true, false]
+        vec![true, true]
     );
 }

@@ -1,14 +1,13 @@
 //! MetalFX upscaling pass (spatial + temporal).
 //!
-//! Runs after Bevy's own `upscaling` system. Creates its own output texture at
-//! full resolution, uses MetalFX to upscale from `main_texture` (low-res) into
-//! it, then blits to the swapchain via a render pass on
-//! `ViewTarget::out_texture()`.
+//! Spatial and Temporal run after the main pass and before postprocessing.
+//! They reconstruct the reduced content into the next full-resolution main
+//! texture, then Bevy applies tonemapping, native-resolution UI, and its final
+//! window blit. FrameInterpolation retains its experimental late output path.
 //!
 //! Through 0.3 this was a render-graph `ViewNode`. Bevy 0.19 removed the render
 //! graph in favour of ECS schedules, so the entry point is now the
-//! [`metalfx_upscale`] system; everything below it is unchanged, because the
-//! MetalFX work only ever needed a command encoder and a pair of textures.
+//! [`metalfx_upscale`] system.
 //!
 //! ## Architecture
 //!
@@ -16,7 +15,7 @@
 //! main_texture (low-res)
 //!   → MetalFX upscale (spatial or temporal, raw Metal encode)
 //!     → metalfx_output (full-res, our texture)
-//!       → blit render pass → out_texture (swapchain)
+//!       → next main texture → postprocessing → native UI → Bevy window blit
 //! ```
 //!
 //! ## Frame Interpolation
@@ -45,11 +44,16 @@
 //! staging textures here, and presented from the frame command buffer's
 //! completion handler there.
 //!
-//! It is opt-in (`MetalFxDualPresent::enabled`). Presents are accepted at
-//! twice the single-present rate; whether they reach the panel is unverified,
-//! because `MTLDrawable.presentedTime` does not populate on the development
-//! machine for any program. See [`crate::present`] and
-//! `docs/m5-max-performance-research.md`.
+//! FrameInterpolation still runs after Bevy's final blit and presents its own
+//! textures. Its native UI and HDR composition are not covered by the early
+//! Spatial/Temporal path: moving the owned-layer presentation earlier without
+//! a separate composition step would bypass tonemapping and omit UI entirely.
+//!
+//! It is opt-in (`MetalFxDualPresent::enabled`). Historical experiments recorded
+//! differing drawable callback behavior across display conditions. Current
+//! presentation ordering, image content, and panel delivery require independent
+//! validation; encoding alone does not establish them. See [`crate::present`]
+//! and `docs/m5-max-performance-research.md`.
 //!
 //! ## Where the phases live
 //!
@@ -61,7 +65,7 @@
 //! | A     | [`scaler`] | scaler lifecycle + the textures sized to it |
 //! | B0.5  | [`resolve`] | depth + motion prepass resolve to content size |
 //! | B     | [`encode`] | the MetalFX encode, one arm per mode |
-//! | C/D   | here | swapchain blit, then the optional second present |
+//! | C/D   | here | main-texture reconstruction, or experimental interpolation output/present |
 //!
 //! Phases A and B can decline to run — a temporal scaler may still be
 //! compiling, or a raw Metal handle may be unavailable — and return `false`
@@ -73,8 +77,9 @@
 //! The temporal scaler's `newTemporalScalerWithDevice:` compiles ML pipelines
 //! internally and can take several seconds. To avoid blocking the render thread,
 //! scaler creation is dispatched to a background OS thread. The render node
-//! polls for readiness each frame and falls through to Bevy's bilinear upscaling
-//! until the scaler is ready.
+//! polls for readiness each frame. The crop-aware control pass expands the
+//! reduced scene while Spatial/Temporal are unavailable, preserving the
+//! explicit pending/failure observation.
 
 mod encode;
 mod resolve;
@@ -90,8 +95,9 @@ use bevy::core_pipeline::prepass::ViewPrepassTextures;
 use bevy::prelude::*;
 use bevy::render::camera::{ExtractedCamera, TemporalJitter};
 use bevy::render::render_resource::{
-    BindGroup, CachedRenderPipelineId, Extent3d, PipelineCache, RenderPassDescriptor,
-    SpecializedRenderPipeline, TextureView, TextureViewId,
+    BindGroup, CachedRenderPipelineId, Extent3d, LoadOp, Operations, PipelineCache,
+    RenderPassColorAttachment, RenderPassDescriptor, SpecializedRenderPipeline, StoreOp,
+    TextureView, TextureViewId,
 };
 use bevy::render::sync_world::MainEntity;
 // Gated to match its only use site — the dual-present block below is
@@ -346,10 +352,9 @@ impl Default for MetalFxUpscaleNode {
 ///
 /// Bevy 0.19 removed the render graph and drives rendering from ECS *schedules*
 /// instead: a pass is an ordinary system that reaches the current view through
-/// [`ViewQuery`] and the frame's encoder through [`RenderContext`]. That is the
-/// entire integration change. The MetalFX work below is untouched by it,
-/// because it only ever needed a command encoder and a pair of textures — the
-/// graph was scaffolding around that, not part of it.
+/// [`ViewQuery`] and the frame's encoder through [`RenderContext`]. Spatial and
+/// Temporal are registered before EarlyPostProcess; experimental interpolation
+/// is registered after Bevy's window upscaling.
 ///
 /// The caches live in a [`Local`], with one scaler/history set for this system.
 /// The current implementation accepts a single active 3D view covering its
@@ -544,6 +549,25 @@ impl MetalFxUpscaleNode {
             );
             return;
         };
+        // The experimental interpolation path remains after tonemapping/UI
+        // until its owned-layer composition is redesigned. Spatial/Temporal
+        // instead operate on the scene before postprocessing and must describe
+        // the input texture's actual color contract.
+        let color_processing = if mode == MetalFxMode::FrameInterpolation {
+            objc2_metal_fx::MTLFXSpatialScalerColorProcessingMode::Perceptual
+        } else {
+            match crate::platform::scaler_color_processing(main_format, target.compositing_space) {
+                Ok(processing) => processing,
+                Err(reason) => {
+                    publish(
+                        MetalFxMode::Disabled,
+                        MetalFxEffectState::Unavailable,
+                        Some(reason),
+                    );
+                    return;
+                }
+            }
+        };
         // Only temporal scalers implement a variable content region. Spatial
         // and interpolation descriptors are built at the actual input size.
         let dynamic_res_range = if mode == MetalFxMode::Temporal {
@@ -600,6 +624,7 @@ impl MetalFxUpscaleNode {
             mode,
             main_format,
             color_mtl_fmt,
+            color_processing,
             dynamic_res_range,
         ) {
             Ok(mode) => mode,
@@ -735,11 +760,18 @@ impl MetalFxUpscaleNode {
             );
             return;
         }
-        // --- Phase C: Blit metalfx_output → out_texture (swapchain) ---
+        // --- Phase C: Reconstruct the main texture before postprocessing/UI ---
+        // The interpolation branch preserves its separate late output path.
         let pipeline_cache = world.resource::<PipelineCache>();
         let blit_pipeline = world.resource::<BlitPipeline>();
 
-        let Some(target_format) = target.out_texture_view_format() else {
+        let reconstruct_main = mode != MetalFxMode::FrameInterpolation;
+        let target_format = if reconstruct_main {
+            Some(target.main_texture_format())
+        } else {
+            target.out_texture_view_format()
+        };
+        let Some(target_format) = target_format else {
             publish(
                 effective_mode,
                 MetalFxEffectState::Encoded,
@@ -758,8 +790,9 @@ impl MetalFxUpscaleNode {
                     target_format,
                     blend_state: None,
                     samples: 1,
-                    // 0.18's key had no colour-space knob and blitted the source
-                    // through unchanged; `None` is that behaviour, not a new choice.
+                    // Source and destination have identical main texture/color
+                    // semantics. Bevy's final window blit owns color conversion.
+                    // The legacy interpolation output also preserves its path.
                     source_space: None,
                 };
                 let descriptor = blit_pipeline.specialize(key);
@@ -801,20 +834,6 @@ impl MetalFxUpscaleNode {
             _ => None,
         };
 
-        // Which frame goes into Bevy's swapchain image?
-        //
-        // Bevy presents that image untimed, after the graph, so it always lands
-        // on the *earlier* of the two vsyncs. The interpolated frame depicts the
-        // earlier moment, so under dual presentation it is the one that belongs
-        // there — and the real frame is the one this node presents itself, held
-        // back by one refresh interval.
-        //
-        // The reverse cannot work, which is worth stating because it is the
-        // obvious first design: two untimed presents issued microseconds apart
-        // both target the same vsync, so CoreAnimation discards the earlier one
-        // outright (its presented-handler never fires). Delaying ours to
-        // separate them would then display the interpolated frame *after* the
-        // real frame it was built from — a backwards step in time.
         #[cfg(feature = "frame-interpolation")]
         let dual_active = interp_view_for_present.is_some()
             && world
@@ -822,28 +841,43 @@ impl MetalFxUpscaleNode {
                 .and_then(|d| d.layer())
                 .is_some();
 
-        // Bevy's swapchain image always carries the real frame. Under dual
-        // presentation it is not what the user sees — our own layer sits above
-        // wgpu's — so there is nothing to gain from putting the interpolated
-        // frame here, and keeping it uniform means the non-dual path is byte
-        // for byte unchanged.
-        let swapchain_view = &state.output_view;
+        // Bevy always receives the real reconstructed frame. The experimental
+        // owned layer, when active, independently presents the interpolated
+        // and real images above Bevy's window surface.
+        let reconstructed_view = &state.output_view;
 
         let mut cached_bg = self.cached_bind_group.lock().unwrap();
         let bind_group = match &mut *cached_bg {
-            Some((id, bg)) if swapchain_view.id() == *id => bg,
+            Some((id, bg)) if reconstructed_view.id() == *id => bg,
             slot => {
                 let bg = blit_pipeline.create_bind_group(
                     render_context.render_device(),
-                    swapchain_view,
+                    reconstructed_view,
                     pipeline_cache,
                 );
-                let (_, bg) = slot.insert((swapchain_view.id(), bg));
+                let (_, bg) = slot.insert((reconstructed_view.id(), bg));
                 bg
             }
         };
 
-        let Some(output_attachment) = target.out_texture_color_attachment(None) else {
+        let output_attachment = if reconstruct_main {
+            // This call flips Bevy's current main texture immediately. All
+            // readiness and failure checks must precede it; after the flip we
+            // must encode a complete full-resolution destination write.
+            let output = target.post_process_write();
+            Some(RenderPassColorAttachment {
+                view: output.destination,
+                depth_slice: None,
+                resolve_target: None,
+                ops: Operations {
+                    load: LoadOp::Clear(Default::default()),
+                    store: StoreOp::Store,
+                },
+            })
+        } else {
+            target.out_texture_color_attachment(None)
+        };
+        let Some(output_attachment) = output_attachment else {
             publish(
                 effective_mode,
                 MetalFxEffectState::Encoded,
@@ -852,7 +886,11 @@ impl MetalFxUpscaleNode {
             return;
         };
         let pass_descriptor = RenderPassDescriptor {
-            label: Some("metalfx_blit"),
+            label: Some(if reconstruct_main {
+                "metalfx_reconstruct_main"
+            } else {
+                "metalfx_interpolation_output"
+            }),
             // Bevy 0.19 returns the attachment already wrapped in `Option`.
             color_attachments: &[Some(output_attachment)],
             depth_stencil_attachment: None,
@@ -880,12 +918,6 @@ impl MetalFxUpscaleNode {
             fallback_reason,
         );
 
-        // --- Phase D: present the real frame, one refresh behind ---
-        //
-        // Bevy has just been handed the *interpolated* frame in its swapchain
-        // image and will present it untimed. This second present carries the
-        // real frame and is held back a refresh interval, so the two land on
-        // consecutive vsyncs in the order they depict.
         // --- Phase D: present both frames from our own layer ---
         //
         // Two steps, and the split is forced by Metal's rules. First each frame

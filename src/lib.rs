@@ -1,7 +1,8 @@
 //! Bevy plugin for Apple MetalFX upscaling and frame interpolation.
 //!
 //! Uses `objc2-metal-fx` for MetalFX framework bindings and integrates
-//! as a render graph node replacing Bevy's built-in upscaling.
+//! through Bevy 0.19's per-view render schedules. Spatial and Temporal reconstruct
+//! scene color before postprocessing and native-resolution UI.
 //!
 //! <div class="warning">
 //!
@@ -9,7 +10,7 @@
 //!
 //! Almost everything here is `#[cfg(target_os = "macos")]`, and docs.rs builds
 //! on Linux. The `present` and `gpu_timing` modules are missing from the
-//! rendered page entirely, and [`MetalFxPlugin`] shows two of its four fields.
+//! rendered page entirely, and platform-specific [`MetalFxPlugin`] fields are omitted.
 //!
 //! Pinning docs.rs to an Apple target does not work: it cross-compiles from a
 //! Linux container and must still build the dependency graph, and `blake3`
@@ -31,29 +32,22 @@
 //! this crate's encode paths and the `objc2-metal-fx` bindings behind them, so
 //! a narrower feature set really does compile a narrower surface.
 //!
-//! ## What is and is not verified
+//! ## Observation and validation
 //!
-//! **Hardware-verified as of 0.4.1** (M5 Max, `MTL_DEBUG_LAYER=1`): all four
-//! modes run with no panic and no Metal validation assertion; the temporal
-//! prepass is wired; `MetalFxScaleRange` reports the band the scaler was built
-//! with; the pass **wins the write to `out_texture`** (MetalFX output differs
-//! from Bevy's bilinear at the same render scale by mean-abs 44.26 over 74.65%
-//! of pixels, while the same config run twice is byte-identical); and
-//! `MetalFxHistoryReset` reaches the scaler and measurably alters the cut frame.
+//! [`MetalFxEffectStatus`] reports per-view render decisions with explicit frame
+//! identity and freshness. `OutputWritten` proves that commands to copy the
+//! reconstructed image were encoded; it does not prove GPU completion or panel
+//! delivery. Requested configuration alone never proves an active effect.
 //!
-//! Note one non-effect: across a half-turn teleport the reset changes nothing,
-//! because a total disocclusion leaves MetalFX no reusable history to drop. It
-//! matters on partial discontinuities, which is where stale history would smear.
+//! Adaptive operation accepts only explicitly validated GPU frame-cost samples.
+//! Without them it holds quality and reports unavailable timing. CPU frame-loop
+//! intervals, dedicated Metal command-buffer durations, and the opt-in marker
+//! experiment are not interchangeable with validated frame cost.
 //!
-//! Spatial and temporal upscaling are complete and stable. Frame interpolation
-//! computes a correct intermediate frame and, with `present::MetalFxDualPresent`
-//! enabled, presents it — at twice the accepted-present rate of a single
-//! present, with the render rate unchanged. Whether the extra frame reaches the
-//! display is **unverified**: see the `present` module for what that depends
-//! on.
-//!
-//! (Deliberately not intra-doc links: `present` is macOS-only, and docs.rs
-//! renders this page from a Linux build where the link target does not exist.)
+//! Frame interpolation retains an experimental late composition/presentation
+//! path. Historical presentation results are dated evidence; they do not certify
+//! current native UI, HDR composition, latency, or physical panel delivery.
+//! See the repository smoke fixture and research reports for reproducible checks.
 
 #[cfg(target_os = "macos")]
 mod platform;
@@ -123,6 +117,8 @@ pub use adaptive_runtime::{
     MetalFxAdaptiveConfig, MetalFxAdaptiveContext, MetalFxAdaptiveReason, MetalFxAdaptiveStatus,
     MetalFxFrameCostInput, ValidatedGpuFrameCost,
 };
+#[cfg(target_os = "macos")]
+mod control_upscale;
 mod effect_runtime;
 #[cfg(target_os = "macos")]
 pub mod frame_timing;
@@ -138,8 +134,8 @@ pub use present::{display_awake, PresentSink, PresentStats};
 
 /// Shared GPU-timing sink, cloned into both the main world (for the debug
 /// server to read) and the render world (for the upscale node to push into).
-/// Holds recent per-command-buffer GPU-elapsed samples for Phase 0 bound-ness
-/// analysis. See [`gpu_timing`] for the metric caveat.
+/// Holds dedicated command-buffer elapsed samples, including upstream waits.
+/// These are diagnostic intervals, not isolated MetalFX cost or total frame cost.
 #[cfg(target_os = "macos")]
 #[derive(bevy::prelude::Resource, Clone)]
 pub struct GpuTimingDiag(pub std::sync::Arc<GpuTimingSink>);
@@ -172,14 +168,15 @@ pub enum MetalFxMode {
     /// Frame interpolation — generates intermediate frames between rendered frames.
     /// Requires macOS 26+ (Metal 4). Adds +1 frame of input latency.
     FrameInterpolation,
-    /// Bypass MetalFX — render at full res with Bevy's default upscaling.
-    /// Useful for A/B benchmarking.
+    /// Bypass MetalFX. Native scale uses Bevy's normal output; a reduced scale
+    /// uses the cropped bilinear control before postprocessing and native UI.
     Disabled,
 }
 
 /// Configuration for the MetalFX plugin.
 pub struct MetalFxPlugin {
-    /// Render scale factor (0.25–1.0). Default 0.5 = half-res render.
+    /// Render scale factor (0.1–1.0), subject to the selected mode/device band.
+    /// Default 0.5 renders half the output width and height.
     pub render_scale: f32,
     /// Which MetalFX mode to use.
     pub mode: MetalFxMode,
@@ -188,7 +185,8 @@ pub struct MetalFxPlugin {
     /// The governor climbs the [`MetalFxQuality`] ladder the device admits
     /// (see [`MetalFxDeviceScaleBand`]); the initial `render_scale` is snapped
     /// to the nearest rung. On an M5 that ladder reaches one third resolution;
-    /// on earlier chips it stops at one half. `MetalFxRenderScale` becomes
+    /// on earlier chips it stops at one half. The default quality floor is 0.5,
+    /// so lower rungs require an explicit floor change. `MetalFxRenderScale` becomes
     /// mutable. Configure the target and quality floor with [`MetalFxAdaptiveConfig`].
     /// Without a validated frame signal, adaptation holds scale and reports why;
     /// app cadence and the MetalFX command-buffer timer are not substitutes.
@@ -200,8 +198,8 @@ pub struct MetalFxPlugin {
     #[cfg(target_os = "macos")]
     pub gpu_timing_sink: Option<std::sync::Arc<GpuTimingSink>>,
     /// Dual presentation for `FrameInterpolation`: present the synthesised
-    /// frame on its own drawable, ahead of the real one, so interpolation
-    /// actually raises the displayed frame rate.
+    /// frame on its own drawable ahead of the real one. This submits two images;
+    /// displayed cadence, image ordering, and latency require separate validation.
     ///
     /// Ignored in every other mode. Turning it off keeps the interpolated frame
     /// computed-but-unpresented, which is only useful as a measurement control
@@ -455,60 +453,8 @@ impl MetalFxScaleRange {
     }
 }
 
-/// Ask MetalFX to discard its accumulated temporal history.
-///
-/// Temporal upscaling and frame interpolation both work by accumulating
-/// information across frames, which is exactly wrong across a discontinuity —
-/// a camera cut, a teleport, a level load — where the previous frame shows an
-/// unrelated place. Blended across the cut, that history ghosts, sometimes for
-/// a noticeable fraction of a second.
-///
-/// The first frame resets automatically. Every reset after that is this:
-///
-/// ```ignore
-/// fn on_teleport(mut reset: ResMut<MetalFxHistoryReset>) {
-///     reset.request();
-/// }
-/// ```
-///
-/// The request applies to the next rendered frame and then clears itself. It is
-/// deliberately not sticky — holding it set would suppress temporal
-/// accumulation entirely, which is the thing you are paying for. In `Spatial`
-/// mode it is ignored, because there is no history to drop.
-#[derive(
-    bevy::prelude::Resource,
-    bevy::render::extract_resource::ExtractResource,
-    Debug,
-    Clone,
-    Copy,
-    Default,
-)]
-pub struct MetalFxHistoryReset(bool);
-
-impl MetalFxHistoryReset {
-    /// Drop temporal history on the next rendered frame.
-    pub fn request(&mut self) {
-        self.0 = true;
-    }
-
-    /// Whether a reset is pending for the next rendered frame.
-    pub fn is_requested(&self) -> bool {
-        self.0
-    }
-}
-
-/// Clear a consumed reset request at the top of the frame.
-///
-/// Runs in `First`, which is the only correct place: extraction to the render
-/// world happens after the whole main schedule, so a request made anywhere in
-/// frame N is still set when frame N is extracted, and is cleared before
-/// frame N+1's systems run. Clearing in `Last` would wipe it before the render
-/// world ever saw it.
-fn clear_history_reset(mut reset: bevy::prelude::ResMut<MetalFxHistoryReset>) {
-    if reset.0 {
-        reset.0 = false;
-    }
-}
+mod history;
+pub use history::MetalFxHistoryReset;
 
 #[cfg(target_os = "macos")]
 impl MetalFxPlugin {
@@ -518,7 +464,7 @@ impl MetalFxPlugin {
     ///
     /// Reuses a host-provided sink when given, so a caller holding its own
     /// `Arc` reads the exact same ring the render world writes to; otherwise it
-    /// makes its own, and the resource is merely present-and-empty.
+    /// creates a sink populated by completed active or timing-control encodes.
     fn install_gpu_timing(&self, app: &mut bevy::app::App) {
         use bevy::render::RenderApp;
 
@@ -629,15 +575,17 @@ impl bevy::app::Plugin for MetalFxPlugin {
         if self.mode == MetalFxMode::Disabled {
             app.insert_resource(MetalFxModeResource(MetalFxMode::Disabled));
             // Even in Disabled mode, apply resolution override if scale < 1.0.
-            // This lets Bevy's built-in bilinear upscaler handle the upscale,
+            // The cropped bilinear pass expands content before postprocessing,
             // serving as a control condition for MetalFX benchmarks.
             if self.render_scale < 1.0 {
                 log::info!(
-                    "MetalFX Disabled + scale={} — applying resolution override only (Bevy bilinear upscaler)",
+                    "MetalFX Disabled + scale={} — applying cropped bilinear control",
                     self.render_scale
                 );
                 app.insert_resource(MetalFxRenderScale(self.render_scale));
                 register_resolution_override(app);
+                #[cfg(target_os = "macos")]
+                control_upscale::install(app);
             } else {
                 log::info!("MetalFX mode is Disabled at full resolution — bypassing");
                 app.insert_resource(MetalFxRenderScale(1.0));
@@ -719,7 +667,6 @@ impl bevy::app::Plugin for MetalFxPlugin {
         app.add_plugins(bevy::render::extract_resource::ExtractResourcePlugin::<
             MetalFxHistoryReset,
         >::default());
-        app.add_systems(bevy::app::First, clear_history_reset);
         register_resolution_override(app);
 
         // Adaptive render scale (opt-in).
@@ -794,16 +741,26 @@ impl bevy::app::Plugin for MetalFxPlugin {
             // it exists on the Disabled path too. Nothing to do here but wire
             // the node that pushes into it.
             if let Some(render_app) = app.get_sub_app_mut(RenderApp) {
-                // Bevy 0.19 drives rendering from schedules, not a graph, so the
-                // node-plus-edge pair below is now a single ordered system. The
-                // ordering constraint is unchanged and still load-bearing: run
-                // after Bevy's own `upscaling`, because we overwrite
-                // out_texture with the ML-upscaled result via a Metal blit, and
-                // running first would just have it blitted over.
-                render_app.add_systems(
-                    Core3d,
-                    node::metalfx_upscale.in_set(MetalFxLabel).after(upscaling),
-                );
+                if effective_mode == MetalFxMode::FrameInterpolation {
+                    // Experimental interpolation retains its legacy late output path.
+                    render_app.add_systems(
+                        Core3d,
+                        node::metalfx_upscale.in_set(MetalFxLabel).after(upscaling),
+                    );
+                } else {
+                    // Reconstruct scene color before postprocessing and native UI.
+                    use bevy::core_pipeline::schedule::Core3dSystems;
+                    render_app.add_systems(
+                        Core3d,
+                        node::metalfx_upscale
+                            .in_set(MetalFxLabel)
+                            .after(Core3dSystems::MainPass)
+                            .before(Core3dSystems::EarlyPostProcess),
+                    );
+                }
+            }
+            if effective_mode != MetalFxMode::FrameInterpolation {
+                control_upscale::install(app);
             }
         }
     }
@@ -1080,8 +1037,9 @@ fn setup_temporal_camera(
 /// Through 0.3 this was a render *graph* label, because Bevy had a render graph
 /// and the pass was a node in it. Bevy 0.19 drives rendering from schedules, so
 /// the thing you order against is a set rather than a node — the type keeps its
-/// name and its job, and `my_system.after(MetalFxLabel)` still means what it
-/// always meant.
+/// name. Spatial/Temporal run before EarlyPostProcess; experimental interpolation
+/// and the Disabled timing control run after Bevy upscaling. Order against the
+/// selected mode when combining this set with other render systems.
 #[derive(SystemSet, Debug, Hash, PartialEq, Eq, Clone)]
 pub struct MetalFxLabel;
 
@@ -1124,7 +1082,14 @@ pub fn probe_spatial_scaler(_render_device: &bevy::render::renderer::RenderDevic
 
         let scaler = unsafe {
             platform::try_create_spatial_scaler_from_raw(
-                device_ptr, 800, 450, 1600, 900, color_fmt, color_fmt,
+                device_ptr,
+                800,
+                450,
+                1600,
+                900,
+                color_fmt,
+                color_fmt,
+                objc2_metal_fx::MTLFXSpatialScalerColorProcessingMode::Linear,
             )
         };
         scaler.is_some()
@@ -1354,18 +1319,10 @@ mod tests {
         );
     }
 
-    /// The full request-then-clear cycle, which is where this can go wrong.
-    ///
-    /// Two failure modes are pinned. Clearing too early (in `Last`, say) would
-    /// wipe the flag before the render world extracts it, so the reset silently
-    /// never happens. Clearing too late — or not at all — would leave it set,
-    /// which suppresses temporal accumulation entirely and quietly turns
-    /// temporal upscaling into something closer to spatial.
     #[test]
-    fn history_reset_survives_its_frame_then_clears_on_the_next() {
+    fn history_reset_survives_app_updates_without_a_render_acknowledgement() {
         let mut app = bevy::app::App::new();
         app.init_resource::<MetalFxHistoryReset>();
-        app.add_systems(bevy::app::First, clear_history_reset);
 
         // Frame N: a consumer requests after `First` has already run.
         app.update();
@@ -1377,11 +1334,11 @@ mod tests {
             "the request must still be set when the render world extracts at end of frame"
         );
 
-        // Frame N+1: `First` consumes it.
+        // No renderer has encoded this request. Advancing the app cannot consume it.
         app.update();
         assert!(
-            !app.world().resource::<MetalFxHistoryReset>().is_requested(),
-            "a consumed request must not persist into a second frame"
+            app.world().resource::<MetalFxHistoryReset>().is_requested(),
+            "a request must survive until a temporal encode acknowledges it"
         );
     }
 

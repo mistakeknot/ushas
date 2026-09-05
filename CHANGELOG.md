@@ -9,64 +9,80 @@ commit history when this file was added.
 
 ## [Unreleased]
 
+Development changes intended for **0.5**. These APIs are not published;
+package metadata and the README's crates.io quick start remain at 0.4.2 / 0.4.
+
 ### Added
 
-- **`MetalFxDeviceScaleBand`: the render-scale floor the device actually
-  reports, and it moved.** Every Apple Silicon generation before M5 reports a
-  maximum temporal upscale ratio of `2.0`, which is the half-resolution floor
-  this crate has always assumed. An M5 Max reports `3.0`: the temporal scaler
-  will reconstruct from one third of the output resolution in each dimension,
-  nine times fewer rasterized pixels than native against four at one half.
-  Nothing in the crate could reach it. The adaptive ladder was a constant
-  `[0.5, 0.75]` written on a machine whose floor was one half, and
-  `MetalFxScaleRange` reported that constant back as if it were a property of
-  the hardware.
+- `MetalFxEffectStatus`: bounded per-view observations of requested/effective
+  modes, actual content/output dimensions, frame identity, and monotonic age.
+  Pending, unavailable, failed, encoded, and output-written states replace stale
+  success. Explicit freshness checks support render-world lag. Status resources
+  remain available with disabled rendering and without a `RenderApp`.
+- A deterministic `adaptive::AdaptiveController` and Bevy adapter configured by
+  `MetalFxAdaptiveConfig`: explicit target FPS (default 60), quality floor
+  (default 0.5), elapsed-time smoothing and hysteresis, settling, measured
+  downshift-benefit checks, and an infeasible-budget reason at the floor.
+- `MetalFxFrameCostInput`, `ValidatedGpuFrameCost`, and `MetalFxAdaptiveContext`
+  for externally validated GPU frame-cost samples with frame/view/epoch/scale
+  identity and provenance. `MetalFxAdaptiveStatus` exposes decisions and hold
+  reasons. No validated timing producer is installed by default.
+- `MetalFxDeviceScaleBand` queries the temporal scale band during plugin
+  `finish`, with selector guards and explicit fallback provenance.
+  `MetalFxQuality` provides device-filtered presets from one third to native;
+  the adaptive quality floor further restricts the usable ladder.
+- Opt-in `frame_timing::ExperimentalFrameTimingPlugin` with asynchronous
+  per-view timestamp observations. It reports unvalidated measurements and
+  never publishes them to the adaptive controller.
+- A standalone render smoke with readiness checks, captures, structured
+  artifacts, control arms, and explicit failure exits. See
+  [tools/smoke/README.md](tools/smoke/README.md).
 
-  The plugin now asks. `MTLFXTemporalScalerDescriptor`'s
-  `supportedInputContentMin/MaxScaleForDevice:` are read in the plugin's
-  `finish` — there is no render device in `build` — and published as
-  `MetalFxDeviceScaleBand`, with `is_from_device()` distinguishing a reported
-  band from the assumed pre-M5 one that stands in until the device can be
-  asked. The query is guarded on the selector existing, since it arrived with
-  dynamic resolution in macOS 14 and calling it on 13 would throw. Spatial and
-  disabled modes have no device floor and report the plugin's own `0.1..=1.0`,
-  labelled as not a device fact. `device_scale_band()` exposes the same query
-  to an app that wants it before adding the plugin.
+### Changed (breaking)
 
-- **`MetalFxQuality`: the DLSS presets, as render scales.** `UltraPerformance`
-  (one third), `Performance` (one half), `Balanced` (0.58), `Quality` (two
-  thirds) and `Native` (1.0, at which the temporal scaler is temporal
-  anti-aliasing). A preset is a render scale and nothing else; what the names
-  buy is `MetalFxQuality::ladder(&band)`, the rungs a settings menu would
-  show, filtered to what the device admits. On an M5 that is all five; on
-  earlier chips, four.
+- Replaced app-time P99 adaptation with validated GPU frame-cost input. CPU-only
+  slow frames, stale samples, pending scalers, and missing timing do not lower
+  quality. Evidence resets on configuration/view changes and explicit workload
+  resets; failed downshifts restore quality instead of repeatedly descending.
+- Spatial and temporal upscaling now write the full-resolution view before
+  tonemapping and later post-processing, preserving subsequent native-resolution
+  UI. Custom pass ordering must account for this earlier stage. Frame
+  interpolation retains its separate experimental late output path.
 
-### Changed
+- `MetalFxHistoryReset` is now `Clone` rather than `Copy`. Requests persist
+  through inactive or unready render frames and clear only when a temporal
+  encode acknowledges the captured request; an old acknowledgement cannot
+  consume a newer cut.
 
-- **The adaptive governor climbs the preset ladder the device admits** instead
-  of the constant two steps. Its top rung is now native rather than 0.75, and
-  its bottom rung is the device floor, so on an M5 an app that opts into
-  `adaptive` can be governed down to one third resolution. In `finish` the
-  ladder, the temporal scaler's dynamic-resolution band and `MetalFxScaleRange`
-  are rebuilt together from the device band — they are one fact stated three
-  ways and a test pins that they move together. The initial `render_scale`
-  still snaps to the nearest rung; with a lower floor, a request of 0.4 now
-  lands on one third where it used to land on one half.
+### Removed
 
-  This is the reason for the minor bump: an adaptive consumer's range changed
-  under it. Non-adaptive consumers see no behavioural change — a fixed
-  `render_scale` of 0.333 already worked on an M5, because the scaler was only
-  ever asked for the single ratio it was configured with.
+- Public `AdaptiveScaleState`. Use `MetalFxAdaptiveConfig` and
+  `MetalFxAdaptiveStatus`; `MetalFxPlugin::adaptive` remains the opt-in switch.
 
-- **The `Disabled` control arm is instrumented** (c786049, previously
-  unreleased). `GpuTimingDiag` is inserted before both early returns in
-  `build`, and when a host supplies a `gpu_timing_sink` in `Disabled` mode a
-  `metalfx_timing_only` system submits an empty timed command buffer per
-  frame, measuring the floor of `GPUEndTime - GPUStartTime` so the enabled arm
-  needs no constant subtracted. A plain `Disabled` consumer submits nothing
-  extra. `GpuTimingSink::snapshot()` returns oldest-first; it used to hand back
-  raw circular-buffer order with a discontinuity at an arbitrary offset, which
-  percentiles survived and every positional query did not.
+### Fixed
+
+- The reduced-scale `Disabled` comparison uses bilinear sampling of the actual
+  content region. Bevy 0.19's final blit sampled the full allocated texture with
+  nearest filtering, so it did not provide a valid reduced-scale control.
+- Late-added cameras and initial, device-finalized, or policy-clamped scales
+  receive resolution overrides without waiting for a further scale change.
+  View/size changes invalidate scaler state; unsupported multiple-view and
+  viewport layouts report explicit reasons.
+- The instrumented `Disabled` command-buffer diagnostic is available before
+  plugin early returns. `GpuTimingSink::snapshot()` returns chronological samples.
+
+### Evidence and Limitations
+
+- Effect status describes CPU-side encoding, not GPU completion or presentation.
+  The command-buffer timer is a diagnostic interval that can include dependency
+  waits; it cannot establish total GPU frame cost or GPU-boundness. Experimental
+  frame timing remains unvalidated. No new GPU performance result is claimed.
+- Restored the historical presentation record: Shadow Work commit
+  [4253273976](https://github.com/mistakeknot/shadow-work/commit/4253273976ba58a454b6cf00ceaa11bd896db8a1)
+  records the frozen `e5h3` gate's awake **13/0/0 strong pass**, and asleep
+  **10/0/3 weak pass**. This supersedes the old blanket statement that drawable
+  timestamps never populated; it does not validate the current checkout's
+  presentation, latency, ordering, or interpolation UI/HDR composition.
 
 ## [0.4.2] — 2026-08-06
 
