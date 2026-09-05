@@ -1,5 +1,6 @@
 //! Bounded, inspectable render test. JSON names each observation's actual scope.
 mod claude;
+mod completion;
 mod config;
 mod gate;
 mod lifecycle;
@@ -76,6 +77,7 @@ fn main() -> AppExit {
             [--subject claude|shapes (default claude)]\n\
             [--adaptive --target-fps 60 --minimum-scale 0.5]\n\
             [--offscreen: fixed-scale image rendering; no lifecycle/adaptive/interpolation/presentation]\n\
+            [--completion: offscreen serial completed-render cadence, one frame in flight]\n\
             Runs unpaced; target-fps defines the analysis/controller budget, not a frame cap."
         );
         return AppExit::Success;
@@ -129,6 +131,8 @@ fn main() -> AppExit {
     };
     let experimental_timing = config.experimental_timing;
     let offscreen = config.offscreen;
+    let completion_enabled = config.completion;
+    let completion_scale = config.scale;
     let size = (config.width, config.height);
     let mut renderer = bevy::render::RenderPlugin::default();
     #[cfg(target_os = "macos")]
@@ -168,6 +172,10 @@ fn main() -> AppExit {
     if offscreen {
         defaults = defaults.disable::<WinitPlugin>();
     }
+    if completion_enabled {
+        defaults =
+            defaults.disable::<bevy::render::pipelined_rendering::PipelinedRenderingPlugin>();
+    }
     app.add_plugins(defaults);
     if offscreen {
         let image = app
@@ -181,6 +189,20 @@ fn main() -> AppExit {
     }
     app.add_plugins((plugin, scene::ScenePlugin))
         .add_systems(Last, observe_run);
+    if completion_enabled {
+        let offscreen::CaptureTarget::Image(target) =
+            app.world().resource::<offscreen::CaptureTarget>()
+        else {
+            unreachable!("completion CLI requires an image target");
+        };
+        app.add_plugins(completion::CompletionPlugin {
+            target: target.clone(),
+            mode,
+            scale: completion_scale,
+            output_size: [size.0, size.1],
+            timeout: Duration::from_secs(5),
+        });
+    }
     #[cfg(target_os = "macos")]
     if experimental_timing {
         app.add_plugins(bevy_metalfx::frame_timing::ExperimentalFrameTimingPlugin);
@@ -251,6 +273,10 @@ fn observe_run(
     #[cfg(target_os = "macos")] timing: Option<
         Res<bevy_metalfx::frame_timing::ExperimentalFrameTiming>,
     >,
+    (mut completion_request, completion_report): (
+        Option<ResMut<completion::CompletionRequest>>,
+        Option<Res<completion::CompletionReport>>,
+    ),
 ) {
     if run.finished {
         return;
@@ -294,6 +320,12 @@ fn observe_run(
                 && s["width"] == config.0.width
                 && s["height"] == config.0.height
         }) {
+            if let Some(request) = &mut completion_request {
+                request.0 = completion::Epoch {
+                    id: 2,
+                    phase: completion::Phase::Measure,
+                };
+            }
             run.measurement_started = Some(now);
             #[cfg(target_os = "macos")]
             if let Some(present) = &present {
@@ -330,6 +362,12 @@ fn observe_run(
     let measured_done = measured.is_some_and(|v| v >= config.0.seconds);
     let timed_out = elapsed > config.0.warmup + config.0.seconds + 30.0;
     if (measured_done || timed_out) && !run.screenshot_requested {
+        if let Some(request) = &mut completion_request {
+            request.0 = completion::Epoch {
+                id: 3,
+                phase: completion::Phase::Drain,
+            };
+        }
         run.screenshot_requested = true;
         commands
             .spawn((capture_target.screenshot(), CapturePurpose::Final))
@@ -344,7 +382,28 @@ fn observe_run(
                 && s["height"] == config.0.height
         });
         let ready_count = run.frames.iter().filter(|v| v["ready"] == true).count();
+        let completion_snapshot = completion_report.as_ref().map(|report| report.snapshot());
+        let completion_valid = !config.0.completion
+            || (completion_report.as_ref().and_then(|r| r.current_epoch())
+                == Some(completion::Epoch {
+                    id: 3,
+                    phase: completion::Phase::Drain,
+                })
+                && completion_snapshot
+                    .as_ref()
+                    .and_then(|r| r["epochs"].as_array())
+                    .is_some_and(|epochs| {
+                        epochs.iter().any(|e| {
+                            e["epoch"] == 2
+                                && e["phase"] == "Measure"
+                                && e["valid"] == true
+                                && e["qualified_render_frames"]
+                                    .as_u64()
+                                    .is_some_and(|n| n >= 20)
+                        })
+                    }));
         let valid = lifecycle.as_ref().is_none_or(|l| l.passed())
+            && completion_valid
             && !timed_out
             && measured_done
             && run.frames.len() >= 20
@@ -371,6 +430,8 @@ fn observe_run(
             "warmup_screenshot":run.warmup_screenshot,"environment":runtime_environment(config.0.offscreen),
             "retained_effects":status.snapshots(frame.0).iter().map(|s|format!("{s:?}")).collect::<Vec<_>>(),
             "effect_counts":run.counts,"screenshot":run.screenshot,"frames":run.frames});
+        report["completion_requested"] = json!(config.0.completion);
+        report["serial_completion"] = json!(completion_snapshot);
         if config.0.offscreen {
             report["presentation"] = json!({"available":false,
                 "scope":"offscreen image rendering only; no swapchain, drawable, or panel delivery"});

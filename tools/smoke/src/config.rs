@@ -5,6 +5,7 @@ pub struct Config {
     pub mode: String,
     pub subject: String,
     pub offscreen: bool,
+    pub completion: bool,
     pub hdr: bool,
     pub native_aa: bool,
     pub lifecycle: Option<String>,
@@ -32,6 +33,7 @@ impl Config {
             mode: "disabled".into(),
             subject: "claude".into(),
             offscreen: false,
+            completion: false,
             hdr: false,
             native_aa: false,
             lifecycle: None,
@@ -57,6 +59,10 @@ impl Config {
             match flag.as_str() {
                 "--offscreen" => {
                     c.offscreen = true;
+                    continue;
+                }
+                "--completion" => {
+                    c.completion = true;
                     continue;
                 }
                 "--hdr" => {
@@ -121,6 +127,9 @@ impl Config {
         if c.offscreen && (c.lifecycle.is_some() || c.adaptive || c.mode == "interpolate") {
             return Err("offscreen supports fixed-scale disabled/spatial/temporal rendering only; lifecycle, adaptive and interpolation require the window fixture".into());
         }
+        if c.completion && (!c.offscreen || c.experimental_timing) {
+            return Err("completion requires offscreen rendering without experimental timestamp instrumentation".into());
+        }
         if c.native_aa && (c.mode != "disabled" || c.scale != 1.0) {
             return Err("native-aa is the disabled native-scale MSAA4 control".into());
         }
@@ -167,6 +176,7 @@ mod tests {
         assert!(c.seconds > 0.0 && c.seconds <= 10.0);
         assert!(!c.adaptive);
         assert!(!c.offscreen);
+        assert!(!c.completion);
     }
 
     #[test]
@@ -221,6 +231,22 @@ mod tests {
         ] {
             assert!(parse(&args).is_err(), "accepted {args:?}");
         }
+    }
+
+    #[test]
+    fn completion_requires_an_offscreen_arm_without_timestamp_instrumentation() {
+        assert!(parse(&["--offscreen", "--completion"]).is_ok());
+        assert!(parse(&[
+            "--offscreen",
+            "--completion",
+            "--mode",
+            "temporal",
+            "--scale",
+            "0.5"
+        ])
+        .is_ok());
+        assert!(parse(&["--completion"]).is_err());
+        assert!(parse(&["--offscreen", "--completion", "--experimental-timing"]).is_err());
     }
 
     #[test]
