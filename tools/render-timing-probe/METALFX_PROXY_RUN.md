@@ -6,11 +6,21 @@ samples passed its guards. It does not establish all MetalFX work, a Bevy frame,
 exclusive GPU occupancy or a validated governor input.
 
 Root has compiled the observer and executable with strict Clang warnings and
-run 65 fake-delegate checks plus three CLI checks successfully. The analyzer's
+run 67 fake-delegate checks plus three CLI checks and actual protocol JSON
+Boolean checks successfully. The analyzer's
 ten CPU tests pass, including malformed identity/lifetime records, exact output
-parity, overlap unions, decoded PNGs and retained raw-output corruption. No
-MetalFX proxy hardware result is recorded yet. Root schedules every build and
-GPU invocation; peer review precedes hardware.
+parity, overlap unions, decoded PNGs and retained raw-output corruption.
+Independent source reviews passed. Root schedules every build and GPU
+invocation; peer review precedes hardware.
+
+The first Spatial OFF run, `proxy-spatial-off-02` from source `75577e1`,
+completed all 16 frames with intact raw outputs and PNGs. Its protocol remains
+invalid: 49 Boolean fields serialized as numeric 0/1. CPU regressions using
+the actual record builders and ledger snapshots caught the same defect;
+explicit `numberWithBool:` boxing fixed it without relaxing the analyzer.
+Preserve that failed run and its original analysis. A newly built executable
+and fresh OFF run must establish the reference before calls/counters testing.
+No proxy hardware arm has run yet; this is no compatibility result.
 
 The standalone build has no Cargo or repository library dependency:
 

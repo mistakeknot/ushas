@@ -80,6 +80,38 @@ static NSString *Shaders=@"#include <metal_stdlib>\n"
 @implementation ProxyFrame
 @end
 
+// Box protocol flags explicitly: C comparison/logical expressions otherwise become JSON 0/1.
+static NSDictionary *HeaderRecord(NSDictionary *options,NSString *deviceName,BOOL supported,BOOL stageCounters,id counterSet) {
+    return @{@"kind":@"header",@"schema":@1,@"mode":options[@"--mode"],@"observe":options[@"--observe"],
+        @"pid":@(getpid()),@"device":deviceName,@"os":NSProcessInfo.processInfo.operatingSystemVersionString,
+        @"target_frames":@(Frames),@"ring_size":@(Slots),@"input_width":@(InputWidth),@"input_height":@(InputHeight),
+        @"output_width":@(OutputWidth),@"output_height":@(OutputHeight),@"scaler_supported":[NSNumber numberWithBool:supported],
+        @"stage_counters_supported":[NSNumber numberWithBool:stageCounters],@"timestamp_counter_set":[NSNumber numberWithBool:counterSet!=nil],
+        @"maximum_encoders_per_frame":@32,@"maximum_samples_per_frame":@128,@"maximum_selector_records_per_frame":@256,
+        @"input_output_format":@"RGBA16Float",@"capture_format":@"RGBA8Unorm",@"input_pattern":@"red=x/160;green=y/90;blue=.2+frame*.02;alpha=1",
+        @"temporal_history":@"one scaler; reset frame1 only; all frame inputs retained; zero jitter/motion; reversed depth0.5; exposure1",
+        @"scope":@"supplied MetalFX command-buffer observation only; all-process encoder trace inventory still required",
+        @"maximum_delivery_age_ms":@250,@"validated_for_governor":@NO,
+        @"metal_debug_layer":NSProcessInfo.processInfo.environment[@"MTL_DEBUG_LAYER"]?:[NSNull null]};
+}
+
+static NSDictionary *FrameIdentity(NSDictionary *options,NSUInteger frameID,NSUInteger slot,NSUInteger generation,id temporal) {
+    return @{@"frame":@(frameID),@"view":@1,@"epoch":@1,@"slot":@(slot),@"generation":@(generation),
+        @"mode":options[@"--mode"],@"observe":options[@"--observe"],@"input_width":@(InputWidth),@"input_height":@(InputHeight),
+        @"output_width":@(OutputWidth),@"output_height":@(OutputHeight),@"reset":[NSNumber numberWithBool:temporal && frameID==1]};
+}
+
+static NSDictionary *CompletionRecord(ProxyFrame *frame,BOOL pngSaved,BOOL rawSaved,uint64_t delivered) {
+    return @{@"kind":@"completed",@"identity":frame.identity,@"setup_succeeded":[NSNumber numberWithBool:frame.setupSucceeded],@"metalfx_succeeded":[NSNumber numberWithBool:frame.fxSucceeded],
+        @"readback_succeeded":[NSNumber numberWithBool:frame.readbackSucceeded],@"owner_committed_metalfx":[NSNumber numberWithBool:frame.ownerCommittedFx],@"png_saved":[NSNumber numberWithBool:pngSaved],
+        @"raw_saved":[NSNumber numberWithBool:rawSaved],@"command_buffers":@{@"setup":frame.setupState,@"metalfx":frame.fxState,@"finish":frame.finishState},
+        @"pixels":frame.pixelResult,@"observation":frame.observation,@"setup_encoder_families":frame.setupFamilies,
+        @"encode_start_host_ns":@(frame.encodeStartNS),@"encode_end_host_ns":@(frame.encodeEndNS),
+        @"metalfx_callback_host_ns":@(frame.fxCallbackNS),@"counter_resolved_host_ns":@(frame.resolvedNS),
+        @"readback_callback_host_ns":@(frame.readbackCallbackNS),@"delivered_host_ns":@(delivered),
+        @"within_delivery_age_limit":[NSNumber numberWithBool:delivered-frame.admittedNS<=250*NSEC_PER_MSEC],@"validated_for_governor":@NO};
+}
+
 @interface ProxyProbe : NSObject
 @property(nonatomic,copy) NSDictionary *options;
 @property(nonatomic,copy) NSString *directory;
@@ -146,17 +178,7 @@ static NSString *Shaders=@"#include <metal_stdlib>\n"
     BOOL supported=temporal?[MTLFXTemporalScalerDescriptor supportsDevice:self.device]:[MTLFXSpatialScalerDescriptor supportsDevice:self.device];
     BOOL stageCounters=[self.device supportsCounterSampling:MTLCounterSamplingPointAtStageBoundary];
     for (id<MTLCounterSet> set in self.device.counterSets) if ([set.name isEqual:MTLCommonCounterSetTimestamp]) self.timestampSet=set;
-    [self emit:@{@"kind":@"header",@"schema":@1,@"mode":self.options[@"--mode"],@"observe":self.options[@"--observe"],
-        @"pid":@(getpid()),@"device":self.device.name,@"os":NSProcessInfo.processInfo.operatingSystemVersionString,
-        @"target_frames":@(Frames),@"ring_size":@(Slots),@"input_width":@(InputWidth),@"input_height":@(InputHeight),
-        @"output_width":@(OutputWidth),@"output_height":@(OutputHeight),@"scaler_supported":@(supported),
-        @"stage_counters_supported":@(stageCounters),@"timestamp_counter_set":@(self.timestampSet!=nil),
-        @"maximum_encoders_per_frame":@32,@"maximum_samples_per_frame":@128,@"maximum_selector_records_per_frame":@256,
-        @"input_output_format":@"RGBA16Float",@"capture_format":@"RGBA8Unorm",@"input_pattern":@"red=x/160;green=y/90;blue=.2+frame*.02;alpha=1",
-        @"temporal_history":@"one scaler; reset frame1 only; all frame inputs retained; zero jitter/motion; reversed depth0.5; exposure1",
-        @"scope":@"supplied MetalFX command-buffer observation only; all-process encoder trace inventory still required",
-        @"maximum_delivery_age_ms":@250,@"validated_for_governor":@NO,
-        @"metal_debug_layer":NSProcessInfo.processInfo.environment[@"MTL_DEBUG_LAYER"]?:[NSNull null]}];
+    [self emit:HeaderRecord(self.options,self.device.name,supported,stageCounters,self.timestampSet)];
     if (!supported) { [self finish:2 reason:@"MetalFX scaler unsupported"];return NO; }
     if ([self.options[@"--observe"] isEqual:@"counters"] && (!stageCounters || !self.timestampSet)) {
         [self finish:2 reason:@"stage-boundary timestamps unavailable"];return NO;
@@ -228,21 +250,12 @@ static NSString *Shaders=@"#include <metal_stdlib>\n"
     uint64_t delivered=NowNS();
     if (delivered-frame.admittedNS>250*NSEC_PER_MSEC) available=NO;
     if (!gpu) self.gpuFailures++;if (!pixelOK) self.pixelFailures++;if (!available) self.unavailable++;
-    [self emit:@{@"kind":@"completed",@"identity":frame.identity,@"setup_succeeded":@(frame.setupSucceeded),@"metalfx_succeeded":@(frame.fxSucceeded),
-        @"readback_succeeded":@(frame.readbackSucceeded),@"owner_committed_metalfx":@(frame.ownerCommittedFx),@"png_saved":@(pngSaved),
-        @"raw_saved":@(rawSaved),@"command_buffers":@{@"setup":frame.setupState,@"metalfx":frame.fxState,@"finish":frame.finishState},
-        @"pixels":pixels,@"observation":frame.observation,@"setup_encoder_families":frame.setupFamilies,
-        @"encode_start_host_ns":@(frame.encodeStartNS),@"encode_end_host_ns":@(frame.encodeEndNS),
-        @"metalfx_callback_host_ns":@(frame.fxCallbackNS),@"counter_resolved_host_ns":@(frame.resolvedNS),
-        @"readback_callback_host_ns":@(frame.readbackCallbackNS),@"delivered_host_ns":@(delivered),
-        @"within_delivery_age_limit":@(delivered-frame.admittedNS<=250*NSEC_PER_MSEC),@"validated_for_governor":@NO}];
+    [self emit:CompletionRecord(frame,pngSaved,rawSaved,delivered)];
     self.slots[[frame.identity[@"slot"] unsignedIntegerValue]]=[NSNull null];self.completed++;[self tick];
 }
 - (void)launch:(NSUInteger)slot {
     NSUInteger frameID=self.admitted+1,generation=[self.generations[slot] unsignedIntegerValue]+1;
-    ProxyFrame *frame=[ProxyFrame new];frame.identity=@{@"frame":@(frameID),@"view":@1,@"epoch":@1,@"slot":@(slot),@"generation":@(generation),
-        @"mode":self.options[@"--mode"],@"observe":self.options[@"--observe"],@"input_width":@(InputWidth),@"input_height":@(InputHeight),
-        @"output_width":@(OutputWidth),@"output_height":@(OutputHeight),@"reset":@(self.temporal && frameID==1)};
+    ProxyFrame *frame=[ProxyFrame new];frame.identity=FrameIdentity(self.options,frameID,slot,generation,self.temporal);
     frame.prefix=[NSString stringWithFormat:@"proxy/frame=%lu/view=1/epoch=1/slot=%lu/gen=%lu",(unsigned long)frameID,(unsigned long)slot,(unsigned long)generation];
     MTLTextureUsage inputUsage=self.temporal?self.temporal.colorTextureUsage:self.spatial.colorTextureUsage;
     MTLTextureUsage outputUsage=self.temporal?self.temporal.outputTextureUsage:self.spatial.outputTextureUsage;
@@ -351,13 +364,47 @@ static NSString *Shaders=@"#include <metal_stdlib>\n"
 }
 @end
 
+// Round-trip the exact production record builders; this function creates no Metal object.
+static BOOL SerializedBooleanFields(NSDictionary *record,NSArray<NSString *> *keys) {
+    NSData *data=[NSJSONSerialization dataWithJSONObject:record options:0 error:NULL];
+    NSDictionary *decoded=data?[NSJSONSerialization JSONObjectWithData:data options:0 error:NULL]:nil;
+    for (NSString *key in keys) {
+        id value=decoded[key];
+        if (!value || CFGetTypeID((__bridge CFTypeRef)value)!=CFBooleanGetTypeID()) return NO;
+    }
+    return YES;
+}
+static BOOL ProtocolSelfTest(void) {
+    BOOL success=YES;
+    for (NSNumber *truth in @[@NO,@YES]) {
+        BOOL flag=truth.boolValue;NSDictionary *options=@{@"--mode":flag?@"temporal":@"spatial",@"--observe":@"off"};
+        id temporal=flag?[NSObject new]:nil;
+        NSDictionary *header=HeaderRecord(options,@"CPU fake device",flag,flag,temporal);
+        BOOL typed=SerializedBooleanFields(header,@[@"scaler_supported",@"stage_counters_supported",@"timestamp_counter_set",@"validated_for_governor"]);
+        if (!typed) { fprintf(stderr,"FAIL actual serialized header Boolean types\n");success=NO; }
+        for (NSNumber *frameID in @[@1,@2]) {
+            NSDictionary *identity=FrameIdentity(options,frameID.unsignedIntegerValue,0,frameID.unsignedIntegerValue,temporal);
+            typed=SerializedBooleanFields(identity,@[@"reset"]);
+            if (!typed) { fprintf(stderr,"FAIL actual serialized frame identity Boolean types\n");success=NO; }
+            ProxyFrame *frame=[ProxyFrame new];frame.identity=identity;frame.pixelResult=@{};frame.observation=@{};frame.setupFamilies=@[];
+            frame.setupState=@{};frame.fxState=@{};frame.finishState=@{};frame.admittedNS=100;
+            frame.setupSucceeded=flag;frame.fxSucceeded=flag;frame.readbackSucceeded=flag;frame.ownerCommittedFx=flag;
+            NSDictionary *completed=CompletionRecord(frame,flag,flag,flag?101:250*NSEC_PER_MSEC+101);
+            typed=SerializedBooleanFields(completed,@[@"setup_succeeded",@"metalfx_succeeded",@"readback_succeeded",@"owner_committed_metalfx",@"png_saved",@"raw_saved",@"within_delivery_age_limit",@"validated_for_governor"]);
+            if (!typed) { fprintf(stderr,"FAIL actual serialized completion Boolean types\n");success=NO; }
+        }
+    }
+    return success;
+}
+
 int main(int argc,const char *argv[]) {
     @autoreleasepool {
         if (argc==2 && strcmp(argv[1],"--self-test")==0) {
             const char *good[]={"probe","--mode","spatial","--observe","calls","--out","/tmp/fresh"};
             const char *bad[]={"probe","--mode","spatial","--mode","calls","--out","/tmp/fresh"};
             if (!Options(7,good) || Options(6,good) || Options(7,bad)) return 1;
-            printf("3 CLI checks passed; no Metal device created\n");return 0;
+            BOOL protocol=ProtocolSelfTest();
+            printf("3 CLI checks passed; actual protocol JSON Boolean checks %s; no Metal device created\n",protocol?"passed":"FAILED");return protocol?0:1;
         }
         NSDictionary *options=Options(argc,argv);
         if (!options) { fprintf(stderr,"usage: metalfx-proxy --mode spatial|temporal --observe off|calls|counters --out NEW_DIRECTORY\n");return 2; }

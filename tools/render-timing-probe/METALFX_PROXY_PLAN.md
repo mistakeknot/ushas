@@ -3,12 +3,20 @@
 Status: the instance-local observer is implemented. Root's strict CPU build
 and fake-delegate tests passed after a recorded failing checkpoint (51 checks,
 30 expected failures, then zero failures). Expanded descriptor and ownership
-regressions now pass 65 checks. Root also compiled the optimized executable
-strictly and passed its three CPU-only CLI checks. Executable source review is
+regressions now pass 67 checks, including actual ledger JSON Boolean types.
+Root also compiled the optimized executable strictly and passed its three
+CPU-only CLI checks plus actual header/identity/completion JSON Boolean checks.
+Executable source review is
 complete; the artifact validator passes ten CPU tests and independent source
 review. The corrected external watchdog passed a CPU helper-process cleanup
 regression after the reviewer reproduced the original cleanup gap.
-No MetalFX proxy GPU run has started.
+The first real-buffer Spatial OFF run (`proxy-spatial-off-02`, source
+`75577e1`) completed 16 frames with intact raw pixels and PNGs, but its strict
+protocol analysis failed on 49 numeric values in Boolean fields. The original
+run remains a schema failure and cannot serve as a reference. CPU regressions
+reproduced the actual serialization defect; explicit Boolean boxing fixed it
+and both strict CPU suites now pass. A fresh OFF reference is required. No
+calls/counters proxy hardware arm has run yet.
 Root schedules all hardware. The successful
 native stage probe establishes a useful counter path, not complete Ushas scope
 or exclusive GPU occupancy.

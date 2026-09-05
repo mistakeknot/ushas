@@ -85,12 +85,23 @@ static NSDictionary *Finish(ObservationLedger *ledger,FakeBuffer *buffer) {
 }
 static BOOL Error(NSDictionary *result,NSString *code) { return [result[@"errors"] containsObject:code]; }
 
+static BOOL SerializedLedgerBooleans(NSDictionary *record) {
+    NSData *data=[NSJSONSerialization dataWithJSONObject:record options:0 error:NULL];
+    NSDictionary *decoded=data?[NSJSONSerialization JSONObjectWithData:data options:0 error:NULL]:nil;
+    for (NSString *key in @[@"available",@"sealed",@"completed",@"validated_for_governor"]) {
+        id value=decoded[key];
+        if (!value || CFGetTypeID((__bridge CFTypeRef)value)!=CFBooleanGetTypeID()) return NO;
+    }
+    return YES;
+}
+
 int main(void) {
     @autoreleasepool {
         // Exact forwarding and source identity, without counters.
         FakeBuffer *buffer=[FakeBuffer new];NSMutableArray *counters=[NSMutableArray new];
         ObservationLedger *ledger=Ledger(buffer,ObservationModeCalls,32,counters);
         id<MTLCommandBuffer> proxy=[ObservedCommandBuffer wrap:(id<MTLCommandBuffer>)buffer ledger:ledger];
+        CHECK(SerializedLedgerBooleans(ledger.snapshot),"unsealed ledger JSON uses Boolean values even when unavailable");
         id encoder=[proxy computeCommandEncoder];
         CHECK(encoder==buffer.encoders.firstObject,"returns the real encoder, not an encoder proxy");
         CHECK([buffer.selectors.lastObject isEqual:@"computeCommandEncoder"],"calls mode preserves the default factory");
@@ -100,6 +111,7 @@ int main(void) {
         CHECK([(id)proxy methodSignatureForSelector:@selector(unknownFactory)]!=nil,"actual forwarding method signature comes from delegate");
         NSDictionary *result=Finish(ledger,buffer);
         CHECK([result[@"available"] boolValue],"calls inventory seals and completes");
+        CHECK(SerializedLedgerBooleans(result),"completed ledger JSON uses Boolean values when available");
         CHECK([result[@"identity"] isEqual:Identity()],"original immutable identity retained");
         CHECK([result[@"encoders"] count]==1,"factory recorded exactly once");
 

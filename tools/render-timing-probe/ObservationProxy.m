@@ -152,11 +152,11 @@
             @"label":record.label?:[NSNull null],@"sample_count":@(self.mode==ObservationModeCounters?record.sampleCount:0),
             @"ticks":record.ticks?:[NSNull null]}];
     }
-    return @{@"available":@(self.sealed && self.completed && self.errors.count==0),@"validated_for_governor":@NO,
+    return @{@"available":[NSNumber numberWithBool:self.sealed && self.completed && self.errors.count==0],@"validated_for_governor":@NO,
         @"identity":self.identity,@"observation_mode":self.mode==ObservationModeCounters?@"counters":@"calls",
         @"expected_command_buffer_label":self.expectedLabel,@"sealed_command_buffer_label":self.sealedLabel?:[NSNull null],
         @"sealed_command_buffer_status":self.sealedStatus?:[NSNull null],@"completed_command_buffer_status":self.completedStatus?:[NSNull null],
-        @"sealed":@(self.sealed),@"completed":@(self.completed),@"errors":[self.errors.array copy],
+        @"sealed":[NSNumber numberWithBool:self.sealed],@"completed":[NSNumber numberWithBool:self.completed],@"errors":[self.errors.array copy],
         @"selectors":[self.selectors copy],@"total_selector_calls":@(self.totalSelectors),
         @"dropped_selector_records":@(self.totalSelectors-self.selectors.count),@"total_encoder_factories":@(self.totalEncoders),
         @"requested_samples":@(self.requestedSamples),@"encoders":[encoders copy]};
