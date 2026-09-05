@@ -34,6 +34,7 @@ pub struct ExperimentalTimingIdentity {
     pub configuration_generation: u64,
     /// The frozen adaptive context epoch, only when it matches this actual view/configuration.
     pub adaptive_epoch: Option<u64>,
+    /// Configured mode; pair the frame identity with effect status to prove actual encoding.
     pub mode: MetalFxMode,
     pub render_scale: f32,
     /// Actual main-pass content viewport, before upscaling.
@@ -52,6 +53,34 @@ pub struct ExperimentalTimingObservation {
     pub marker_ms: [Option<f64>; 2],
     pub gpu_elapsed_ms: Option<f64>,
     pub status: ExperimentalTimingStatus,
+    pub stages: ExperimentalTimingStages,
+}
+
+/// CPU-observed offsets from the original encode Instant, not GPU execution durations.
+/// Callback offsets include any time until wgpu next polls completion.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct ExperimentalTimingStages {
+    pub workload_callback_after: Option<Duration>,
+    /// Recorded immediately before submitting the separate resolve command buffer.
+    pub resolve_submitted_after: Option<Duration>,
+    pub mapping_callback_after: Option<Duration>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ExperimentalTimingPhase {
+    Begun,
+    Encoded,
+    WorkloadPending,
+    Mapping,
+}
+
+/// Occupied storage at the most recent render-world stage snapshot.
+#[derive(Debug, Clone)]
+pub struct ExperimentalTimingInFlight {
+    pub identity: ExperimentalTimingIdentity,
+    pub phase: ExperimentalTimingPhase,
+    pub callback_ready: bool,
+    pub stages: ExperimentalTimingStages,
 }
 
 /// Snapshot of a bounded shared history; observers never wait on the GPU.
@@ -61,6 +90,10 @@ pub struct ExperimentalTimingSnapshot {
     pub reason: Option<&'static str>,
     pub observations: Vec<ExperimentalTimingObservation>,
     pub dropped_samples: u64,
+    /// Lifetime completion count, including rejected results and observations evicted from history.
+    pub completed_samples: u64,
+    pub in_flight: Vec<ExperimentalTimingInFlight>,
+    pub in_flight_observed_at: Option<Instant>,
 }
 
 #[derive(Default)]
@@ -69,6 +102,9 @@ struct History {
     reason: Option<&'static str>,
     observations: VecDeque<ExperimentalTimingObservation>,
     dropped_samples: u64,
+    completed_samples: u64,
+    in_flight: Vec<ExperimentalTimingInFlight>,
+    in_flight_observed_at: Option<Instant>,
 }
 
 /// Clone this resource into main and render worlds to inspect the opt-in experiment.
@@ -84,12 +120,16 @@ impl ExperimentalFrameTiming {
                 reason: history.reason,
                 observations: history.observations.iter().cloned().collect(),
                 dropped_samples: history.dropped_samples,
+                completed_samples: history.completed_samples,
+                in_flight: history.in_flight.clone(),
+                in_flight_observed_at: history.in_flight_observed_at,
             })
             .unwrap_or_default()
     }
 
     fn publish(&self, observation: ExperimentalTimingObservation) {
         if let Ok(mut history) = self.0.lock() {
+            history.completed_samples = history.completed_samples.saturating_add(1);
             history.status = observation.status;
             history.reason = if observation.gpu_elapsed_ms.is_some() {
                 Some("experimental marker envelope; rendered coverage unvalidated")
@@ -112,6 +152,13 @@ impl ExperimentalFrameTiming {
             }
         }
     }
+
+    fn snapshot_slots(&self, slots: &[Slot]) {
+        if let Ok(mut history) = self.0.lock() {
+            history.in_flight = slots.iter().filter_map(Slot::snapshot).collect();
+            history.in_flight_observed_at = Some(Instant::now());
+        }
+    }
 }
 
 fn elapsed_ms(ticks: [u64; 2], period_ns: f32) -> Option<f64> {
@@ -132,7 +179,7 @@ use bevy::render::renderer::{RenderContext, RenderDevice, RenderQueue, ViewQuery
 use bevy::render::sync_world::MainEntity;
 use bevy::render::view::ViewTarget;
 use std::collections::HashMap;
-use std::sync::atomic::{AtomicU8, Ordering};
+use std::sync::atomic::{AtomicU64, AtomicU8, Ordering};
 use std::time::Duration;
 
 const MAX_IN_FLIGHT: usize = 8;
@@ -231,8 +278,30 @@ enum Phase {
     Idle,
     Begun,
     Encoded,
-    WorkloadPending(Arc<AtomicU8>),
-    Mapping(Arc<AtomicU8>),
+    WorkloadPending(Arc<Completion>),
+    Mapping(Arc<Completion>),
+}
+
+#[derive(Default)]
+struct Completion {
+    status: AtomicU8,
+    observed_ns: AtomicU64,
+}
+
+impl Completion {
+    fn finish(&self, success: bool, encoded_at: Instant) {
+        self.observed_ns.store(
+            encoded_at.elapsed().as_nanos().min(u128::from(u64::MAX)) as u64,
+            Ordering::Relaxed,
+        );
+        self.status
+            .store(if success { 1 } else { 2 }, Ordering::Release);
+    }
+
+    fn observed_after(&self) -> Option<Duration> {
+        (self.status.load(Ordering::Acquire) != 0)
+            .then(|| Duration::from_nanos(self.observed_ns.load(Ordering::Relaxed)))
+    }
 }
 
 struct Slot {
@@ -243,6 +312,38 @@ struct Slot {
     phase: Phase,
     last_end_tick: u64,
     both_markers_encoded: bool,
+    stages: ExperimentalTimingStages,
+}
+
+impl Slot {
+    fn snapshot(&self) -> Option<ExperimentalTimingInFlight> {
+        let mut stages = self.stages;
+        let (phase, callback_ready) = match &self.phase {
+            Phase::Idle => return None,
+            Phase::Begun => (ExperimentalTimingPhase::Begun, false),
+            Phase::Encoded => (ExperimentalTimingPhase::Encoded, false),
+            Phase::WorkloadPending(completion) => {
+                stages.workload_callback_after = completion.observed_after();
+                (
+                    ExperimentalTimingPhase::WorkloadPending,
+                    stages.workload_callback_after.is_some(),
+                )
+            }
+            Phase::Mapping(completion) => {
+                stages.mapping_callback_after = completion.observed_after();
+                (
+                    ExperimentalTimingPhase::Mapping,
+                    stages.mapping_callback_after.is_some(),
+                )
+            }
+        };
+        Some(ExperimentalTimingInFlight {
+            identity: self.identity.clone()?,
+            phase,
+            callback_ready,
+            stages,
+        })
+    }
 }
 
 #[derive(Clone, PartialEq)]
@@ -340,6 +441,7 @@ fn new_slot(device: &wgpu::Device) -> Slot {
         phase: Phase::Idle,
         last_end_tick: 0,
         both_markers_encoded: false,
+        stages: ExperimentalTimingStages::default(),
     }
 }
 
@@ -547,6 +649,7 @@ pub(crate) fn begin_view(
     state.slots[index].identity = Some(identity);
     state.slots[index].phase = Phase::Begun;
     state.slots[index].both_markers_encoded = false;
+    state.slots[index].stages = ExperimentalTimingStages::default();
 }
 
 /// Run after Bevy `upscaling` and `MetalFxLabel`, including in Disabled mode.
@@ -601,12 +704,14 @@ pub fn arm_completion(
             );
         }
         if matches!(slot.phase, Phase::Encoded) {
-            let ready = Arc::new(AtomicU8::new(0));
+            let ready = Arc::new(Completion::default());
             let callback_ready = ready.clone();
-            queue.on_submitted_work_done(move || callback_ready.store(1, Ordering::Release));
+            let encoded_at = slot.identity.as_ref().unwrap().encoded_at;
+            queue.on_submitted_work_done(move || callback_ready.finish(true, encoded_at));
             slot.phase = Phase::WorkloadPending(ready);
         }
     }
+    sink.snapshot_slots(&state.slots);
 }
 
 /// Run in root `RenderGraphSystems::Begin`. This never polls or waits for the GPU.
@@ -618,23 +723,28 @@ pub fn harvest(
 ) {
     for slot in &mut state.slots {
         match &slot.phase {
-            Phase::WorkloadPending(ready) if ready.load(Ordering::Acquire) == 1 => {
+            Phase::WorkloadPending(ready) if ready.status.load(Ordering::Acquire) == 1 => {
+                slot.stages.workload_callback_after = ready.observed_after();
                 let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
                     label: Some("ushas completed-frame query resolve"),
                 });
                 encoder.resolve_query_set(&slot.queries, 0..4, &slot.resolve, 0);
                 encoder.copy_buffer_to_buffer(&slot.resolve, 0, &slot.readback, 0, 32);
-                queue.submit([encoder.finish()]);
-                let mapped = Arc::new(AtomicU8::new(0));
+                let command_buffer = encoder.finish();
+                let encoded_at = slot.identity.as_ref().unwrap().encoded_at;
+                slot.stages.resolve_submitted_after = Some(encoded_at.elapsed());
+                queue.submit([command_buffer]);
+                let mapped = Arc::new(Completion::default());
                 let callback_mapped = mapped.clone();
                 slot.readback
                     .map_async(wgpu::MapMode::Read, .., move |result| {
-                        callback_mapped.store(if result.is_ok() { 1 } else { 2 }, Ordering::Release)
+                        callback_mapped.finish(result.is_ok(), encoded_at)
                     });
                 slot.phase = Phase::Mapping(mapped);
             }
-            Phase::Mapping(mapped) if mapped.load(Ordering::Acquire) != 0 => {
-                let success = mapped.load(Ordering::Acquire) == 1;
+            Phase::Mapping(mapped) if mapped.status.load(Ordering::Acquire) != 0 => {
+                let success = mapped.status.load(Ordering::Acquire) == 1;
+                slot.stages.mapping_callback_after = mapped.observed_after();
                 let mut ticks = [0u64; 4];
                 if success {
                     let bytes = slot.readback.get_mapped_range(..);
@@ -669,6 +779,7 @@ pub fn harvest(
                         } else {
                             ExperimentalTimingStatus::Failed
                         },
+                        stages: slot.stages,
                     });
                     if gpu_elapsed_ms.is_some() {
                         slot.last_end_tick = slot.last_end_tick.max(ticks[3]);
@@ -691,11 +802,54 @@ pub fn harvest(
             _ => {}
         }
     }
+    sink.snapshot_slots(&state.slots);
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn callback_telemetry_is_missing_until_the_callback_runs() {
+        let completion = Completion::default();
+        assert_eq!(completion.observed_after(), None);
+        let encoded_at = Instant::now() - Duration::from_millis(20);
+        completion.finish(true, encoded_at);
+        let observed = completion.observed_after().unwrap();
+        assert!(observed >= Duration::from_millis(20));
+        assert!(observed <= encoded_at.elapsed());
+        assert_eq!(completion.status.load(Ordering::Acquire), 1);
+    }
+
+    #[test]
+    fn pending_identity_and_stage_telemetry_survive_a_snapshot() {
+        let sink = ExperimentalFrameTiming::default();
+        let identity = sample(7, 3, 0.5).identity;
+        let stages = ExperimentalTimingStages {
+            workload_callback_after: Some(Duration::from_millis(30)),
+            resolve_submitted_after: Some(Duration::from_millis(45)),
+            mapping_callback_after: None,
+        };
+        sink.0
+            .lock()
+            .unwrap()
+            .in_flight
+            .push(ExperimentalTimingInFlight {
+                identity: identity.clone(),
+                phase: ExperimentalTimingPhase::Mapping,
+                callback_ready: false,
+                stages,
+            });
+        let snapshot = sink.snapshot();
+        assert!(snapshot.observations.is_empty());
+        assert_eq!(snapshot.in_flight[0].identity, identity);
+        assert_eq!(snapshot.in_flight[0].stages, stages);
+        assert_eq!(
+            snapshot.in_flight[0].phase,
+            ExperimentalTimingPhase::Mapping
+        );
+        assert!(!snapshot.in_flight[0].callback_ready);
+    }
 
     #[test]
     fn acceptance_requires_complete_fresh_non_overlapping_queries() {
@@ -780,6 +934,7 @@ mod tests {
             marker_ms: [Some(0.01), Some(0.01)],
             gpu_elapsed_ms: Some(1.0),
             status: ExperimentalTimingStatus::ObservedUnvalidated,
+            stages: ExperimentalTimingStages::default(),
         }
     }
 
@@ -807,6 +962,7 @@ mod tests {
         }
         let state = sink.snapshot();
         assert_eq!(state.observations.len(), HISTORY_CAPACITY);
+        assert_eq!(state.completed_samples, 300);
         assert_eq!(state.observations.first().unwrap().identity.frame_id, 61);
     }
 

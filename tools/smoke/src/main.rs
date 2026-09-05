@@ -404,14 +404,56 @@ fn observe_run(
             }
             if let Some(timing) = &timing {
                 let snapshot = timing.snapshot();
+                let mut retained_status_counts = std::collections::BTreeMap::<String, usize>::new();
+                for observation in &snapshot.observations {
+                    *retained_status_counts
+                        .entry(format!("{:?}", observation.status))
+                        .or_default() += 1;
+                }
+                let mut in_flight_counts = std::collections::BTreeMap::<String, usize>::new();
+                for slot in &snapshot.in_flight {
+                    *in_flight_counts
+                        .entry(format!("{:?}", slot.phase))
+                        .or_default() += 1;
+                }
+                let measured_count = snapshot
+                    .observations
+                    .iter()
+                    .filter(|o| run.rendered.contains_key(&o.identity.frame_id))
+                    .count();
+                let now = Instant::now();
                 report["experimental_timing"] = json!({"status":format!("{:?}",snapshot.status),
                     "reason":snapshot.reason,"dropped":snapshot.dropped_samples,"validated_for_governor":false,
+                    "completed_total":snapshot.completed_samples,
+                    "retained_unfiltered_count":snapshot.observations.len(),
+                    "retained_unfiltered_status_counts":retained_status_counts,
+                    "retained_unfiltered_frame_range":[snapshot.observations.iter().map(|o|o.identity.frame_id).min(),snapshot.observations.iter().map(|o|o.identity.frame_id).max()],
+                    "measurement_observation_count":measured_count,
+                    "retained_outside_measurement_count":snapshot.observations.len()-measured_count,
+                    "latest_completion":snapshot.observations.last().map(|o|json!({
+                        "frame":o.identity.frame_id,"view":o.identity.view_id,"generation":o.identity.configuration_generation,
+                        "status":format!("{:?}",o.status),"gpu_elapsed_ms":o.gpu_elapsed_ms,
+                        "in_measurement_window":run.rendered.contains_key(&o.identity.frame_id),
+                        "cpu_stages":cpu_timing_stages(o.stages,Some(o.observed_at.saturating_duration_since(o.identity.encoded_at))),
+                    })),
+                    "cpu_stage_scope":"CPU Instant offsets from encode; callback timestamps include wgpu polling delay; GPU completion versus polling delay is unknown without independent trace",
+                    "in_flight_snapshot_age_ms":snapshot.in_flight_observed_at.map(|at|now.saturating_duration_since(at).as_secs_f64()*1000.0),
+                    "in_flight_counts":in_flight_counts,
+                    "in_flight":snapshot.in_flight.iter().map(|slot|json!({
+                        "frame":slot.identity.frame_id,"view":slot.identity.view_id,"generation":slot.identity.configuration_generation,
+                        "configured_mode":format!("{:?}",slot.identity.mode),"scale":slot.identity.render_scale,
+                        "input_size":slot.identity.input_size,"output_size":slot.identity.output_size,
+                        "phase":format!("{:?}",slot.phase),"callback_ready":slot.callback_ready,
+                        "age_ms":now.saturating_duration_since(slot.identity.encoded_at).as_secs_f64()*1000.0,
+                        "cpu_stages":cpu_timing_stages(slot.stages,None),
+                    })).collect::<Vec<_>>(),
                     "observations":snapshot.observations.iter().filter(|o|run.rendered.contains_key(&o.identity.frame_id)).map(|o|json!({
                         "frame":o.identity.frame_id,"view":o.identity.view_id,"mode":format!("{:?}",o.identity.mode),"adaptive_epoch":o.identity.adaptive_epoch,
                         "readback_latency_ms":o.observed_at.saturating_duration_since(o.identity.encoded_at).as_secs_f64()*1000.0,
                         "generation":o.identity.configuration_generation,"scale":o.identity.render_scale,
                         "input_size":o.identity.input_size,"output_size":o.identity.output_size,
                         "raw_ticks":o.raw_ticks,"marker_ms":o.marker_ms,"gpu_elapsed_ms":o.gpu_elapsed_ms,
+                        "cpu_stages":cpu_timing_stages(o.stages,Some(o.observed_at.saturating_duration_since(o.identity.encoded_at))),
                         "status":format!("{:?}",o.status)})).collect::<Vec<_>>()});
             }
         }
@@ -439,6 +481,54 @@ fn observe_run(
         } else {
             AppExit::error()
         });
+    }
+}
+
+#[cfg(target_os = "macos")]
+fn cpu_timing_stages(
+    stages: bevy_metalfx::frame_timing::ExperimentalTimingStages,
+    harvested_after: Option<Duration>,
+) -> Value {
+    let ms = |duration: Duration| duration.as_secs_f64() * 1000.0;
+    let difference = |end: Option<Duration>, start: Option<Duration>| {
+        end.zip(start)
+            .and_then(|(end, start)| end.checked_sub(start))
+            .map(ms)
+    };
+    json!({
+        "workload_callback_after_encode_ms":stages.workload_callback_after.map(ms),
+        "resolve_submit_after_encode_ms":stages.resolve_submitted_after.map(ms),
+        "mapping_callback_after_encode_ms":stages.mapping_callback_after.map(ms),
+        "harvest_after_encode_ms":harvested_after.map(ms),
+        "workload_callback_to_resolve_submit_ms":difference(stages.resolve_submitted_after,stages.workload_callback_after),
+        "resolve_submit_to_mapping_callback_ms":difference(stages.mapping_callback_after,stages.resolve_submitted_after),
+        "mapping_callback_to_harvest_ms":difference(harvested_after,stages.mapping_callback_after),
+    })
+}
+
+#[cfg(all(test, target_os = "macos"))]
+mod timing_telemetry_tests {
+    use super::*;
+
+    #[test]
+    fn cpu_stages_keep_missing_callbacks_and_distinguish_resolve_delay() {
+        let stages = bevy_metalfx::frame_timing::ExperimentalTimingStages {
+            workload_callback_after: Some(Duration::from_millis(10)),
+            resolve_submitted_after: Some(Duration::from_millis(25)),
+            mapping_callback_after: None,
+        };
+        let pending = cpu_timing_stages(stages, None);
+        assert_eq!(pending["workload_callback_to_resolve_submit_ms"], 15.0);
+        assert!(pending["resolve_submit_to_mapping_callback_ms"].is_null());
+        let complete = cpu_timing_stages(
+            bevy_metalfx::frame_timing::ExperimentalTimingStages {
+                mapping_callback_after: Some(Duration::from_millis(125)),
+                ..stages
+            },
+            Some(Duration::from_millis(129)),
+        );
+        assert_eq!(complete["resolve_submit_to_mapping_callback_ms"], 100.0);
+        assert_eq!(complete["mapping_callback_to_harvest_ms"], 4.0);
     }
 }
 
