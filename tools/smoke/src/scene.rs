@@ -32,9 +32,12 @@ pub struct ScenePlugin;
 impl Plugin for ScenePlugin {
     fn build(&self, app: &mut App) {
         load_internal_asset!(app, LOAD_SHADER, "load.wgsl", Shader::from_wgsl);
-        app.add_plugins(MaterialPlugin::<LoadMaterial>::default())
-            .add_systems(Startup, setup)
-            .add_systems(Update, (configure_camera, animate));
+        app.add_plugins((
+            MaterialPlugin::<LoadMaterial>::default(),
+            crate::claude::ClaudePlugin,
+        ))
+        .add_systems(Startup, setup)
+        .add_systems(Update, (configure_camera, animate));
     }
 }
 
@@ -51,7 +54,11 @@ fn setup(
     lifecycle: Option<Res<crate::lifecycle::LifecycleRun>>,
 ) {
     commands.spawn((
-        Text::new("USHAS  |  thin geometry / motion / disocclusion"),
+        Text::new(if config.0.subject == "claude" {
+            "USHAS  |  Claude by vgel  |  motion / fine detail"
+        } else {
+            "USHAS  |  thin geometry / motion / disocclusion"
+        }),
         TextFont {
             font_size: bevy::text::FontSize::Px(20.0),
             ..default()
@@ -82,22 +89,42 @@ fn setup(
         },
         Transform::from_rotation(Quat::from_euler(EulerRot::XYZ, -0.8, -0.5, 0.0)),
     ));
-    let colors = [
-        Color::srgb(0.95, 0.26, 0.15),
-        Color::srgb(0.15, 0.68, 0.92),
-        Color::srgb(0.92, 0.76, 0.22),
-    ];
-    for (i, color) in colors.into_iter().enumerate() {
+    if config.0.subject == "claude" {
+        for (x, scale, turn) in [(-2.65, 0.55, 0.16), (0.0, 0.72, 0.0), (2.65, 0.55, -0.16)] {
+            crate::claude::spawn(
+                &mut commands,
+                &mut meshes,
+                &mut materials,
+                Transform::from_xyz(x, -1.15, -0.4)
+                    .with_scale(Vec3::splat(scale))
+                    .with_rotation(Quat::from_rotation_y(turn)),
+            );
+        }
         commands.spawn((
-            Mesh3d(meshes.add(Cuboid::new(1.25, 1.25, 1.25))),
-            MeshMaterial3d(materials.add(StandardMaterial {
-                base_color: color,
-                perceptual_roughness: 0.35,
+            DirectionalLight {
+                illuminance: 2_500.0,
                 ..default()
-            })),
-            Transform::from_xyz((i as f32 - 1.0) * 1.9, 0.25, 0.0),
-            Moving,
+            },
+            Transform::from_rotation(Quat::from_euler(EulerRot::XYZ, -0.5, 2.3, 0.0)),
         ));
+    } else {
+        let colors = [
+            Color::srgb(0.95, 0.26, 0.15),
+            Color::srgb(0.15, 0.68, 0.92),
+            Color::srgb(0.92, 0.76, 0.22),
+        ];
+        for (i, color) in colors.into_iter().enumerate() {
+            commands.spawn((
+                Mesh3d(meshes.add(Cuboid::new(1.25, 1.25, 1.25))),
+                MeshMaterial3d(materials.add(StandardMaterial {
+                    base_color: color,
+                    perceptual_roughness: 0.35,
+                    ..default()
+                })),
+                Transform::from_xyz((i as f32 - 1.0) * 1.9, 0.25, 0.0),
+                Moving,
+            ));
+        }
     }
     // Thin foreground rails and a contrasting background reveal temporal edge
     // reconstruction and disocclusion; the custom material retains its prepass.
@@ -105,11 +132,16 @@ fn setup(
         base_color: Color::srgb(0.85, 0.9, 0.88),
         ..default()
     });
-    for i in 0..18 {
+    let rails: Vec<f32> = if config.0.subject == "claude" {
+        vec![-4.25, -3.55, -1.6, 1.6, 3.55, 4.25]
+    } else {
+        (0..18).map(|i| -4.25 + i as f32 * 0.5).collect()
+    };
+    for x in rails {
         commands.spawn((
             Mesh3d(meshes.add(Cuboid::new(0.025, 3.2, 0.025))),
             MeshMaterial3d(white.clone()),
-            Transform::from_xyz(-4.25 + i as f32 * 0.5, 0.3, 1.0),
+            Transform::from_xyz(x, 0.3, 1.0),
         ));
     }
     commands.spawn((

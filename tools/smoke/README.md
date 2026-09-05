@@ -2,6 +2,11 @@
 
 A standalone Bevy 0.19 scene with a locked dependency graph, visible geometry,
 a controllable fragment workload, moving edges, and an output-resolution UI.
+The default subject is a procedural 3D version of vgel/thebes' Claude character,
+with an articulated head, limbs, and tail. See [CHARACTER.md](CHARACTER.md) for
+the reference and attribution. `--subject shapes` restores the original cube
+and thin-rail scene for historical comparisons; reports identify the subject
+and geometry version, which must match across benchmark arms.
 Build and run from the Ushas repository. Rust 1.97.1 is selected by its tracked
 toolchain file.
 

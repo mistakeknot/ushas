@@ -3,6 +3,7 @@
 #[derive(Debug, PartialEq)]
 pub struct Config {
     pub mode: String,
+    pub subject: String,
     pub offscreen: bool,
     pub hdr: bool,
     pub native_aa: bool,
@@ -29,6 +30,7 @@ impl Config {
     pub fn parse(args: impl IntoIterator<Item = String>) -> Result<Self, String> {
         let mut c = Self {
             mode: "disabled".into(),
+            subject: "claude".into(),
             offscreen: false,
             hdr: false,
             native_aa: false,
@@ -92,6 +94,7 @@ impl Config {
             };
             match flag.as_str() {
                 "--mode" => c.mode = value,
+                "--subject" => c.subject = value,
                 "--lifecycle" => c.lifecycle = Some(value),
                 "--presentation" => c.presentation = value,
                 "--refresh-hz" => c.refresh_hz = number()?,
@@ -111,6 +114,9 @@ impl Config {
         }
         if !["disabled", "spatial", "temporal", "interpolate"].contains(&c.mode.as_str()) {
             return Err("mode must be disabled, spatial, temporal, or interpolate".into());
+        }
+        if !["claude", "shapes"].contains(&c.subject.as_str()) {
+            return Err("subject must be claude or shapes".into());
         }
         if c.offscreen && (c.lifecycle.is_some() || c.adaptive || c.mode == "interpolate") {
             return Err("offscreen supports fixed-scale disabled/spatial/temporal rendering only; lifecycle, adaptive and interpolation require the window fixture".into());
@@ -156,6 +162,7 @@ mod tests {
     fn default_is_short_native_control() {
         let c = parse(&[]).unwrap();
         assert_eq!((c.mode.as_str(), c.scale), ("disabled", 1.0));
+        assert_eq!(c.subject, "claude");
         assert_eq!((c.width, c.height), (1280, 720));
         assert!(c.seconds > 0.0 && c.seconds <= 10.0);
         assert!(!c.adaptive);

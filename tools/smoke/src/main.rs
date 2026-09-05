@@ -1,4 +1,5 @@
 //! Bounded, inspectable render test. JSON names each observation's actual scope.
+mod claude;
 mod config;
 mod gate;
 mod lifecycle;
@@ -72,6 +73,7 @@ fn main() -> AppExit {
             "ushas-smoke --mode disabled|spatial|temporal|interpolate --scale 0.5\n\
             --width 1280 --height 720 --warmup 4 --seconds 6 --out result.json\n\
             [--screenshot result.png] [--pixel-iterations 1000] [--cpu-ms 20] [--moving]\n\
+            [--subject claude|shapes (default claude)]\n\
             [--adaptive --target-fps 60 --minimum-scale 0.5]\n\
             [--offscreen: fixed-scale image rendering; no lifecycle/adaptive/interpolation/presentation]\n\
             Runs unpaced; target-fps defines the analysis/controller budget, not a frame cap."
@@ -349,6 +351,7 @@ fn observe_run(
             && valid_image
             && ready_count == run.frames.len();
         let mut report = json!({"schema":1,"source_revision":env!("USHAS_SOURCE_REV"),
+            "subject":config.0.subject,"scene_version":if config.0.subject == "claude" {claude::MODEL_VERSION} else {"shapes-v1"},
             "source_dirty_at_build":env!("USHAS_SOURCE_DIRTY"),"valid":valid,
             "timed_out":timed_out,"mode":config.0.mode,"lifecycle":lifecycle.as_ref().map(|l|l.report()),"initial_scale":config.0.scale,
             "final_scale":scale.0,"width":config.0.width,"height":config.0.height,
