@@ -1,0 +1,992 @@
+{
+  "schema": 1,
+  "valid": true,
+  "scope": "Fixed-scale Temporal window lifecycle, effect/readiness state and captured pixels; no GPU completion, performance or panel claim",
+  "source_revision": "56a3b16c8c1c8f12a5320adc5082c6d20b6378c1",
+  "source_dirty_at_build": false,
+  "binary_sha256": "5c773aba90f70229d03f1ac87045045f11a6f2e435bb9bc21f55e1b0266b4744",
+  "configuration": {
+    "subject": "claude",
+    "scene_version": "claude-toy-v1",
+    "mode": "Temporal",
+    "scale": 0.5,
+    "initial_output_size": [
+      1280,
+      720
+    ],
+    "hdr": false,
+    "msaa_samples": 1,
+    "adaptive": false,
+    "completion": false,
+    "warmup_seconds": 2,
+    "measurement_seconds": 2
+  },
+  "runs": [
+    {
+      "exercise": "resize",
+      "valid": true,
+      "report": "lifecycle-resize-candidate-01.json",
+      "report_sha256": "7cae64cf3b3e2062cfe5b52b7533f3b44247854ae8c997c96253501dd3099da3",
+      "started_utc": "2026-09-05T03:37:02.745293+00:00",
+      "finished_utc": "2026-09-05T03:37:07.200533+00:00",
+      "child_exit_code": 0,
+      "wrapper_exit_code": 0,
+      "display_awake_at_finish": true,
+      "lifecycle_finished_seconds": 1.321073583,
+      "events": [
+        {
+          "detail": {
+            "from": [
+              1280,
+              720
+            ],
+            "to": [
+              960,
+              540
+            ]
+          },
+          "elapsed_s": 0.529673208,
+          "event": "window_resized",
+          "frame": 28
+        },
+        {
+          "detail": {
+            "from": [
+              960,
+              540
+            ],
+            "to": [
+              1280,
+              720
+            ]
+          },
+          "elapsed_s": 1.066479375,
+          "event": "window_size_restored",
+          "frame": 92
+        },
+        {
+          "detail": {
+            "error": null,
+            "passed": true
+          },
+          "elapsed_s": 1.321073583,
+          "event": "finished",
+          "frame": 122
+        }
+      ],
+      "phase_summary": [
+        {
+          "phase": "initial",
+          "retained_observations": 26,
+          "app_frame_range": [
+            1,
+            28
+          ],
+          "view_ids": [
+            4294967072
+          ],
+          "distinct_ready_view_frames_at_phase_size": 24,
+          "expected_content_size": [
+            640,
+            360
+          ],
+          "expected_output_size": [
+            1280,
+            720
+          ],
+          "states": {
+            "NoRender": 1,
+            "Pending": 1,
+            "OutputWritten": 24
+          },
+          "reasons": {
+            "ScalerPending": 1
+          }
+        },
+        {
+          "phase": "changed",
+          "retained_observations": 64,
+          "app_frame_range": [
+            29,
+            92
+          ],
+          "view_ids": [
+            4294967072
+          ],
+          "distinct_ready_view_frames_at_phase_size": 23,
+          "expected_content_size": [
+            480,
+            270
+          ],
+          "expected_output_size": [
+            960,
+            540
+          ],
+          "states": {
+            "OutputWritten": 25,
+            "Pending": 38,
+            "Encoded": 1
+          },
+          "reasons": {
+            "ScalerPending": 38,
+            "BlitPipelinePending": 1
+          }
+        },
+        {
+          "phase": "restored",
+          "retained_observations": 30,
+          "app_frame_range": [
+            93,
+            122
+          ],
+          "view_ids": [
+            4294967072
+          ],
+          "distinct_ready_view_frames_at_phase_size": 24,
+          "expected_content_size": [
+            640,
+            360
+          ],
+          "expected_output_size": [
+            1280,
+            720
+          ],
+          "states": {
+            "OutputWritten": 26,
+            "Pending": 3,
+            "Encoded": 1
+          },
+          "reasons": {
+            "ScalerPending": 3,
+            "BlitPipelinePending": 1
+          }
+        }
+      ],
+      "details": {
+        "output_size_sequence": [
+          [
+            1280,
+            720
+          ],
+          [
+            960,
+            540
+          ],
+          [
+            1280,
+            720
+          ]
+        ],
+        "content_size_sequence": [
+          [
+            640,
+            360
+          ],
+          [
+            480,
+            270
+          ],
+          [
+            640,
+            360
+          ]
+        ],
+        "rebuild_states": [
+          "Pending/ScalerPending",
+          "Encoded/BlitPipelinePending",
+          "OutputWritten"
+        ]
+      },
+      "captures": [
+        {
+          "name": "screenshot",
+          "path": "lifecycle-resize-candidate-01.json.png",
+          "size": [
+            1280,
+            720
+          ],
+          "sha256": "fe64baace79a8e2f1bbf2ccb55948af40808f432ff6fba4b87dcb7dc81bffdb8",
+          "decoded_rgba_opaque_nonblank": true
+        },
+        {
+          "name": "warmup_screenshot",
+          "path": "lifecycle-resize-candidate-01.json.png.warmup.png",
+          "size": [
+            1280,
+            720
+          ],
+          "sha256": "40a933ada3a6de7ba761a95b95e047d00e122505f22da4e1cd1b31f677b8e28a",
+          "decoded_rgba_opaque_nonblank": true
+        },
+        {
+          "name": "initial",
+          "path": "lifecycle-resize-candidate-01.json.lifecycle-initial.png",
+          "size": [
+            1280,
+            720
+          ],
+          "sha256": "3fbca8d02f74be6cf37932bf0a59ee3f0f755057a7083802c4bd606ee4d9cc7c",
+          "decoded_rgba_opaque_nonblank": true
+        },
+        {
+          "name": "changed",
+          "path": "lifecycle-resize-candidate-01.json.lifecycle-changed.png",
+          "size": [
+            960,
+            540
+          ],
+          "sha256": "7773f35979308dc53b6c6b53afc824d50e24f7938e9597f1a2a597cb172943db",
+          "decoded_rgba_opaque_nonblank": true
+        },
+        {
+          "name": "restored",
+          "path": "lifecycle-resize-candidate-01.json.lifecycle-restored.png",
+          "size": [
+            1280,
+            720
+          ],
+          "sha256": "b8fef46abaedd02798981b9ffc384e7665050c90650cf57a4b89d621ac36cd27",
+          "decoded_rgba_opaque_nonblank": true
+        }
+      ]
+    },
+    {
+      "exercise": "camera-cut",
+      "valid": true,
+      "report": "lifecycle-camera-cut-candidate-01.json",
+      "report_sha256": "a77f72fd430d2cd5f6035867a7e266c58a880640e1806d47606621a3bfcaddf7",
+      "started_utc": "2026-09-05T03:38:15.482677+00:00",
+      "finished_utc": "2026-09-05T03:38:20.036878+00:00",
+      "child_exit_code": 0,
+      "wrapper_exit_code": 0,
+      "display_awake_at_finish": true,
+      "lifecycle_finished_seconds": 0.624064917,
+      "events": [
+        {
+          "detail": {
+            "inactive": false,
+            "reset_pending": true,
+            "yaw_radians": 0.25
+          },
+          "elapsed_s": 0.432975834,
+          "event": "partial_camera_cut_requested",
+          "frame": 28
+        },
+        {
+          "detail": {
+            "scope": "temporal reset commands encoded; GPU completion not asserted"
+          },
+          "elapsed_s": 0.450172375,
+          "event": "reset_acknowledged",
+          "frame": 30
+        },
+        {
+          "detail": {
+            "error": null,
+            "passed": true
+          },
+          "elapsed_s": 0.624064917,
+          "event": "finished",
+          "frame": 53
+        }
+      ],
+      "phase_summary": [
+        {
+          "phase": "initial",
+          "retained_observations": 26,
+          "app_frame_range": [
+            1,
+            28
+          ],
+          "view_ids": [
+            4294967072
+          ],
+          "distinct_ready_view_frames_at_phase_size": 24,
+          "expected_content_size": [
+            640,
+            360
+          ],
+          "expected_output_size": [
+            1280,
+            720
+          ],
+          "states": {
+            "NoRender": 1,
+            "Pending": 1,
+            "OutputWritten": 24
+          },
+          "reasons": {
+            "ScalerPending": 1
+          }
+        },
+        {
+          "phase": "changed",
+          "retained_observations": 25,
+          "app_frame_range": [
+            29,
+            53
+          ],
+          "view_ids": [
+            4294967072
+          ],
+          "distinct_ready_view_frames_at_phase_size": 25,
+          "expected_content_size": [
+            640,
+            360
+          ],
+          "expected_output_size": [
+            1280,
+            720
+          ],
+          "states": {
+            "OutputWritten": 25
+          },
+          "reasons": {}
+        }
+      ],
+      "details": {
+        "cut_frame": 28,
+        "yaw_radians": 0.25,
+        "reset_ack_main_frame": 30,
+        "reset_ack_scope": "CPU temporal reset-command encoding, not GPU completion"
+      },
+      "captures": [
+        {
+          "name": "screenshot",
+          "path": "lifecycle-camera-cut-candidate-01.json.png",
+          "size": [
+            1280,
+            720
+          ],
+          "sha256": "42f01ff1ca8800549b9deb6fc5bc0af6db77da458949dee144f1520abb861c62",
+          "decoded_rgba_opaque_nonblank": true
+        },
+        {
+          "name": "warmup_screenshot",
+          "path": "lifecycle-camera-cut-candidate-01.json.png.warmup.png",
+          "size": [
+            1280,
+            720
+          ],
+          "sha256": "363e6327e700f55dc55a63422104a0f41a73adf428f6f9f9c2413081f1cf86db",
+          "decoded_rgba_opaque_nonblank": true
+        },
+        {
+          "name": "initial",
+          "path": "lifecycle-camera-cut-candidate-01.json.lifecycle-initial.png",
+          "size": [
+            1280,
+            720
+          ],
+          "sha256": "48e9b4bf9cf0bf0d90c9407cc5e2aad1d7b738a6234d634d47a8403b247d2415",
+          "decoded_rgba_opaque_nonblank": true
+        },
+        {
+          "name": "changed",
+          "path": "lifecycle-camera-cut-candidate-01.json.lifecycle-changed.png",
+          "size": [
+            1280,
+            720
+          ],
+          "sha256": "34dc257516059d024a5d7ceaaa90d1526ae55540f52b5c5defb8994fa267ed74",
+          "decoded_rgba_opaque_nonblank": true
+        }
+      ]
+    },
+    {
+      "exercise": "late-camera",
+      "valid": true,
+      "report": "lifecycle-late-camera-candidate-01.json",
+      "report_sha256": "328435bf65c1285c690c2bd923acf548b1aa81aef7ff497ef43504acbe01b761",
+      "started_utc": "2026-09-05T03:38:20.130901+00:00",
+      "finished_utc": "2026-09-05T03:38:24.537629+00:00",
+      "child_exit_code": 0,
+      "wrapper_exit_code": 0,
+      "display_awake_at_finish": true,
+      "lifecycle_finished_seconds": 0.747766542,
+      "events": [
+        {
+          "detail": {
+            "view": 4294966911
+          },
+          "elapsed_s": 0.250669583,
+          "event": "camera_spawned_after_startup",
+          "frame": 32
+        },
+        {
+          "detail": {
+            "new_view": 4294966908,
+            "old_view": 4294966911
+          },
+          "elapsed_s": 0.549312667,
+          "event": "camera_replaced",
+          "frame": 62
+        },
+        {
+          "detail": {
+            "error": null,
+            "passed": true
+          },
+          "elapsed_s": 0.747766542,
+          "event": "finished",
+          "frame": 91
+        }
+      ],
+      "phase_summary": [
+        {
+          "phase": "initial",
+          "retained_observations": 1,
+          "app_frame_range": [
+            1,
+            1
+          ],
+          "view_ids": [],
+          "distinct_ready_view_frames_at_phase_size": 0,
+          "expected_content_size": [
+            640,
+            360
+          ],
+          "expected_output_size": [
+            1280,
+            720
+          ],
+          "states": {},
+          "reasons": {}
+        },
+        {
+          "phase": "changed",
+          "retained_observations": 30,
+          "app_frame_range": [
+            33,
+            62
+          ],
+          "view_ids": [
+            4294966911
+          ],
+          "distinct_ready_view_frames_at_phase_size": 24,
+          "expected_content_size": [
+            640,
+            360
+          ],
+          "expected_output_size": [
+            1280,
+            720
+          ],
+          "states": {
+            "NoRender": 1,
+            "Pending": 4,
+            "Encoded": 1,
+            "OutputWritten": 24
+          },
+          "reasons": {
+            "ScalerPending": 4,
+            "BlitPipelinePending": 1
+          }
+        },
+        {
+          "phase": "restored",
+          "retained_observations": 29,
+          "app_frame_range": [
+            63,
+            91
+          ],
+          "view_ids": [
+            4294966908
+          ],
+          "distinct_ready_view_frames_at_phase_size": 23,
+          "expected_content_size": [
+            640,
+            360
+          ],
+          "expected_output_size": [
+            1280,
+            720
+          ],
+          "states": {
+            "NoRender": 1,
+            "Pending": 4,
+            "Encoded": 1,
+            "OutputWritten": 23
+          },
+          "reasons": {
+            "ScalerPending": 4,
+            "BlitPipelinePending": 1
+          }
+        }
+      ],
+      "details": {
+        "spawn_frame": 32,
+        "first_view": 4294966911,
+        "replacement_frame": 62,
+        "replacement_view": 4294966908
+      },
+      "captures": [
+        {
+          "name": "screenshot",
+          "path": "lifecycle-late-camera-candidate-01.json.png",
+          "size": [
+            1280,
+            720
+          ],
+          "sha256": "e38d6f44b957bbb1823ea82638f8950bcbb61ab7ee015065fbca22227250c20b",
+          "decoded_rgba_opaque_nonblank": true
+        },
+        {
+          "name": "warmup_screenshot",
+          "path": "lifecycle-late-camera-candidate-01.json.png.warmup.png",
+          "size": [
+            1280,
+            720
+          ],
+          "sha256": "b10231431e3a65108575ddf85635ff506824f4235aea99e4a8fd965aff9bbfd4",
+          "decoded_rgba_opaque_nonblank": true
+        },
+        {
+          "name": "changed",
+          "path": "lifecycle-late-camera-candidate-01.json.lifecycle-changed.png",
+          "size": [
+            1280,
+            720
+          ],
+          "sha256": "426c7cd7e7d55fb2d1b687ade0683b474eced6c313f92323108164d92e8a1b84",
+          "decoded_rgba_opaque_nonblank": true
+        },
+        {
+          "name": "restored",
+          "path": "lifecycle-late-camera-candidate-01.json.lifecycle-restored.png",
+          "size": [
+            1280,
+            720
+          ],
+          "sha256": "68a4cdbec30e45af3657badd472edb8ecb2e81183147a75f0f56bdba8258d14a",
+          "decoded_rgba_opaque_nonblank": true
+        }
+      ]
+    },
+    {
+      "exercise": "multiple-views",
+      "valid": true,
+      "report": "lifecycle-multiple-views-candidate-01.json",
+      "report_sha256": "a4baa93ad9b24a5f9c12cd34663356f060923eb946af8a36fe3a4d2124390ec8",
+      "started_utc": "2026-09-05T03:38:24.620100+00:00",
+      "finished_utc": "2026-09-05T03:38:29.126361+00:00",
+      "child_exit_code": 0,
+      "wrapper_exit_code": 0,
+      "display_awake_at_finish": true,
+      "lifecycle_finished_seconds": 0.915692667,
+      "events": [
+        {
+          "detail": {
+            "view": 4294966908
+          },
+          "elapsed_s": 0.491098042,
+          "event": "second_active_camera_spawned",
+          "frame": 29
+        },
+        {
+          "detail": {
+            "all_active_views_reported": "MultipleViewsUnsupported"
+          },
+          "elapsed_s": 0.72450425,
+          "event": "second_camera_removed",
+          "frame": 50
+        },
+        {
+          "detail": {
+            "error": null,
+            "passed": true
+          },
+          "elapsed_s": 0.915692667,
+          "event": "finished",
+          "frame": 75
+        }
+      ],
+      "phase_summary": [
+        {
+          "phase": "initial",
+          "retained_observations": 26,
+          "app_frame_range": [
+            1,
+            29
+          ],
+          "view_ids": [
+            4294967072
+          ],
+          "distinct_ready_view_frames_at_phase_size": 24,
+          "expected_content_size": [
+            640,
+            360
+          ],
+          "expected_output_size": [
+            1280,
+            720
+          ],
+          "states": {
+            "NoRender": 1,
+            "Pending": 1,
+            "OutputWritten": 24
+          },
+          "reasons": {
+            "ScalerPending": 1
+          }
+        },
+        {
+          "phase": "changed",
+          "retained_observations": 21,
+          "app_frame_range": [
+            30,
+            50
+          ],
+          "view_ids": [
+            4294966908,
+            4294967072
+          ],
+          "distinct_ready_view_frames_at_phase_size": 1,
+          "expected_content_size": [
+            640,
+            360
+          ],
+          "expected_output_size": [
+            1280,
+            720
+          ],
+          "states": {
+            "NoRender": 1,
+            "OutputWritten": 1,
+            "Unavailable": 40
+          },
+          "reasons": {
+            "MultipleViewsUnsupported": 40
+          }
+        },
+        {
+          "phase": "restored",
+          "retained_observations": 25,
+          "app_frame_range": [
+            51,
+            75
+          ],
+          "view_ids": [
+            4294967072
+          ],
+          "distinct_ready_view_frames_at_phase_size": 24,
+          "expected_content_size": [
+            640,
+            360
+          ],
+          "expected_output_size": [
+            1280,
+            720
+          ],
+          "states": {
+            "Unavailable": 1,
+            "OutputWritten": 24
+          },
+          "reasons": {
+            "MultipleViewsUnsupported": 1
+          }
+        }
+      ],
+      "details": {
+        "rejected_view_ids": [
+          4294966908,
+          4294967072
+        ],
+        "distinct_both_view_rejection_frames": 20,
+        "secondary_removed_frame": 50,
+        "changed_phase_capture": "not requested; unsupported views are checked by per-view status"
+      },
+      "captures": [
+        {
+          "name": "screenshot",
+          "path": "lifecycle-multiple-views-candidate-01.json.png",
+          "size": [
+            1280,
+            720
+          ],
+          "sha256": "c8d0938712740ba1c74d1337b22d722b7807a5400f13e46e5671a032982ecc4a",
+          "decoded_rgba_opaque_nonblank": true
+        },
+        {
+          "name": "warmup_screenshot",
+          "path": "lifecycle-multiple-views-candidate-01.json.png.warmup.png",
+          "size": [
+            1280,
+            720
+          ],
+          "sha256": "3b03935d1c334d08d004744788980cb7637aa8cf8e11738db3ad6accb7775aca",
+          "decoded_rgba_opaque_nonblank": true
+        },
+        {
+          "name": "initial",
+          "path": "lifecycle-multiple-views-candidate-01.json.lifecycle-initial.png",
+          "size": [
+            1280,
+            720
+          ],
+          "sha256": "9c76d4420f6b4177ebef327089258e55cf6893ad07118881dc8613407024bfa5",
+          "decoded_rgba_opaque_nonblank": true
+        },
+        {
+          "name": "restored",
+          "path": "lifecycle-multiple-views-candidate-01.json.lifecycle-restored.png",
+          "size": [
+            1280,
+            720
+          ],
+          "sha256": "727b2d47a142478c8bef93adf7f4d0bd89c5fe727edc3422f9cb6d50fd943ac2",
+          "decoded_rgba_opaque_nonblank": true
+        }
+      ]
+    },
+    {
+      "exercise": "inactive-cut-resume",
+      "valid": true,
+      "report": "lifecycle-inactive-cut-resume-candidate-01.json",
+      "report_sha256": "31c05e67870b906b20796848a5f8cd890743427a2e6ced251ec746b3dc4d8ba0",
+      "started_utc": "2026-09-05T03:38:29.206370+00:00",
+      "finished_utc": "2026-09-05T03:38:33.653497+00:00",
+      "child_exit_code": 0,
+      "wrapper_exit_code": 0,
+      "display_awake_at_finish": true,
+      "lifecycle_finished_seconds": 0.889879042,
+      "events": [
+        {
+          "detail": {
+            "inactive": true,
+            "reset_pending": true,
+            "yaw_radians": 0.25
+          },
+          "elapsed_s": 0.423440208,
+          "event": "partial_camera_cut_requested",
+          "frame": 28
+        },
+        {
+          "detail": {
+            "reset_pending": true
+          },
+          "elapsed_s": 0.724156458,
+          "event": "camera_resumed_with_reset_pending",
+          "frame": 354
+        },
+        {
+          "detail": {
+            "scope": "temporal reset commands encoded; GPU completion not asserted"
+          },
+          "elapsed_s": 0.727321958,
+          "event": "reset_acknowledged",
+          "frame": 356
+        },
+        {
+          "detail": {
+            "error": null,
+            "passed": true
+          },
+          "elapsed_s": 0.889879042,
+          "event": "finished",
+          "frame": 379
+        }
+      ],
+      "phase_summary": [
+        {
+          "phase": "initial",
+          "retained_observations": 26,
+          "app_frame_range": [
+            1,
+            28
+          ],
+          "view_ids": [
+            4294967072
+          ],
+          "distinct_ready_view_frames_at_phase_size": 24,
+          "expected_content_size": [
+            640,
+            360
+          ],
+          "expected_output_size": [
+            1280,
+            720
+          ],
+          "states": {
+            "NoRender": 1,
+            "Pending": 1,
+            "OutputWritten": 24
+          },
+          "reasons": {
+            "ScalerPending": 1
+          }
+        },
+        {
+          "phase": "changed",
+          "retained_observations": 2,
+          "app_frame_range": [
+            29,
+            30
+          ],
+          "view_ids": [
+            4294967072
+          ],
+          "distinct_ready_view_frames_at_phase_size": 0,
+          "expected_content_size": [
+            640,
+            360
+          ],
+          "expected_output_size": [
+            1280,
+            720
+          ],
+          "states": {
+            "OutputWritten": 2
+          },
+          "reasons": {}
+        },
+        {
+          "phase": "restored",
+          "retained_observations": 25,
+          "app_frame_range": [
+            355,
+            379
+          ],
+          "view_ids": [
+            4294967072
+          ],
+          "distinct_ready_view_frames_at_phase_size": 24,
+          "expected_content_size": [
+            640,
+            360
+          ],
+          "expected_output_size": [
+            1280,
+            720
+          ],
+          "states": {
+            "OutputWritten": 25
+          },
+          "reasons": {}
+        }
+      ],
+      "details": {
+        "cut_frame": 28,
+        "yaw_radians": 0.25,
+        "reset_ack_main_frame": 356,
+        "reset_ack_scope": "CPU temporal reset-command encoding, not GPU completion",
+        "resumed_main_frame": 354,
+        "inactive_elapsed_seconds": 0.30071624999999996,
+        "inactive_main_frame_gap": 326,
+        "stale_last_render_frame": 27
+      },
+      "captures": [
+        {
+          "name": "screenshot",
+          "path": "lifecycle-inactive-cut-resume-candidate-01.json.png",
+          "size": [
+            1280,
+            720
+          ],
+          "sha256": "26d8f0789df3a0da32339a966341460c372cba96e97913357040f36dd9c25170",
+          "decoded_rgba_opaque_nonblank": true
+        },
+        {
+          "name": "warmup_screenshot",
+          "path": "lifecycle-inactive-cut-resume-candidate-01.json.png.warmup.png",
+          "size": [
+            1280,
+            720
+          ],
+          "sha256": "3651ed6619b61814dbb463920529367c287a2066a47f4373e2d88fc8c89ef55b",
+          "decoded_rgba_opaque_nonblank": true
+        },
+        {
+          "name": "initial",
+          "path": "lifecycle-inactive-cut-resume-candidate-01.json.lifecycle-initial.png",
+          "size": [
+            1280,
+            720
+          ],
+          "sha256": "48e9b4bf9cf0bf0d90c9407cc5e2aad1d7b738a6234d634d47a8403b247d2415",
+          "decoded_rgba_opaque_nonblank": true
+        },
+        {
+          "name": "restored",
+          "path": "lifecycle-inactive-cut-resume-candidate-01.json.lifecycle-restored.png",
+          "size": [
+            1280,
+            720
+          ],
+          "sha256": "bebfd3dec5b05b10177c69522d1278823cc6d6af4967879a55877a1dca0a063d",
+          "decoded_rgba_opaque_nonblank": true
+        }
+      ]
+    }
+  ],
+  "archive": {
+    "path": "/Users/sma/projects/docs/ushas/evidence/lifecycle-candidate-01",
+    "payload_files": 43,
+    "payload_bytes": 8749674,
+    "candidate_payloads": 36,
+    "earlier_failure_payloads": 6,
+    "audit_scripts": 1,
+    "manifest_sha256": "11361dc40f39f9d8a9b4bfa1430bacc1079741e8acdfa4b4507a9b3da5599927"
+  },
+  "display_evidence": {
+    "preflight": {
+      "source": "root agent tool stdout; no retained probe file",
+      "api": "CoreGraphics outside sandbox",
+      "cg_error": 0,
+      "main_display": 1,
+      "displays": [
+        {
+          "id": 1,
+          "asleep": false
+        }
+      ]
+    },
+    "finish": "All five report display_awake_at_finish=true",
+    "continuous_awake_measured": false,
+    "session_unlocked_measured": false,
+    "sandbox_probe": "Discarded as unavailable IPC; it incorrectly reported display0/asleeptrue",
+    "post_run_session_probe": {
+      "source": "timing agent tool stdout, reported by root; no retained probe file",
+      "contemporaneous_with_runs": false,
+      "display": 1,
+      "awake": true,
+      "on_console": true,
+      "locked": true
+    },
+    "on_screen_visibility_measured": false
+  },
+  "visual_inspection": {
+    "decoded_images": 21,
+    "phase_images": 11,
+    "representatives_viewed": [
+      "resize/changed",
+      "resize/restored",
+      "camera-cut/changed",
+      "late-camera/restored",
+      "multiple-views/restored",
+      "inactive-cut-resume/restored"
+    ],
+    "assessment": "Recognizable Claude models, rays, facial strokes, thin rails and readable native UI after each viewed transition; resize changes and restores full image dimensions, and cut/resume changes viewpoint as requested. These are recovered-state captures after readiness, not immediate post-cut temporal sequences."
+  },
+  "unproved": [
+    "OS sleep/resume",
+    "occlusion/minimize/unlock recovery",
+    "forced driver/scaler creation failure",
+    "adaptive hardware epoch reset or GPU-driven convergence",
+    "GPU completion or performance from these lifecycle observations",
+    "physical panel delivery and input latency",
+    "absence or repair of the historical unreproduced MPSGraph cold-start SIGSEGV"
+  ],
+  "earlier_failures": [
+    {
+      "id": "lifecycle-resize-02",
+      "outcome": "invalid: initial NoRender readiness deadline, no lifecycle captures; retained raw report/log/manifest/PNG",
+      "archive_prefix": "history/lifecycle-resize-02.json"
+    },
+    {
+      "id": "lifecycle-resize-03",
+      "outcome": "child0 but wrapper1, report_sha256null and missing report/captures; cannot count as a pass",
+      "archive_prefix": "history/lifecycle-resize-03.json"
+    }
+  ]
+}
