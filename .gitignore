@@ -5,6 +5,9 @@
 Cargo.lock
 !/tools/smoke/Cargo.lock
 !/tools/timing-probe/Cargo.lock
+!/tools/benchmark/Cargo.lock
 /tools/*/target/
+/tools/benchmark/macos/.build/
+/tools/benchmark/dist/
 
 /tools/*/__pycache__/
