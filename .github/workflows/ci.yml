@@ -131,7 +131,7 @@ jobs:
           python3 tools/smoke/test_runner.py
           python3 tools/smoke/campaign.py --self-test
           python3 tools/timing-probe/analyze_metal_trace.py --self-test
-          python3 -m unittest discover -s tools/consumer-smoke -p test_run.py -v
+          python3 -m unittest discover -s tools/consumer-smoke -p 'test_*.py' -v
           rustc --test tools/consumer-smoke/readiness.rs -o "$RUNNER_TEMP/consumer-readiness-tests"
           "$RUNNER_TEMP/consumer-readiness-tests"
 

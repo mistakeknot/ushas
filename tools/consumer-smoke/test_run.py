@@ -128,7 +128,8 @@ class IsolationTests(unittest.TestCase):
                 path.write_bytes(b"retained image")
                 captures.append({"path": str(path), "valid": True})
             report = {"valid": True, "mode": "Disabled", "scale": 1.0,
-                      "distinct_ready": 20, "warmup_seconds": 3.0, "captures": captures}
+                      "distinct_ready": 20, "warmup_seconds": 3.0, "captures": captures,
+                      "measurement": "images", "actual_msaa_samples": 4, "configuration_valid": True}
             self.assertTrue(run.valid_report(report, base, "native"))
             self.assertFalse(run.valid_report(report, base, "temporal"))
             captures.pop()
