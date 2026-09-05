@@ -381,7 +381,18 @@ fn observe_run(
             "effective_mode":observation.map(|o|format!("{:?}",o.effective_mode))}));
     }
     let measured_done = measured.is_some_and(|v| v >= config.0.seconds);
-    let timed_out = elapsed > config.0.warmup + config.0.seconds + 30.0;
+    // Native exercises own a 60-second sleep-inclusive lifecycle deadline.
+    // Do not let the ordinary 30-second readiness allowance preempt it; retain
+    // time for the normal measurement and final capture after native recovery.
+    let readiness_allowance = if lifecycle
+        .as_ref()
+        .is_some_and(|run| run.exercise().native_lifecycle())
+    {
+        60.0
+    } else {
+        30.0
+    };
+    let timed_out = elapsed > config.0.warmup + config.0.seconds + readiness_allowance;
     if (measured_done || timed_out) && !run.screenshot_requested {
         if let Some(request) = &mut completion_request {
             request.0 = completion::Epoch {
@@ -395,7 +406,7 @@ fn observe_run(
             .observe(capture_image);
     }
     if (measured_done && run.screenshot.is_some())
-        || elapsed > config.0.warmup + config.0.seconds + 35.0
+        || elapsed > config.0.warmup + config.0.seconds + readiness_allowance + 5.0
     {
         let valid_image = run.screenshot.as_ref().is_some_and(|s| {
             s["nonuniform"] == true

@@ -4,7 +4,17 @@
 const MAX_EVENTS: usize = 128;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum NativeExercise {
+    WindowMinimize,
+    OsSleepResume,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum EventKind {
+    ObservationArmed {
+        window: u64,
+        exercise: NativeExercise,
+    },
     MinimizeRequested {
         window: u64,
         minimized: bool,
@@ -253,6 +263,28 @@ mod contract_tests {
     }
 
     #[test]
+    fn an_arm_is_retained_and_excludes_a_complete_pre_arm_sleep_cycle() {
+        let mut ledger = EventLedger::default();
+        push(&mut ledger, EventKind::WillSleep);
+        push(&mut ledger, EventKind::DidWake);
+        push(
+            &mut ledger,
+            EventKind::ObservationArmed {
+                window: 7,
+                exercise: NativeExercise::OsSleepResume,
+            },
+        );
+        let arm = ledger.cursor();
+        assert_eq!(ledger.events.last().unwrap().sequence, arm);
+        assert_eq!(ledger.sleep_cycle_since(arm), None);
+        push(&mut ledger, EventKind::DidWake);
+        assert_eq!(ledger.sleep_cycle_since(arm), None);
+        push(&mut ledger, EventKind::WillSleep);
+        push(&mut ledger, EventKind::DidWake);
+        assert_eq!(ledger.sleep_cycle_since(arm), Some((arm + 2, arm + 3)));
+    }
+
+    #[test]
     fn overflow_invalidates_even_an_earlier_successful_cycle() {
         let mut ledger = EventLedger::default();
         observed(&mut ledger, 7, false);
@@ -315,6 +347,29 @@ pub struct WindowLifecycle {
 }
 
 impl WindowLifecycle {
+    /// Retain the arm itself in the native ledger so an independent reader can
+    /// exclude old transitions using the same sequence boundary as the fixture.
+    pub fn record_arm(
+        &self,
+        window: Entity,
+        exercise: NativeExercise,
+        frame: u64,
+    ) -> Option<(u64, Value)> {
+        let sequence = self.shared.record(
+            EventKind::ObservationArmed {
+                window: window.to_bits(),
+                exercise,
+            },
+            Some(frame),
+        )?;
+        let ledger = self.shared.ledger.lock().ok()?;
+        let event = ledger
+            .events
+            .iter()
+            .find(|event| event.sequence == sequence)?;
+        Some((sequence, event_report(event)))
+    }
+
     pub fn cursor(&self) -> Option<u64> {
         let ledger = self.shared.ledger.lock().ok()?;
         (ledger.dropped == 0).then(|| ledger.cursor())
@@ -369,22 +424,33 @@ impl WindowLifecycle {
                 (ledger.events.clone(), ledger.dropped, true)
             }
         };
-        let events: Vec<Value> = events.into_iter().map(|event| {
-            let details = match event.kind {
-                EventKind::MinimizeRequested { window, minimized } => json!({"kind":"minimize_requested", "window_id":window,"minimized":minimized}),
-                EventKind::WindowOccluded { window, occluded } => json!({"kind":"window_occluded","window_id":window,"occluded":occluded}),
-                EventKind::MinimizedObserved { window, minimized } => json!({"kind":"native_minimized_observed","window_id":window,"minimized":minimized}),
-                EventKind::WillSleep => json!({"kind":"workspace_will_sleep"}),
-                EventKind::DidWake => json!({"kind":"workspace_did_wake"}),
-            };
-            json!({"sequence":event.sequence,"unix_ms":event.unix_ms,"process_elapsed_ms":event.process_elapsed_ms,"main_frame":event.frame,"event":details})
-        }).collect();
+        let events: Vec<Value> = events.iter().map(event_report).collect();
         json!({"scope":"WindowOccluded messages and native winit minimized-state transitions; NSWorkspace system sleep/wake notifications. Requests are separate. No screen-sleep, session-unlock, continuous visibility, panel delivery, or GPU completion inference.",
             "clock":"unix_ms is SystemTime UTC; process_elapsed_ms is Instant and may exclude system sleep on macOS; sequence establishes callback/collector order",
             "native_sleep_available":self.native_sleep_available,"native_sleep_error":self.native_sleep_error,
             "wall_elapsed_seconds":self.wall_elapsed().map(|elapsed| elapsed.as_secs_f64()),
             "max_events":MAX_EVENTS,"dropped_events":dropped,"poisoned":poisoned,"events":events})
     }
+}
+
+fn event_report(event: &Event) -> Value {
+    let details = match event.kind {
+        EventKind::ObservationArmed { window, exercise } => {
+            json!({"kind":"observation_armed","window_id":window,"exercise":match exercise { NativeExercise::WindowMinimize => "WindowMinimize", NativeExercise::OsSleepResume => "OsSleepResume" }})
+        }
+        EventKind::MinimizeRequested { window, minimized } => {
+            json!({"kind":"minimize_requested", "window_id":window,"minimized":minimized})
+        }
+        EventKind::WindowOccluded { window, occluded } => {
+            json!({"kind":"window_occluded","window_id":window,"occluded":occluded})
+        }
+        EventKind::MinimizedObserved { window, minimized } => {
+            json!({"kind":"native_minimized_observed","window_id":window,"minimized":minimized})
+        }
+        EventKind::WillSleep => json!({"kind":"workspace_will_sleep"}),
+        EventKind::DidWake => json!({"kind":"workspace_did_wake"}),
+    };
+    json!({"sequence":event.sequence,"unix_ms":event.unix_ms,"process_elapsed_ms":event.process_elapsed_ms,"main_frame":event.frame,"event":details})
 }
 
 pub struct WindowLifecyclePlugin;

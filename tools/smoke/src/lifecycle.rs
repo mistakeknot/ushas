@@ -12,6 +12,7 @@ use bevy_metalfx::{
 };
 use serde_json::{json, Value};
 use std::collections::VecDeque;
+use std::io::Write;
 use std::time::{Duration, Instant};
 
 const READY_FRAMES: usize = 20;
@@ -55,7 +56,7 @@ impl LifecycleExercise {
         }
     }
 
-    fn native_lifecycle(self) -> bool {
+    pub(crate) fn native_lifecycle(self) -> bool {
         matches!(self, Self::WindowMinimize | Self::OsSleepResume)
     }
 }
@@ -1044,14 +1045,61 @@ fn exercise(
                 let window_entity = *window_entity;
                 let observer = native.as_ref().expect("native observer checked above");
                 run.native_window = Some(window_entity);
-                if run.exercise == LifecycleExercise::WindowMinimize {
+                let kind = if run.exercise == LifecycleExercise::WindowMinimize {
+                    crate::window_lifecycle::NativeExercise::WindowMinimize
+                } else {
+                    crate::window_lifecycle::NativeExercise::OsSleepResume
+                };
+                let Some((arm_sequence, arm)) = observer.record_arm(window_entity, kind, frame.0)
+                else {
+                    run.finish(
+                        now,
+                        frame.0,
+                        Some("native lifecycle arm could not be retained".into()),
+                    );
+                    return;
+                };
+                let (event_name, scope) = if run.exercise == LifecycleExercise::WindowMinimize {
                     run.native_cursor =
                         observer.record_minimize_request(window_entity, true, frame.0);
-                    window.set_minimized(true);
-                    run.event(now, frame.0, "window_minimize_requested", json!({"window":window_entity.to_bits(),"scope":"request only; actual native minimize observations still required"}));
+                    (
+                        "window_minimize_requested",
+                        "request only; actual native minimize observations still required",
+                    )
                 } else {
-                    run.native_cursor = observer.cursor();
-                    run.event(now, frame.0, "awaiting_external_system_sleep", json!({"window":window_entity.to_bits(),"scope":"fixture observes only; an externally initiated system sleep and wake must occur before the 60-second wall-clock deadline"}));
+                    run.native_cursor = Some(arm_sequence);
+                    (
+                        "awaiting_external_system_sleep",
+                        "fixture observes only; an externally initiated system sleep and wake must occur before the 60-second wall-clock deadline",
+                    )
+                };
+                let Some(after_sequence) = run.native_cursor else {
+                    run.finish(
+                        now,
+                        frame.0,
+                        Some("native lifecycle request could not be retained".into()),
+                    );
+                    return;
+                };
+                let detail = json!({"window":window_entity.to_bits(),"after_sequence":after_sequence,
+                    "native_arm":arm,"scope":scope});
+                run.event(now, frame.0, event_name, detail.clone());
+                // The final report retains the identical boundary. Flush the live
+                // marker so an external operator can act only after it is armed.
+                let mut stderr = std::io::stderr().lock();
+                if writeln!(stderr, "USHAS_NATIVE_LIFECYCLE_ARM {detail}")
+                    .and_then(|_| stderr.flush())
+                    .is_err()
+                {
+                    run.finish(
+                        now,
+                        frame.0,
+                        Some("native lifecycle arm marker could not be written".into()),
+                    );
+                    return;
+                }
+                if run.exercise == LifecycleExercise::WindowMinimize {
+                    window.set_minimized(true);
                 }
             }
             LifecycleExercise::LateCamera => unreachable!("late camera starts without a view"),
