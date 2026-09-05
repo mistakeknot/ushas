@@ -1,0 +1,587 @@
+{
+  "schema": 1,
+  "archive_integrity_valid": true,
+  "complete_two_exercise_acceptance": true,
+  "source_revision": "906b27cecf76616f100187c9b55f97ec6c6f9b1c",
+  "binary_sha256": "637cc5a59554b489ac4784fbf996523bcde1d1dc9a2507574c64fea863c4bd1f",
+  "payload_files": 27,
+  "payload_bytes": 108872753,
+  "runs": [
+    {
+      "exercise": "CreationFailure",
+      "execution_reported_valid": true,
+      "child_exit_code": 0,
+      "wrapper_exit_code": 0,
+      "started_utc": "2026-09-05T08:20:11.170467+00:00",
+      "finished_utc": "2026-09-05T08:20:16.353826+00:00",
+      "independent_lifecycle_acceptance": true,
+      "acceptance_error": null,
+      "retained_observation_counts": {
+        "initial": 26,
+        "changed": 25,
+        "restored": 34
+      },
+      "dropped_observations": 0,
+      "events": [
+        {
+          "detail": {
+            "generation": 1,
+            "mode": "ReturnNone",
+            "reset_pending": true,
+            "scope": "simulated creation result; no driver fault induced"
+          },
+          "elapsed_s": 0.294747917,
+          "event": "creation_fault_injected",
+          "frame": 27
+        },
+        {
+          "detail": {
+            "generation": 1,
+            "observed_frame": 28,
+            "phase_elapsed_s": 0.083836541,
+            "reason": "ScalerCreationFailed",
+            "reset_pending": true
+          },
+          "elapsed_s": 0.378584458,
+          "event": "injected_creation_reason_observed",
+          "frame": 30
+        },
+        {
+          "detail": {
+            "generation": 2,
+            "reset_pending": true,
+            "scope": "normal driver creation resumes; old pending generation discarded"
+          },
+          "elapsed_s": 0.430810417,
+          "event": "creation_fault_released",
+          "frame": 52
+        },
+        {
+          "detail": {
+            "scope": "temporal reset commands encoded; GPU completion not asserted"
+          },
+          "elapsed_s": 0.457689292,
+          "event": "reset_acknowledged",
+          "frame": 63
+        },
+        {
+          "detail": {
+            "error": null,
+            "passed": true
+          },
+          "elapsed_s": 0.527440167,
+          "event": "finished",
+          "frame": 86
+        }
+      ],
+      "target": {
+        "asset_id": "AssetId<bevy_image::image::Image>{ index: 3, generation: 0}",
+        "geometry_source": "actual Image texture descriptor",
+        "kind": "image",
+        "scope": "offscreen image creation-fault exercise; no native window, swapchain, OS sleep or panel claim",
+        "size": [
+          1280,
+          720
+        ]
+      },
+      "independent_protocol": {
+        "phase_ready_frames": {
+          "initial": 23,
+          "changed": 24,
+          "restored": 23
+        },
+        "phase_max_consecutive_ready_frames": {
+          "initial": 23,
+          "changed": 24,
+          "restored": 23
+        },
+        "phase_observation_counts": {
+          "initial": 26,
+          "changed": 25,
+          "restored": 34
+        },
+        "observation_retention": {
+          "evicted": 0,
+          "kind": "per_phase_recent_ring",
+          "max_records_per_phase": 1024,
+          "phases": {
+            "changed": {
+              "evicted": 0,
+              "first_retained_app_frame": 28,
+              "last_retained_app_frame": 52,
+              "retained": 25,
+              "total": 25
+            },
+            "initial": {
+              "evicted": 0,
+              "first_retained_app_frame": 1,
+              "last_retained_app_frame": 27,
+              "retained": 26,
+              "total": 26
+            },
+            "restored": {
+              "evicted": 0,
+              "first_retained_app_frame": 53,
+              "last_retained_app_frame": 86,
+              "retained": 34,
+              "total": 34
+            }
+          },
+          "scope": "bounded recent observations within each phase; evicted records are not a complete transition history; transition events and captures are retained separately"
+        },
+        "view_id": 4294967081,
+        "target": {
+          "asset_id": "AssetId<bevy_image::image::Image>{ index: 3, generation: 0}",
+          "geometry_source": "actual Image texture descriptor",
+          "kind": "image",
+          "scope": "offscreen image creation-fault exercise; no native window, swapchain, OS sleep or panel claim",
+          "size": [
+            1280,
+            720
+          ]
+        },
+        "output_size": [
+          1280,
+          720
+        ],
+        "content_size": [
+          640,
+          360
+        ],
+        "injected_generation": 1,
+        "released_generation": 2,
+        "terminal_reason": "ScalerCreationFailed",
+        "injected_frame": 27,
+        "reason_frame": 28,
+        "release_frame": 52,
+        "reset_ack_app_frame": 63,
+        "finished_frame": 86,
+        "injected_to_release_seconds": 0.13606249999999998,
+        "finished_elapsed_seconds": 0.527440167,
+        "phase_states": {
+          "initial": [
+            {
+              "state": "Encoded",
+              "reason": "BlitPipelinePending"
+            },
+            {
+              "state": "NoRender",
+              "reason": null
+            },
+            {
+              "state": "OutputWritten",
+              "reason": null
+            },
+            {
+              "state": "Pending",
+              "reason": "ScalerPending"
+            }
+          ],
+          "changed": [
+            {
+              "state": "Failed",
+              "reason": "ScalerCreationFailed"
+            },
+            {
+              "state": "OutputWritten",
+              "reason": null
+            },
+            {
+              "state": "Pending",
+              "reason": "ScalerPending"
+            }
+          ],
+          "restored": [
+            {
+              "state": "Encoded",
+              "reason": "BlitPipelinePending"
+            },
+            {
+              "state": "OutputWritten",
+              "reason": null
+            },
+            {
+              "state": "Pending",
+              "reason": "ScalerPending"
+            }
+          ]
+        }
+      },
+      "decoded_captures": [
+        {
+          "phase": "initial",
+          "path": "lifecycle-creation-failure-offscreen-03.json.lifecycle-initial.png",
+          "size": [
+            1280,
+            720
+          ],
+          "opaque_fraction": 1.0,
+          "scene_unique_colors": 8967,
+          "scene_luminance_range": [
+            1,
+            243
+          ],
+          "sha256": "fb041e05acc5b93e7d5704fda390a993ed34bc5c902042d759dc29f38f0d52dc"
+        },
+        {
+          "phase": "changed",
+          "path": "lifecycle-creation-failure-offscreen-03.json.lifecycle-changed.png",
+          "size": [
+            1280,
+            720
+          ],
+          "opaque_fraction": 1.0,
+          "scene_unique_colors": 7956,
+          "scene_luminance_range": [
+            1,
+            243
+          ],
+          "sha256": "1f39e97180ae41a08e7439d6971630b8290d8978260d72ac15097f7f58e7fadc"
+        },
+        {
+          "phase": "restored",
+          "path": "lifecycle-creation-failure-offscreen-03.json.lifecycle-restored.png",
+          "size": [
+            1280,
+            720
+          ],
+          "opaque_fraction": 1.0,
+          "scene_unique_colors": 8976,
+          "scene_luminance_range": [
+            1,
+            243
+          ],
+          "sha256": "3c7e76fa4ac9ad6f29794ba16dbd1ff7845ffa78c86fb1f9926013864b6d1bfc"
+        },
+        {
+          "phase": "warmup_screenshot",
+          "path": "lifecycle-creation-failure-offscreen-03.json.png.warmup.png",
+          "size": [
+            1280,
+            720
+          ],
+          "opaque_fraction": 1.0,
+          "scene_unique_colors": 7678,
+          "scene_luminance_range": [
+            0,
+            245
+          ],
+          "sha256": "80c6f279b4ae84c5e4cb901d1eece05422363776f8d106d909feb4b6f5ff7562"
+        },
+        {
+          "phase": "screenshot",
+          "path": "lifecycle-creation-failure-offscreen-03.json.png",
+          "size": [
+            1280,
+            720
+          ],
+          "opaque_fraction": 1.0,
+          "scene_unique_colors": 7676,
+          "scene_luminance_range": [
+            0,
+            244
+          ],
+          "sha256": "4541c62337703816d49ccb3bf294ac7862054f84a6492c675ca533495a27139a"
+        }
+      ]
+    },
+    {
+      "exercise": "CreationSlow",
+      "execution_reported_valid": true,
+      "child_exit_code": 0,
+      "wrapper_exit_code": 0,
+      "started_utc": "2026-09-05T08:20:16.481175+00:00",
+      "finished_utc": "2026-09-05T08:20:29.260022+00:00",
+      "independent_lifecycle_acceptance": true,
+      "acceptance_error": null,
+      "retained_observation_counts": {
+        "initial": 26,
+        "changed": 1024,
+        "restored": 35
+      },
+      "dropped_observations": 2917,
+      "events": [
+        {
+          "detail": {
+            "generation": 1,
+            "mode": "HoldPending",
+            "reset_pending": true,
+            "scope": "simulated creation result; no driver fault induced"
+          },
+          "elapsed_s": 0.244277458,
+          "event": "creation_fault_injected",
+          "frame": 27
+        },
+        {
+          "detail": {
+            "generation": 1,
+            "observed_frame": 3963,
+            "phase_elapsed_s": 10.006924042,
+            "reason": "ScalerCreationSlow",
+            "reset_pending": true
+          },
+          "elapsed_s": 10.2512015,
+          "event": "injected_creation_reason_observed",
+          "frame": 3965
+        },
+        {
+          "detail": {
+            "generation": 2,
+            "reset_pending": true,
+            "scope": "normal driver creation resumes; old pending generation discarded"
+          },
+          "elapsed_s": 10.263832583,
+          "event": "creation_fault_released",
+          "frame": 3968
+        },
+        {
+          "detail": {
+            "scope": "temporal reset commands encoded; GPU completion not asserted"
+          },
+          "elapsed_s": 10.292774292,
+          "event": "reset_acknowledged",
+          "frame": 3979
+        },
+        {
+          "detail": {
+            "error": null,
+            "passed": true
+          },
+          "elapsed_s": 10.372415167,
+          "event": "finished",
+          "frame": 4003
+        }
+      ],
+      "target": {
+        "asset_id": "AssetId<bevy_image::image::Image>{ index: 3, generation: 0}",
+        "geometry_source": "actual Image texture descriptor",
+        "kind": "image",
+        "scope": "offscreen image creation-fault exercise; no native window, swapchain, OS sleep or panel claim",
+        "size": [
+          1280,
+          720
+        ]
+      },
+      "independent_protocol": {
+        "phase_ready_frames": {
+          "initial": 23,
+          "changed": 1024,
+          "restored": 24
+        },
+        "phase_max_consecutive_ready_frames": {
+          "initial": 23,
+          "changed": 1024,
+          "restored": 24
+        },
+        "phase_observation_counts": {
+          "initial": 26,
+          "changed": 1024,
+          "restored": 35
+        },
+        "observation_retention": {
+          "evicted": 2917,
+          "kind": "per_phase_recent_ring",
+          "max_records_per_phase": 1024,
+          "phases": {
+            "changed": {
+              "evicted": 2917,
+              "first_retained_app_frame": 2945,
+              "last_retained_app_frame": 3968,
+              "retained": 1024,
+              "total": 3941
+            },
+            "initial": {
+              "evicted": 0,
+              "first_retained_app_frame": 1,
+              "last_retained_app_frame": 27,
+              "retained": 26,
+              "total": 26
+            },
+            "restored": {
+              "evicted": 0,
+              "first_retained_app_frame": 3969,
+              "last_retained_app_frame": 4003,
+              "retained": 35,
+              "total": 35
+            }
+          },
+          "scope": "bounded recent observations within each phase; evicted records are not a complete transition history; transition events and captures are retained separately"
+        },
+        "view_id": 4294967081,
+        "target": {
+          "asset_id": "AssetId<bevy_image::image::Image>{ index: 3, generation: 0}",
+          "geometry_source": "actual Image texture descriptor",
+          "kind": "image",
+          "scope": "offscreen image creation-fault exercise; no native window, swapchain, OS sleep or panel claim",
+          "size": [
+            1280,
+            720
+          ]
+        },
+        "output_size": [
+          1280,
+          720
+        ],
+        "content_size": [
+          640,
+          360
+        ],
+        "injected_generation": 1,
+        "released_generation": 2,
+        "terminal_reason": "ScalerCreationSlow",
+        "injected_frame": 27,
+        "reason_frame": 3963,
+        "release_frame": 3968,
+        "reset_ack_app_frame": 3979,
+        "finished_frame": 4003,
+        "injected_to_release_seconds": 10.019555125,
+        "finished_elapsed_seconds": 10.372415167,
+        "phase_states": {
+          "initial": [
+            {
+              "state": "Encoded",
+              "reason": "BlitPipelinePending"
+            },
+            {
+              "state": "NoRender",
+              "reason": null
+            },
+            {
+              "state": "OutputWritten",
+              "reason": null
+            },
+            {
+              "state": "Pending",
+              "reason": "ScalerPending"
+            }
+          ],
+          "changed": [
+            {
+              "state": "Pending",
+              "reason": "ScalerCreationSlow"
+            },
+            {
+              "state": "Pending",
+              "reason": "ScalerPending"
+            }
+          ],
+          "restored": [
+            {
+              "state": "Encoded",
+              "reason": "BlitPipelinePending"
+            },
+            {
+              "state": "OutputWritten",
+              "reason": null
+            },
+            {
+              "state": "Pending",
+              "reason": "ScalerCreationSlow"
+            },
+            {
+              "state": "Pending",
+              "reason": "ScalerPending"
+            }
+          ]
+        }
+      },
+      "decoded_captures": [
+        {
+          "phase": "initial",
+          "path": "lifecycle-creation-slow-offscreen-03.json.lifecycle-initial.png",
+          "size": [
+            1280,
+            720
+          ],
+          "opaque_fraction": 1.0,
+          "scene_unique_colors": 9040,
+          "scene_luminance_range": [
+            1,
+            243
+          ],
+          "sha256": "3fbca8d02f74be6cf37932bf0a59ee3f0f755057a7083802c4bd606ee4d9cc7c"
+        },
+        {
+          "phase": "changed",
+          "path": "lifecycle-creation-slow-offscreen-03.json.lifecycle-changed.png",
+          "size": [
+            1280,
+            720
+          ],
+          "opaque_fraction": 1.0,
+          "scene_unique_colors": 7890,
+          "scene_luminance_range": [
+            1,
+            243
+          ],
+          "sha256": "8b564c176d4174a6aeec8fd100b9f96be7ccbe0d68fea2b045bae4547c2f1b06"
+        },
+        {
+          "phase": "restored",
+          "path": "lifecycle-creation-slow-offscreen-03.json.lifecycle-restored.png",
+          "size": [
+            1280,
+            720
+          ],
+          "opaque_fraction": 1.0,
+          "scene_unique_colors": 8821,
+          "scene_luminance_range": [
+            0,
+            243
+          ],
+          "sha256": "b7f8b5b1d3725727600d87b403bc8cb39976584a8ffe90032b7078829e5a2e81"
+        },
+        {
+          "phase": "warmup_screenshot",
+          "path": "lifecycle-creation-slow-offscreen-03.json.png.warmup.png",
+          "size": [
+            1280,
+            720
+          ],
+          "opaque_fraction": 1.0,
+          "scene_unique_colors": 8822,
+          "scene_luminance_range": [
+            0,
+            243
+          ],
+          "sha256": "5fc6cfa6b62e8aeb3e24e7cf554e4942267270ec6cd831f536e5199804e2d041"
+        },
+        {
+          "phase": "screenshot",
+          "path": "lifecycle-creation-slow-offscreen-03.json.png",
+          "size": [
+            1280,
+            720
+          ],
+          "opaque_fraction": 1.0,
+          "scene_unique_colors": 7640,
+          "scene_luminance_range": [
+            0,
+            245
+          ],
+          "sha256": "c733ee124b06b38390298781818731e89f15265209380b8795e746cd5ac51677"
+        }
+      ]
+    }
+  ],
+  "scope": "Offscreen synthetic creation fault lifecycle and decoded phase pixels; not native window/OS, exclusive GPU completion, performance, driver-failure reproduction or adaptive acceptance",
+  "archive": "/Users/sma/projects/docs/ushas/evidence/lifecycle-fault-offscreen-03",
+  "archive_manifest_sha256": "ecc0c03914cfef84c67e31f84662f36a63cc5f447ca1b74deb7632cf68f4dfb7",
+  "acceptance_scope": "Both bounded synthetic creation exercises pass within retained phase windows with separate ordered transition events and decoded phase captures; not a complete history of every render frame",
+  "independent_pixel_review": {
+    "path": "independent-pixels.json",
+    "sha256": "ca3d96464cefb25ef74b3ad5cbfc021e4568a845850ea4ab8ebb233e92ca7688",
+    "original_images_inspected": 6,
+    "scope": "intact recognizable fallback/restored output; not native-equivalent quality"
+  },
+  "prior_attempts_preserved": [
+    "../lifecycle-fault-offscreen-02",
+    "../lifecycle-fault-window-attempts-02"
+  ],
+  "limitations": [
+    "Slow run intentionally evicts 2,917 early changed-phase records; retained window alone cannot prove all earlier frames",
+    "Synthetic creation result injection, not an actual driver fault or unreproduced MPSGraph crash",
+    "Phase-settled screenshot association only; reset acknowledgement means commands encoded, not independent full-frame GPU completion",
+    "No native window/OS sleep/visibility/panel/performance/adaptive convergence or broad image-quality acceptance"
+  ]
+}
