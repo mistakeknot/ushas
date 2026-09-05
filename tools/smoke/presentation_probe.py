@@ -34,6 +34,26 @@ def object_hash(value):
     return hashlib.sha256(json.dumps(value, sort_keys=True, separators=(',', ':')).encode()).hexdigest()
 
 
+def console_session_flags(tree, uid):
+    """Read only explicit booleans for one current-user console session."""
+    if isinstance(tree, list) and len(tree) == 1:
+        tree = tree[0]
+    if not isinstance(tree, dict):
+        raise ValueError('unexpected IORegistry root shape')
+    sessions = tree.get('IOConsoleUsers', [])
+    if not isinstance(sessions, list) or any(not isinstance(s, dict) for s in sessions):
+        raise ValueError('unexpected console session shape')
+    selected = [s for s in sessions if s.get('kCGSSessionOnConsoleKey') is True
+                and type(s.get('kCGSSessionUserIDKey')) is int
+                and s['kCGSSessionUserIDKey'] == uid]
+    if len(selected) > 1:
+        raise ValueError('ambiguous console session')
+    if not selected:
+        return None, None
+    locked = selected[0].get('CGSSessionScreenIsLocked')
+    return locked if type(locked) is bool else None, True
+
+
 def display_probe():
     """Read CoreGraphics display state and best-effort boolean session metadata only."""
     cg = ctypes.CDLL('/System/Library/Frameworks/CoreGraphics.framework/CoreGraphics')
@@ -76,13 +96,10 @@ def display_probe():
         try:
             raw = subprocess.run(['/usr/sbin/ioreg', '-a', '-n', 'Root', '-d', '1'],
                                  capture_output=True, timeout=1, check=True)
-            sessions = plistlib.loads(raw.stdout)[0].get('IOConsoleUsers', [])
-            selected = [s for s in sessions if s.get('kCGSSessionOnConsoleKey') is True
-                        and s.get('kCGSSessionUserIDKey') == os.getuid()]
-            if len(selected) == 1:
-                value = selected[0].get('CGSSessionScreenIsLocked')
-                locked = value if type(value) is bool else None
-                on_console = True
+            fallback_locked, fallback_console = console_session_flags(plistlib.loads(raw.stdout), os.getuid())
+            locked = fallback_locked
+            if fallback_console is not None:
+                on_console = fallback_console
         except (OSError, ValueError, IndexError, TypeError, subprocess.SubprocessError) as error:
             lock_error = type(error).__name__
     display_id = cg.CGMainDisplayID()
@@ -363,6 +380,31 @@ def main():
 
 
 class Tests(unittest.TestCase):
+    def test_console_fallback_accepts_dictionary_and_single_root_array(self):
+        row = {'kCGSSessionOnConsoleKey': True, 'kCGSSessionUserIDKey': 501,
+               'CGSSessionScreenIsLocked': False}
+        root = {'IOConsoleUsers': [row]}
+        for tree in (root, [root]):
+            with self.subTest(root_type=type(tree).__name__):
+                self.assertEqual(console_session_flags(tree, 501), (False, True))
+
+    def test_console_fallback_rejects_ambiguous_malformed_and_untyped_identity(self):
+        row = {'kCGSSessionOnConsoleKey': True, 'kCGSSessionUserIDKey': 501,
+               'CGSSessionScreenIsLocked': False}
+        bad_roots = (None, [], [1], [{}, {}], {'IOConsoleUsers': {}},
+                     {'IOConsoleUsers': [None]}, {'IOConsoleUsers': [row, row]})
+        for tree in bad_roots:
+            with self.subTest(tree=tree):
+                with self.assertRaises(ValueError):
+                    console_session_flags(tree, 501)
+        for key, value in (('kCGSSessionOnConsoleKey', 1),
+                           ('kCGSSessionUserIDKey', 501.0),
+                           ('kCGSSessionUserIDKey', 502)):
+            self.assertEqual(console_session_flags({'IOConsoleUsers': [{**row, key:value}]},501),
+                             (None,None))
+        self.assertEqual(console_session_flags({'IOConsoleUsers': [{**row, 'CGSSessionScreenIsLocked': 0}]},501),
+                         (None,True))
+
     def awake(self):
         return {'display_id': 1, 'awake': True, 'locked': False, 'on_console': True,
                 'error': None, 'elapsed_s': 0}
