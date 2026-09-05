@@ -36,6 +36,10 @@ Hardware and release acceptance gates are still in progress.
 - Opt-in `frame_timing::ExperimentalFrameTimingPlugin` with asynchronous
   per-view timestamp observations. It reports unvalidated measurements and
   never publishes them to the adaptive controller.
+- Default-off `diagnostic-fault-injection` feature for bounded scaler-creation
+  failure and delay fixtures. Extracted fault generations invalidate pending
+  attempts and cached scalers; clearing a fault resumes normal creation. These
+  controls simulate creation outcomes without provoking a driver failure.
 - A standalone render smoke with readiness checks, captures, structured
   artifacts, control arms, and explicit failure exits. See
   [tools/smoke/README.md](tools/smoke/README.md).

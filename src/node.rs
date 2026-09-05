@@ -273,6 +273,10 @@ struct CachedState {
 struct PendingScaler {
     key: scaler::ScalerKey,
     receiver: std::sync::mpsc::Receiver<Option<SendScaler>>,
+    /// Keeps only a diagnostic held attempt connected. Dropped on generation
+    /// change along with its receiver; ordinary creation never retains this.
+    #[cfg(feature = "diagnostic-fault-injection")]
+    _diagnostic_keepalive: Option<std::sync::mpsc::Sender<Option<SendScaler>>>,
     /// When the background creation started, so a creation that never returns
     /// can be told apart from one that is merely slow.
     ///
@@ -626,6 +630,10 @@ impl MetalFxUpscaleNode {
             color_mtl_fmt,
             color_processing,
             dynamic_res_range,
+            #[cfg(feature = "diagnostic-fault-injection")]
+            world
+                .get_resource::<crate::MetalFxDiagnosticFault>()
+                .map_or_else(Default::default, |fault| fault.snapshot()),
         ) {
             Ok(mode) => mode,
             Err(reason) => {

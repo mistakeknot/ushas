@@ -39,6 +39,8 @@ default = ["spatial"]
 spatial = []
 temporal = ["spatial", "objc2-metal-fx/MTLFXTemporalScaler"]
 frame-interpolation = ["temporal", "objc2-metal-fx/MTLFXFrameInterpolator"]
+# Explicit diagnostic fixtures only; no faults are enabled by default.
+diagnostic-fault-injection = ["temporal"]
 
 [dependencies]
 bevy = { version = "0.19", default-features = false, features = [

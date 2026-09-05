@@ -33,6 +33,8 @@ pub(super) struct ScalerKey {
     pub mode: MetalFxMode,
     pub dynamic_range: Option<(f32, f32)>,
     pub color_processing: objc2_metal_fx::MTLFXSpatialScalerColorProcessingMode,
+    #[cfg(feature = "diagnostic-fault-injection")]
+    pub diagnostic_generation: u64,
 }
 
 fn requires_recreate(cached: Option<ScalerKey>, requested: ScalerKey) -> bool {
@@ -72,6 +74,8 @@ mod tests {
             mode: MetalFxMode::Temporal,
             dynamic_range: None,
             color_processing: objc2_metal_fx::MTLFXSpatialScalerColorProcessingMode::HDR,
+            #[cfg(feature = "diagnostic-fault-injection")]
+            diagnostic_generation: 0,
         };
         assert!(requires_recreate(None, original));
         assert!(!requires_recreate(Some(original), original));
@@ -102,6 +106,11 @@ mod tests {
             },
             ScalerKey {
                 color_processing: objc2_metal_fx::MTLFXSpatialScalerColorProcessingMode::Linear,
+                ..original
+            },
+            #[cfg(feature = "diagnostic-fault-injection")]
+            ScalerKey {
+                diagnostic_generation: 1,
                 ..original
             },
         ] {
@@ -172,6 +181,8 @@ impl MetalFxUpscaleNode {
         color_mtl_fmt: MTLPixelFormat,
         color_processing: objc2_metal_fx::MTLFXSpatialScalerColorProcessingMode,
         dynamic_res_range: Option<(f32, f32)>,
+        #[cfg(feature = "diagnostic-fault-injection")]
+        diagnostic: crate::diagnostic_fault::ScalerFaultSnapshot,
     ) -> Result<MetalFxMode, MetalFxEffectReason> {
         let ScalerDims {
             scaler_input_w,
@@ -194,6 +205,8 @@ impl MetalFxUpscaleNode {
             mode,
             dynamic_range: dynamic_res_range,
             color_processing,
+            #[cfg(feature = "diagnostic-fault-injection")]
+            diagnostic_generation: diagnostic.generation,
         };
         let needs_recreate = requires_recreate(cached.as_ref().map(|cached| cached.key), key);
 
@@ -355,12 +368,23 @@ impl MetalFxUpscaleNode {
                             if reason == MetalFxEffectReason::ScalerCreationSlow && !p.warned.get()
                             {
                                 p.warned.set(true);
-                                log::warn!(
-                                    "MetalFxUpscaleNode: scaler creation has not returned after {:?}; \
-                                     MetalFX has not encoded output. Still waiting; a locked or sleeping \
-                                     display can prevent MetalFX compilation from completing.",
-                                    p.started.elapsed()
-                                );
+                                #[cfg(feature = "diagnostic-fault-injection")]
+                                let simulated = p._diagnostic_keepalive.is_some();
+                                #[cfg(not(feature = "diagnostic-fault-injection"))]
+                                let simulated = false;
+                                if simulated {
+                                    log::warn!(
+                                        "MetalFxUpscaleNode: diagnostic creation intentionally held for {:?}; no driver creation attempted and no MetalFX output encoded",
+                                        p.started.elapsed()
+                                    );
+                                } else {
+                                    log::warn!(
+                                        "MetalFxUpscaleNode: scaler creation has not returned after {:?}; \
+                                         MetalFX has not encoded output. Still waiting; a locked or sleeping \
+                                         display can prevent MetalFX compilation from completing.",
+                                        p.started.elapsed()
+                                    );
+                                }
                             }
                             return Err(reason);
                         }
@@ -386,6 +410,24 @@ impl MetalFxUpscaleNode {
             // received — rebuilding forever (6zit.12). The dimensions-changed
             // path nulls `cached` above so a genuine resize still recreates.
             if cached.is_none() && pending.is_none() {
+                #[cfg(feature = "diagnostic-fault-injection")]
+                if let Some((receiver, keepalive)) =
+                    crate::diagnostic_fault::injected_receiver(diagnostic.fault)
+                {
+                    log::info!(
+                        "MetalFxUpscaleNode: diagnostic simulated creation {:?}, generation {}; no driver creation attempted",
+                        diagnostic.fault,
+                        diagnostic.generation
+                    );
+                    *pending = Some(PendingScaler {
+                        key,
+                        receiver,
+                        _diagnostic_keepalive: keepalive,
+                        started: std::time::Instant::now(),
+                        warned: std::cell::Cell::new(false),
+                    });
+                    return Err(MetalFxEffectReason::ScalerPending);
+                }
                 log::info!(
             "MetalFxUpscaleNode: creating {:?} scaler {scaler_input_w}x{scaler_input_h} -> {output_w}x{output_h} (dynamic_res={dynamic_res_range:?}, cur_input={input_w}x{input_h})",
             mode
@@ -558,6 +600,8 @@ impl MetalFxUpscaleNode {
                         *pending = Some(PendingScaler {
                             key,
                             receiver: rx,
+                            #[cfg(feature = "diagnostic-fault-injection")]
+                            _diagnostic_keepalive: None,
                             started: std::time::Instant::now(),
                             warned: std::cell::Cell::new(false),
                         });

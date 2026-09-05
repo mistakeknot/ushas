@@ -457,6 +457,11 @@ impl MetalFxScaleRange {
 mod history;
 pub use history::MetalFxHistoryReset;
 
+#[cfg(feature = "diagnostic-fault-injection")]
+pub mod diagnostic_fault;
+#[cfg(feature = "diagnostic-fault-injection")]
+pub use diagnostic_fault::{MetalFxDiagnosticFault, ScalerCreationFault};
+
 #[cfg(target_os = "macos")]
 impl MetalFxPlugin {
     /// Put the shared [`GpuTimingDiag`] in both worlds: the main world, where a
@@ -536,6 +541,14 @@ impl bevy::app::Plugin for MetalFxPlugin {
             "MetalFxPlugin: render_scale must be in [0.1, 1.0], got {}",
             self.render_scale
         );
+
+        #[cfg(feature = "diagnostic-fault-injection")]
+        {
+            app.init_resource::<MetalFxDiagnosticFault>();
+            app.add_plugins(bevy::render::extract_resource::ExtractResourcePlugin::<
+                MetalFxDiagnosticFault,
+            >::default());
+        }
 
         effect_runtime::install(app, self.mode, self.render_scale);
         adaptive_runtime::install(

@@ -97,6 +97,8 @@ if [[ "${1:-}" == "--packaged" ]]; then
         "validated sample boundary is public	pub struct ValidatedGpuFrameCost"
         "adaptive status is public	pub struct MetalFxAdaptiveStatus"
         "history has durable acknowledgements	acknowledge"
+        "diagnostic creation controls are public	pub struct MetalFxDiagnosticFault"
+        "diagnostic creation outcomes are explicit	pub enum ScalerCreationFault"
         "interpolation uses real time	fn update_frame_timing\(time: Res<Time<Real>>"
         "!legacy app-time governor is absent	pub struct AdaptiveScaleState"
     )
@@ -244,7 +246,7 @@ CROSS_TARGET="${CROSS_TARGET:-x86_64-unknown-linux-gnu}"
 if rustup target list --installed 2>/dev/null | grep -qx "$CROSS_TARGET"; then
     echo "==> cross-checking $CROSS_TARGET (the docs.rs path)"
     for feats in "--no-default-features --features spatial" "" "--features temporal" \
-                 "--features frame-interpolation"; do
+                 "--features frame-interpolation" "--features diagnostic-fault-injection"; do
         # shellcheck disable=SC2086
         cargo check --manifest-path "${PKG:-$REPO_ROOT}/Cargo.toml" --target "$CROSS_TARGET" $feats --quiet
         echo "    ok: ${feats:-default}"
