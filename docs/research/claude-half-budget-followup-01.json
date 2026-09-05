@@ -1,0 +1,33 @@
+{
+  "scope": "Retrospective application of middle-preset mean-budget rule to the earlier four half-Temporal runs; not a predeclared cross-campaign paired comparison",
+  "source_analysis_sha256": "4ef2f74842f063d375b61705f480573831a2f1c637f9084fd94406b0f63f4cca",
+  "result": {
+    "arm": "temporal-half",
+    "budget_ms": 16.666666666666668,
+    "failed_or_missing_runs": [],
+    "per_run": [
+      {
+        "id": "006-r0-load8000-temporal-half",
+        "mean_completed_render_ms": 13.68760497266515
+      },
+      {
+        "id": "023-r1-load8000-temporal-half",
+        "mean_completed_render_ms": 13.232074797356828
+      },
+      {
+        "id": "030-r2-load8000-temporal-half",
+        "mean_completed_render_ms": 15.240558375634517
+      },
+      {
+        "id": "059-r3-load8000-temporal-half",
+        "mean_completed_render_ms": 13.232410059471366
+      }
+    ],
+    "mean_completed_render_ms": 13.848162051281966,
+    "mean_ci95_ms": [
+      13.232242428414096,
+      14.73852129659373
+    ],
+    "decision": "meets_mean_budget"
+  }
+}

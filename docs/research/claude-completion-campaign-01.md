@@ -56,6 +56,9 @@ completed renders per second. Its mean of per-run 95th-percentile intervals is
 16.738 ms and its miss fraction is 8.90%; passing the average budget does not
 establish smooth 60 FPS pacing. The unmeasured intermediate presets can change
 the highest-quality choice, so a focused load-8,000 refinement follows.
+That [20-run refinement](claude-middle-presets-01.md) also passed: neither
+0.58 nor two thirds met the mean budget, leaving half as the highest tested
+Temporal preset that did.
 One half-Temporal repetition was slower: 15.241 ms with 26.65% misses, versus
 13.232–13.688 ms and 2.20–3.87% misses in the other three. The balanced design
 retains this variability rather than selecting the best run.

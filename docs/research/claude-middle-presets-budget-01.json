@@ -1,0 +1,455 @@
+{
+  "schema": 1,
+  "valid": true,
+  "scope": "Serial callback-observed completed-render intervals including CPU preparation, scheduling, instrumentation and polling; not normal pipelined FPS, GPU busy time, hardware latency, or presentation. No adaptive-governor input.",
+  "target_fps": 60.0,
+  "budget_ms": 16.666666666666668,
+  "interval_definition": "First callback minus first admission; then callback minus previous callback. Intervals partition the measured epoch duration, including CPU gaps.",
+  "quantile_method": "Nearest rank within each run: sorted[ceil(q*N)-1].",
+  "aggregation": "Each of four independent process runs has equal weight per arm/load. Cell p95/p99 fields average per-run quantiles; they are not pooled quantiles. No frame-level confidence interval or independence assumption is used.",
+  "campaign": "/private/tmp/ushas-roadmap-evidence/claude-middle-presets-01/campaign.json",
+  "campaign_sha256": "5f61c219804756eb28556c1748e73307f80a7fee1a49d6ca8b1deeab03315acc",
+  "helper_sha256": "8bb63eb3e2c30700abec5b19a4b68092625b923f2fd4a6be19787e00a77295f0",
+  "validator_sha256": "613d3a085c009f19fafbab7b47389593db08702cbb129c09df1cc5a7d9d9edbf",
+  "binary_sha256": "5c773aba90f70229d03f1ac87045045f11a6f2e435bb9bc21f55e1b0266b4744",
+  "provenance": {
+    "adapter": {
+      "backend": "Metal",
+      "driver": "",
+      "driver_info": "",
+      "name": "Apple M5 Max"
+    },
+    "environment": {},
+    "runtime": {
+      "features": "frame-interpolation (includes temporal)",
+      "metal_debug_layer": null,
+      "os": "ProductName:\t\tmacOS\nProductVersion:\t\t26.5.2\nBuildVersion:\t\t25F84",
+      "rustc": "rustc 1.97.1 (8bab26f4f 2026-07-14)"
+    },
+    "scene_version": "claude-toy-v1",
+    "source_dirty_at_build": "false",
+    "source_revision": "56a3b16c8c1c8f12a5320adc5082c6d20b6378c1",
+    "subject": "claude"
+  },
+  "validation_errors": [],
+  "changed_evidence": [],
+  "runs": [
+    {
+      "id": "000-r0-load8000-native-disabled-msaa4",
+      "arm": "native-disabled-msaa4",
+      "load": 8000,
+      "repetition": 0,
+      "output": "/private/tmp/ushas-roadmap-evidence/claude-middle-presets-01/000-r0-load8000-native-disabled-msaa4.json",
+      "errors": [],
+      "intervals": {
+        "frame_intervals": 219,
+        "elapsed_seconds": 6.0160314580000005,
+        "mean_interval_ms": 27.470463278538816,
+        "p95_interval_ms": 32.33499999999913,
+        "p99_interval_ms": 33.34358299999985,
+        "budget_miss_fraction": 1.0
+      }
+    },
+    {
+      "id": "001-r0-load8000-temporal-quality",
+      "arm": "temporal-quality",
+      "load": 8000,
+      "repetition": 0,
+      "output": "/private/tmp/ushas-roadmap-evidence/claude-middle-presets-01/001-r0-load8000-temporal-quality.json",
+      "errors": [],
+      "intervals": {
+        "frame_intervals": 289,
+        "elapsed_seconds": 6.009179916999999,
+        "mean_interval_ms": 20.793010093425604,
+        "p95_interval_ms": 25.676250000000437,
+        "p99_interval_ms": 27.759417000000212,
+        "budget_miss_fraction": 0.9480968858131488
+      }
+    },
+    {
+      "id": "002-r0-load8000-temporal-balanced",
+      "arm": "temporal-balanced",
+      "load": 8000,
+      "repetition": 0,
+      "output": "/private/tmp/ushas-roadmap-evidence/claude-middle-presets-01/002-r0-load8000-temporal-balanced.json",
+      "errors": [],
+      "intervals": {
+        "frame_intervals": 321,
+        "elapsed_seconds": 6.012444541999999,
+        "mean_interval_ms": 18.730356828660433,
+        "p95_interval_ms": 22.767915999999786,
+        "p99_interval_ms": 23.812832999999955,
+        "budget_miss_fraction": 0.7383177570093458
+      }
+    },
+    {
+      "id": "003-r0-load8000-bilinear-quality",
+      "arm": "bilinear-quality",
+      "load": 8000,
+      "repetition": 0,
+      "output": "/private/tmp/ushas-roadmap-evidence/claude-middle-presets-01/003-r0-load8000-bilinear-quality.json",
+      "errors": [],
+      "intervals": {
+        "frame_intervals": 308,
+        "elapsed_seconds": 6.020943875000001,
+        "mean_interval_ms": 19.548519074675326,
+        "p95_interval_ms": 24.341625000000022,
+        "p99_interval_ms": 25.14129200000025,
+        "budget_miss_fraction": 0.8344155844155844
+      }
+    },
+    {
+      "id": "004-r0-load8000-bilinear-balanced",
+      "arm": "bilinear-balanced",
+      "load": 8000,
+      "repetition": 0,
+      "output": "/private/tmp/ushas-roadmap-evidence/claude-middle-presets-01/004-r0-load8000-bilinear-balanced.json",
+      "errors": [],
+      "intervals": {
+        "frame_intervals": 328,
+        "elapsed_seconds": 6.015079667,
+        "mean_interval_ms": 18.338657521341464,
+        "p95_interval_ms": 22.368666999999732,
+        "p99_interval_ms": 24.212374999999156,
+        "budget_miss_fraction": 0.7073170731707317
+      }
+    },
+    {
+      "id": "005-r1-load8000-bilinear-balanced",
+      "arm": "bilinear-balanced",
+      "load": 8000,
+      "repetition": 1,
+      "output": "/private/tmp/ushas-roadmap-evidence/claude-middle-presets-01/005-r1-load8000-bilinear-balanced.json",
+      "errors": [],
+      "intervals": {
+        "frame_intervals": 335,
+        "elapsed_seconds": 6.001027417,
+        "mean_interval_ms": 17.913514677611943,
+        "p95_interval_ms": 21.799958000000515,
+        "p99_interval_ms": 23.491291000000274,
+        "budget_miss_fraction": 0.6447761194029851
+      }
+    },
+    {
+      "id": "006-r1-load8000-bilinear-quality",
+      "arm": "bilinear-quality",
+      "load": 8000,
+      "repetition": 1,
+      "output": "/private/tmp/ushas-roadmap-evidence/claude-middle-presets-01/006-r1-load8000-bilinear-quality.json",
+      "errors": [],
+      "intervals": {
+        "frame_intervals": 309,
+        "elapsed_seconds": 6.0102720419999995,
+        "mean_interval_ms": 19.45071858252427,
+        "p95_interval_ms": 23.86254199999985,
+        "p99_interval_ms": 26.02112500000021,
+        "budget_miss_fraction": 0.8576051779935275
+      }
+    },
+    {
+      "id": "007-r1-load8000-temporal-balanced",
+      "arm": "temporal-balanced",
+      "load": 8000,
+      "repetition": 1,
+      "output": "/private/tmp/ushas-roadmap-evidence/claude-middle-presets-01/007-r1-load8000-temporal-balanced.json",
+      "errors": [],
+      "intervals": {
+        "frame_intervals": 322,
+        "elapsed_seconds": 6.000680249999999,
+        "mean_interval_ms": 18.635652950310558,
+        "p95_interval_ms": 22.4917089999999,
+        "p99_interval_ms": 23.568707999999788,
+        "budget_miss_fraction": 0.7639751552795031
+      }
+    },
+    {
+      "id": "008-r1-load8000-temporal-quality",
+      "arm": "temporal-quality",
+      "load": 8000,
+      "repetition": 1,
+      "output": "/private/tmp/ushas-roadmap-evidence/claude-middle-presets-01/008-r1-load8000-temporal-quality.json",
+      "errors": [],
+      "intervals": {
+        "frame_intervals": 285,
+        "elapsed_seconds": 6.0171072500000005,
+        "mean_interval_ms": 21.11265701754386,
+        "p95_interval_ms": 25.514000000000124,
+        "p99_interval_ms": 27.45495899999969,
+        "budget_miss_fraction": 0.9578947368421052
+      }
+    },
+    {
+      "id": "009-r1-load8000-native-disabled-msaa4",
+      "arm": "native-disabled-msaa4",
+      "load": 8000,
+      "repetition": 1,
+      "output": "/private/tmp/ushas-roadmap-evidence/claude-middle-presets-01/009-r1-load8000-native-disabled-msaa4.json",
+      "errors": [],
+      "intervals": {
+        "frame_intervals": 205,
+        "elapsed_seconds": 6.005221791,
+        "mean_interval_ms": 29.29376483414634,
+        "p95_interval_ms": 33.59691699999894,
+        "p99_interval_ms": 35.258458000000246,
+        "budget_miss_fraction": 1.0
+      }
+    },
+    {
+      "id": "010-r2-load8000-temporal-quality",
+      "arm": "temporal-quality",
+      "load": 8000,
+      "repetition": 2,
+      "output": "/private/tmp/ushas-roadmap-evidence/claude-middle-presets-01/010-r2-load8000-temporal-quality.json",
+      "errors": [],
+      "intervals": {
+        "frame_intervals": 294,
+        "elapsed_seconds": 6.007956125000001,
+        "mean_interval_ms": 20.43522491496599,
+        "p95_interval_ms": 24.812791999998808,
+        "p99_interval_ms": 26.494708999998693,
+        "budget_miss_fraction": 0.9251700680272109
+      }
+    },
+    {
+      "id": "011-r2-load8000-temporal-balanced",
+      "arm": "temporal-balanced",
+      "load": 8000,
+      "repetition": 2,
+      "output": "/private/tmp/ushas-roadmap-evidence/claude-middle-presets-01/011-r2-load8000-temporal-balanced.json",
+      "errors": [],
+      "intervals": {
+        "frame_intervals": 326,
+        "elapsed_seconds": 6.011890042,
+        "mean_interval_ms": 18.441380496932517,
+        "p95_interval_ms": 22.180959000000257,
+        "p99_interval_ms": 23.0140420000007,
+        "budget_miss_fraction": 0.6932515337423313
+      }
+    },
+    {
+      "id": "012-r2-load8000-bilinear-quality",
+      "arm": "bilinear-quality",
+      "load": 8000,
+      "repetition": 2,
+      "output": "/private/tmp/ushas-roadmap-evidence/claude-middle-presets-01/012-r2-load8000-bilinear-quality.json",
+      "errors": [],
+      "intervals": {
+        "frame_intervals": 291,
+        "elapsed_seconds": 6.013113375,
+        "mean_interval_ms": 20.663619845360824,
+        "p95_interval_ms": 25.22699999999986,
+        "p99_interval_ms": 26.885207999999693,
+        "budget_miss_fraction": 0.9209621993127147
+      }
+    },
+    {
+      "id": "013-r2-load8000-bilinear-balanced",
+      "arm": "bilinear-balanced",
+      "load": 8000,
+      "repetition": 2,
+      "output": "/private/tmp/ushas-roadmap-evidence/claude-middle-presets-01/013-r2-load8000-bilinear-balanced.json",
+      "errors": [],
+      "intervals": {
+        "frame_intervals": 330,
+        "elapsed_seconds": 6.000476958999999,
+        "mean_interval_ms": 18.18326351212121,
+        "p95_interval_ms": 22.22950000000037,
+        "p99_interval_ms": 23.718542000000525,
+        "budget_miss_fraction": 0.6727272727272727
+      }
+    },
+    {
+      "id": "014-r2-load8000-native-disabled-msaa4",
+      "arm": "native-disabled-msaa4",
+      "load": 8000,
+      "repetition": 2,
+      "output": "/private/tmp/ushas-roadmap-evidence/claude-middle-presets-01/014-r2-load8000-native-disabled-msaa4.json",
+      "errors": [],
+      "intervals": {
+        "frame_intervals": 189,
+        "elapsed_seconds": 6.0091712919999996,
+        "mean_interval_ms": 31.7945571005291,
+        "p95_interval_ms": 36.39445799999976,
+        "p99_interval_ms": 38.407208999999966,
+        "budget_miss_fraction": 1.0
+      }
+    },
+    {
+      "id": "015-r3-load8000-native-disabled-msaa4",
+      "arm": "native-disabled-msaa4",
+      "load": 8000,
+      "repetition": 3,
+      "output": "/private/tmp/ushas-roadmap-evidence/claude-middle-presets-01/015-r3-load8000-native-disabled-msaa4.json",
+      "errors": [],
+      "intervals": {
+        "frame_intervals": 181,
+        "elapsed_seconds": 6.019691624999999,
+        "mean_interval_ms": 33.25796477900552,
+        "p95_interval_ms": 38.004791999999725,
+        "p99_interval_ms": 39.53545800000029,
+        "budget_miss_fraction": 1.0
+      }
+    },
+    {
+      "id": "016-r3-load8000-bilinear-balanced",
+      "arm": "bilinear-balanced",
+      "load": 8000,
+      "repetition": 3,
+      "output": "/private/tmp/ushas-roadmap-evidence/claude-middle-presets-01/016-r3-load8000-bilinear-balanced.json",
+      "errors": [],
+      "intervals": {
+        "frame_intervals": 324,
+        "elapsed_seconds": 6.009237917,
+        "mean_interval_ms": 18.54703060802469,
+        "p95_interval_ms": 22.42658400000073,
+        "p99_interval_ms": 24.010333000000173,
+        "budget_miss_fraction": 0.7098765432098766
+      }
+    },
+    {
+      "id": "017-r3-load8000-bilinear-quality",
+      "arm": "bilinear-quality",
+      "load": 8000,
+      "repetition": 3,
+      "output": "/private/tmp/ushas-roadmap-evidence/claude-middle-presets-01/017-r3-load8000-bilinear-quality.json",
+      "errors": [],
+      "intervals": {
+        "frame_intervals": 270,
+        "elapsed_seconds": 6.013666584,
+        "mean_interval_ms": 22.272839200000004,
+        "p95_interval_ms": 27.289958000000297,
+        "p99_interval_ms": 29.4985829999996,
+        "budget_miss_fraction": 0.9814814814814815
+      }
+    },
+    {
+      "id": "018-r3-load8000-temporal-balanced",
+      "arm": "temporal-balanced",
+      "load": 8000,
+      "repetition": 3,
+      "output": "/private/tmp/ushas-roadmap-evidence/claude-middle-presets-01/018-r3-load8000-temporal-balanced.json",
+      "errors": [],
+      "intervals": {
+        "frame_intervals": 316,
+        "elapsed_seconds": 6.008331792000001,
+        "mean_interval_ms": 19.01370820253165,
+        "p95_interval_ms": 23.589584000000286,
+        "p99_interval_ms": 25.21191699999963,
+        "budget_miss_fraction": 0.7215189873417721
+      }
+    },
+    {
+      "id": "019-r3-load8000-temporal-quality",
+      "arm": "temporal-quality",
+      "load": 8000,
+      "repetition": 3,
+      "output": "/private/tmp/ushas-roadmap-evidence/claude-middle-presets-01/019-r3-load8000-temporal-quality.json",
+      "errors": [],
+      "intervals": {
+        "frame_intervals": 267,
+        "elapsed_seconds": 6.003353584,
+        "mean_interval_ms": 22.484470352059926,
+        "p95_interval_ms": 26.879665999999816,
+        "p99_interval_ms": 29.66662499999984,
+        "budget_miss_fraction": 1.0
+      }
+    }
+  ],
+  "cells": [
+    {
+      "load": 8000,
+      "arm": "native-disabled-msaa4",
+      "valid": true,
+      "required_runs": 4,
+      "valid_runs": 4,
+      "run_ids": [
+        "000-r0-load8000-native-disabled-msaa4",
+        "009-r1-load8000-native-disabled-msaa4",
+        "014-r2-load8000-native-disabled-msaa4",
+        "015-r3-load8000-native-disabled-msaa4"
+      ],
+      "summary": {
+        "mean_interval_ms": 30.454187498054942,
+        "mean_of_run_p95_interval_ms": 35.08279174999939,
+        "mean_of_run_p99_interval_ms": 36.63617700000009,
+        "mean_of_run_budget_miss_fractions": 1.0
+      }
+    },
+    {
+      "load": 8000,
+      "arm": "temporal-quality",
+      "valid": true,
+      "required_runs": 4,
+      "valid_runs": 4,
+      "run_ids": [
+        "001-r0-load8000-temporal-quality",
+        "008-r1-load8000-temporal-quality",
+        "010-r2-load8000-temporal-quality",
+        "019-r3-load8000-temporal-quality"
+      ],
+      "summary": {
+        "mean_interval_ms": 21.206340594498844,
+        "mean_of_run_p95_interval_ms": 25.720676999999796,
+        "mean_of_run_p99_interval_ms": 27.84392749999961,
+        "mean_of_run_budget_miss_fractions": 0.9577904226706162
+      }
+    },
+    {
+      "load": 8000,
+      "arm": "temporal-balanced",
+      "valid": true,
+      "required_runs": 4,
+      "valid_runs": 4,
+      "run_ids": [
+        "002-r0-load8000-temporal-balanced",
+        "007-r1-load8000-temporal-balanced",
+        "011-r2-load8000-temporal-balanced",
+        "018-r3-load8000-temporal-balanced"
+      ],
+      "summary": {
+        "mean_interval_ms": 18.70527461960879,
+        "mean_of_run_p95_interval_ms": 22.757542000000058,
+        "mean_of_run_p99_interval_ms": 23.901875000000018,
+        "mean_of_run_budget_miss_fractions": 0.7292658583432381
+      }
+    },
+    {
+      "load": 8000,
+      "arm": "bilinear-quality",
+      "valid": true,
+      "required_runs": 4,
+      "valid_runs": 4,
+      "run_ids": [
+        "003-r0-load8000-bilinear-quality",
+        "006-r1-load8000-bilinear-quality",
+        "012-r2-load8000-bilinear-quality",
+        "017-r3-load8000-bilinear-quality"
+      ],
+      "summary": {
+        "mean_interval_ms": 20.483924175640105,
+        "mean_of_run_p95_interval_ms": 25.180281250000007,
+        "mean_of_run_p99_interval_ms": 26.886551999999938,
+        "mean_of_run_budget_miss_fractions": 0.898616110800827
+      }
+    },
+    {
+      "load": 8000,
+      "arm": "bilinear-balanced",
+      "valid": true,
+      "required_runs": 4,
+      "valid_runs": 4,
+      "run_ids": [
+        "004-r0-load8000-bilinear-balanced",
+        "005-r1-load8000-bilinear-balanced",
+        "013-r2-load8000-bilinear-balanced",
+        "016-r3-load8000-bilinear-balanced"
+      ],
+      "summary": {
+        "mean_interval_ms": 18.245616579774826,
+        "mean_of_run_p95_interval_ms": 22.206177250000337,
+        "mean_of_run_p99_interval_ms": 23.858135250000032,
+        "mean_of_run_budget_miss_fractions": 0.6836742521277165
+      }
+    }
+  ]
+}

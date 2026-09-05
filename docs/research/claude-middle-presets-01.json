@@ -1,0 +1,1273 @@
+{
+  "schema": 1,
+  "valid": true,
+  "scope": "Paired run-level serial completed-render time ratios, candidate/declared-baseline (native MSAA4 or same-resolution bilinear); each run uses 1000/completed_render_fps. Lower is faster. Includes CPU preparation, scheduling, callback delivery and polling; not normal pipelined FPS, GPU busy cost, GPU hardware latency or presentation.",
+  "limitations": [
+    "Four repetitions provide limited uncertainty resolution.",
+    "Each run is one observation; frame samples are not independent repetitions.",
+    "Every admitted render frame is drained before the next; this deliberately disables rendering overlap.",
+    "Elapsed time spans first measured admission to last measured callback, including interframe CPU gaps.",
+    "Completion fences and matching render evidence establish completed-view cadence, not a GPU busy-time signal.",
+    "Intervals are pointwise bootstrap estimates, not family-wise guarantees across arms and loads."
+  ],
+  "bootstrap_seed": 21434,
+  "bootstrap_draws": 10000,
+  "practical_threshold": 0.08,
+  "provenance": {
+    "adapter": {
+      "backend": "Metal",
+      "driver": "",
+      "driver_info": "",
+      "name": "Apple M5 Max"
+    },
+    "environment": {},
+    "runtime": {
+      "features": "frame-interpolation (includes temporal)",
+      "metal_debug_layer": null,
+      "os": "ProductName:\t\tmacOS\nProductVersion:\t\t26.5.2\nBuildVersion:\t\t25F84",
+      "rustc": "rustc 1.97.1 (8bab26f4f 2026-07-14)"
+    },
+    "scene_version": "claude-toy-v1",
+    "source_dirty_at_build": "false",
+    "source_revision": "56a3b16c8c1c8f12a5320adc5082c6d20b6378c1",
+    "subject": "claude"
+  },
+  "runner_checkout_varied": true,
+  "errors": [],
+  "planned_runs": 20,
+  "execution_records": 20,
+  "runs": [
+    {
+      "id": "000-r0-load8000-native-disabled-msaa4",
+      "repetition": 0,
+      "load": 8000,
+      "arm": "native-disabled-msaa4",
+      "position": 0,
+      "output": "/private/tmp/ushas-roadmap-evidence/claude-middle-presets-01/000-r0-load8000-native-disabled-msaa4.json",
+      "errors": [],
+      "mean_loop_ms": 27.51713204109589,
+      "loop_samples": 219,
+      "experimental_markers": {
+        "requested": false,
+        "status": null,
+        "retained_measured_observations": 0,
+        "completed_total": null,
+        "retained_unfiltered_count": null,
+        "mean_elapsed_ms": null,
+        "availability": "no retained measured-frame observations; this does not imply zero completed queries",
+        "validated_for_governor": false,
+        "scope": "Experimental elapsed marker envelope; not GPU busy cost or panel delivery."
+      },
+      "mean_completed_render_ms": 27.470463278538812,
+      "serial_completion": {
+        "epoch": 2,
+        "closed_by_epoch": 3,
+        "completed_frame_fences": 219,
+        "qualified_render_frames": 219,
+        "elapsed_seconds": 6.016031458,
+        "completed_render_fps": 36.40273517997951,
+        "mean_completed_render_ms": 27.470463278538812
+      },
+      "runner_checkout": {
+        "source_head": {
+          "exit_code": 0,
+          "stdout": "ecfc8a7728359d3992913784a915c145b81b20a2",
+          "stderr": ""
+        },
+        "source_status": {
+          "exit_code": 0,
+          "stdout": "M README.md\n M docs/research/claude-campaign-01.md\n M tools/smoke/preview.json\n M tools/smoke/preview.png\n M tools/smoke/src/config.rs\n?? docs/research/claude-completion-budget-01.json\n?? docs/research/claude-completion-campaign-01.json\n?? docs/research/claude-completion-campaign-01.md\n?? tools/smoke/src/quality.rs",
+          "stderr": ""
+        },
+        "lock_sha256": "87a667af3bd5dad9158055e658fa48872f861a1a17eeeb9b103e7315c2aa1234",
+        "toolchain_sha256": "39345e1836f9100c68f1971709f6050a83ba36dbb04617524b6dd83980db89c6"
+      }
+    },
+    {
+      "id": "001-r0-load8000-temporal-quality",
+      "repetition": 0,
+      "load": 8000,
+      "arm": "temporal-quality",
+      "position": 1,
+      "output": "/private/tmp/ushas-roadmap-evidence/claude-middle-presets-01/001-r0-load8000-temporal-quality.json",
+      "errors": [],
+      "mean_loop_ms": 20.84655175778545,
+      "loop_samples": 289,
+      "experimental_markers": {
+        "requested": false,
+        "status": null,
+        "retained_measured_observations": 0,
+        "completed_total": null,
+        "retained_unfiltered_count": null,
+        "mean_elapsed_ms": null,
+        "availability": "no retained measured-frame observations; this does not imply zero completed queries",
+        "validated_for_governor": false,
+        "scope": "Experimental elapsed marker envelope; not GPU busy cost or panel delivery."
+      },
+      "mean_completed_render_ms": 20.793010093425607,
+      "serial_completion": {
+        "epoch": 2,
+        "closed_by_epoch": 3,
+        "completed_frame_fences": 289,
+        "qualified_render_frames": 289,
+        "elapsed_seconds": 6.009179917,
+        "completed_render_fps": 48.09308491203892,
+        "mean_completed_render_ms": 20.793010093425607
+      },
+      "runner_checkout": {
+        "source_head": {
+          "exit_code": 0,
+          "stdout": "ecfc8a7728359d3992913784a915c145b81b20a2",
+          "stderr": ""
+        },
+        "source_status": {
+          "exit_code": 0,
+          "stdout": "M README.md\n M docs/research/claude-campaign-01.md\n M tools/smoke/preview.json\n M tools/smoke/preview.png\n M tools/smoke/src/config.rs\n?? docs/research/claude-completion-budget-01.json\n?? docs/research/claude-completion-campaign-01.json\n?? docs/research/claude-completion-campaign-01.md\n?? tools/smoke/src/quality.rs",
+          "stderr": ""
+        },
+        "lock_sha256": "87a667af3bd5dad9158055e658fa48872f861a1a17eeeb9b103e7315c2aa1234",
+        "toolchain_sha256": "39345e1836f9100c68f1971709f6050a83ba36dbb04617524b6dd83980db89c6"
+      }
+    },
+    {
+      "id": "002-r0-load8000-temporal-balanced",
+      "repetition": 0,
+      "load": 8000,
+      "arm": "temporal-balanced",
+      "position": 2,
+      "output": "/private/tmp/ushas-roadmap-evidence/claude-middle-presets-01/002-r0-load8000-temporal-balanced.json",
+      "errors": [],
+      "mean_loop_ms": 18.805092679127736,
+      "loop_samples": 321,
+      "experimental_markers": {
+        "requested": false,
+        "status": null,
+        "retained_measured_observations": 0,
+        "completed_total": null,
+        "retained_unfiltered_count": null,
+        "mean_elapsed_ms": null,
+        "availability": "no retained measured-frame observations; this does not imply zero completed queries",
+        "validated_for_governor": false,
+        "scope": "Experimental elapsed marker envelope; not GPU busy cost or panel delivery."
+      },
+      "mean_completed_render_ms": 18.730356828660433,
+      "serial_completion": {
+        "epoch": 2,
+        "closed_by_epoch": 3,
+        "completed_frame_fences": 321,
+        "qualified_render_frames": 321,
+        "elapsed_seconds": 6.012444542,
+        "completed_render_fps": 53.389265839817874,
+        "mean_completed_render_ms": 18.730356828660433
+      },
+      "runner_checkout": {
+        "source_head": {
+          "exit_code": 0,
+          "stdout": "ecfc8a7728359d3992913784a915c145b81b20a2",
+          "stderr": ""
+        },
+        "source_status": {
+          "exit_code": 0,
+          "stdout": "M README.md\n M docs/research/claude-campaign-01.md\n M tools/smoke/preview.json\n M tools/smoke/preview.png\n M tools/smoke/src/config.rs\n?? docs/research/claude-completion-budget-01.json\n?? docs/research/claude-completion-campaign-01.json\n?? docs/research/claude-completion-campaign-01.md\n?? tools/smoke/src/quality.rs",
+          "stderr": ""
+        },
+        "lock_sha256": "87a667af3bd5dad9158055e658fa48872f861a1a17eeeb9b103e7315c2aa1234",
+        "toolchain_sha256": "39345e1836f9100c68f1971709f6050a83ba36dbb04617524b6dd83980db89c6"
+      }
+    },
+    {
+      "id": "003-r0-load8000-bilinear-quality",
+      "repetition": 0,
+      "load": 8000,
+      "arm": "bilinear-quality",
+      "position": 3,
+      "output": "/private/tmp/ushas-roadmap-evidence/claude-middle-presets-01/003-r0-load8000-bilinear-quality.json",
+      "errors": [],
+      "mean_loop_ms": 19.56347673051947,
+      "loop_samples": 308,
+      "experimental_markers": {
+        "requested": false,
+        "status": null,
+        "retained_measured_observations": 0,
+        "completed_total": null,
+        "retained_unfiltered_count": null,
+        "mean_elapsed_ms": null,
+        "availability": "no retained measured-frame observations; this does not imply zero completed queries",
+        "validated_for_governor": false,
+        "scope": "Experimental elapsed marker envelope; not GPU busy cost or panel delivery."
+      },
+      "mean_completed_render_ms": 19.548519074675326,
+      "serial_completion": {
+        "epoch": 2,
+        "closed_by_epoch": 3,
+        "completed_frame_fences": 308,
+        "qualified_render_frames": 308,
+        "elapsed_seconds": 6.020943875,
+        "completed_render_fps": 51.15477014806088,
+        "mean_completed_render_ms": 19.548519074675326
+      },
+      "runner_checkout": {
+        "source_head": {
+          "exit_code": 0,
+          "stdout": "ecfc8a7728359d3992913784a915c145b81b20a2",
+          "stderr": ""
+        },
+        "source_status": {
+          "exit_code": 0,
+          "stdout": "M README.md\n M docs/research/claude-campaign-01.md\n M tools/smoke/preview.json\n M tools/smoke/preview.png\n M tools/smoke/src/config.rs\n?? docs/research/claude-completion-budget-01.json\n?? docs/research/claude-completion-campaign-01.json\n?? docs/research/claude-completion-campaign-01.md\n?? tools/smoke/src/quality.rs",
+          "stderr": ""
+        },
+        "lock_sha256": "87a667af3bd5dad9158055e658fa48872f861a1a17eeeb9b103e7315c2aa1234",
+        "toolchain_sha256": "39345e1836f9100c68f1971709f6050a83ba36dbb04617524b6dd83980db89c6"
+      }
+    },
+    {
+      "id": "004-r0-load8000-bilinear-balanced",
+      "repetition": 0,
+      "load": 8000,
+      "arm": "bilinear-balanced",
+      "position": 4,
+      "output": "/private/tmp/ushas-roadmap-evidence/claude-middle-presets-01/004-r0-load8000-bilinear-balanced.json",
+      "errors": [],
+      "mean_loop_ms": 18.386280996951232,
+      "loop_samples": 328,
+      "experimental_markers": {
+        "requested": false,
+        "status": null,
+        "retained_measured_observations": 0,
+        "completed_total": null,
+        "retained_unfiltered_count": null,
+        "mean_elapsed_ms": null,
+        "availability": "no retained measured-frame observations; this does not imply zero completed queries",
+        "validated_for_governor": false,
+        "scope": "Experimental elapsed marker envelope; not GPU busy cost or panel delivery."
+      },
+      "mean_completed_render_ms": 18.338657521341464,
+      "serial_completion": {
+        "epoch": 2,
+        "closed_by_epoch": 3,
+        "completed_frame_fences": 328,
+        "qualified_render_frames": 328,
+        "elapsed_seconds": 6.015079667,
+        "completed_render_fps": 54.52961858501682,
+        "mean_completed_render_ms": 18.338657521341464
+      },
+      "runner_checkout": {
+        "source_head": {
+          "exit_code": 0,
+          "stdout": "ecfc8a7728359d3992913784a915c145b81b20a2",
+          "stderr": ""
+        },
+        "source_status": {
+          "exit_code": 0,
+          "stdout": "M README.md\n M docs/research/claude-campaign-01.md\n M tools/smoke/preview.json\n M tools/smoke/preview.png\n M tools/smoke/src/claude.rs\n M tools/smoke/src/completion.rs\n M tools/smoke/src/config.rs\n M tools/smoke/src/lifecycle.rs\n M tools/smoke/src/main.rs\n M tools/smoke/src/metrics.rs\n?? docs/research/claude-completion-budget-01.json\n?? docs/research/claude-completion-campaign-01.json\n?? docs/research/claude-completion-campaign-01.md\n?? tools/smoke/src/quality.rs",
+          "stderr": ""
+        },
+        "lock_sha256": "87a667af3bd5dad9158055e658fa48872f861a1a17eeeb9b103e7315c2aa1234",
+        "toolchain_sha256": "39345e1836f9100c68f1971709f6050a83ba36dbb04617524b6dd83980db89c6"
+      }
+    },
+    {
+      "id": "005-r1-load8000-bilinear-balanced",
+      "repetition": 1,
+      "load": 8000,
+      "arm": "bilinear-balanced",
+      "position": 0,
+      "output": "/private/tmp/ushas-roadmap-evidence/claude-middle-presets-01/005-r1-load8000-bilinear-balanced.json",
+      "errors": [],
+      "mean_loop_ms": 17.981166292537317,
+      "loop_samples": 335,
+      "experimental_markers": {
+        "requested": false,
+        "status": null,
+        "retained_measured_observations": 0,
+        "completed_total": null,
+        "retained_unfiltered_count": null,
+        "mean_elapsed_ms": null,
+        "availability": "no retained measured-frame observations; this does not imply zero completed queries",
+        "validated_for_governor": false,
+        "scope": "Experimental elapsed marker envelope; not GPU busy cost or panel delivery."
+      },
+      "mean_completed_render_ms": 17.913514677611943,
+      "serial_completion": {
+        "epoch": 2,
+        "closed_by_epoch": 3,
+        "completed_frame_fences": 335,
+        "qualified_render_frames": 335,
+        "elapsed_seconds": 6.001027417,
+        "completed_render_fps": 55.823774284216036,
+        "mean_completed_render_ms": 17.913514677611943
+      },
+      "runner_checkout": {
+        "source_head": {
+          "exit_code": 0,
+          "stdout": "9fd4d13c0c88bd3ed1ca29777506e4a58ecaa654",
+          "stderr": ""
+        },
+        "source_status": {
+          "exit_code": 0,
+          "stdout": "M tools/smoke/src/claude.rs\n M tools/smoke/src/completion.rs\n M tools/smoke/src/config.rs\n M tools/smoke/src/lifecycle.rs\n M tools/smoke/src/main.rs\n M tools/smoke/src/metrics.rs\n?? tools/smoke/src/quality.rs",
+          "stderr": ""
+        },
+        "lock_sha256": "87a667af3bd5dad9158055e658fa48872f861a1a17eeeb9b103e7315c2aa1234",
+        "toolchain_sha256": "39345e1836f9100c68f1971709f6050a83ba36dbb04617524b6dd83980db89c6"
+      }
+    },
+    {
+      "id": "006-r1-load8000-bilinear-quality",
+      "repetition": 1,
+      "load": 8000,
+      "arm": "bilinear-quality",
+      "position": 1,
+      "output": "/private/tmp/ushas-roadmap-evidence/claude-middle-presets-01/006-r1-load8000-bilinear-quality.json",
+      "errors": [],
+      "mean_loop_ms": 19.524149676375384,
+      "loop_samples": 309,
+      "experimental_markers": {
+        "requested": false,
+        "status": null,
+        "retained_measured_observations": 0,
+        "completed_total": null,
+        "retained_unfiltered_count": null,
+        "mean_elapsed_ms": null,
+        "availability": "no retained measured-frame observations; this does not imply zero completed queries",
+        "validated_for_governor": false,
+        "scope": "Experimental elapsed marker envelope; not GPU busy cost or panel delivery."
+      },
+      "mean_completed_render_ms": 19.450718582524274,
+      "serial_completion": {
+        "epoch": 2,
+        "closed_by_epoch": 3,
+        "completed_frame_fences": 309,
+        "qualified_render_frames": 309,
+        "elapsed_seconds": 6.010272042,
+        "completed_render_fps": 51.41198232637337,
+        "mean_completed_render_ms": 19.450718582524274
+      },
+      "runner_checkout": {
+        "source_head": {
+          "exit_code": 0,
+          "stdout": "9fd4d13c0c88bd3ed1ca29777506e4a58ecaa654",
+          "stderr": ""
+        },
+        "source_status": {
+          "exit_code": 0,
+          "stdout": "M tools/smoke/src/claude.rs\n M tools/smoke/src/completion.rs\n M tools/smoke/src/config.rs\n M tools/smoke/src/lifecycle.rs\n M tools/smoke/src/main.rs\n M tools/smoke/src/metrics.rs\n?? tools/smoke/src/quality.rs",
+          "stderr": ""
+        },
+        "lock_sha256": "87a667af3bd5dad9158055e658fa48872f861a1a17eeeb9b103e7315c2aa1234",
+        "toolchain_sha256": "39345e1836f9100c68f1971709f6050a83ba36dbb04617524b6dd83980db89c6"
+      }
+    },
+    {
+      "id": "007-r1-load8000-temporal-balanced",
+      "repetition": 1,
+      "load": 8000,
+      "arm": "temporal-balanced",
+      "position": 2,
+      "output": "/private/tmp/ushas-roadmap-evidence/claude-middle-presets-01/007-r1-load8000-temporal-balanced.json",
+      "errors": [],
+      "mean_loop_ms": 18.6769227484472,
+      "loop_samples": 322,
+      "experimental_markers": {
+        "requested": false,
+        "status": null,
+        "retained_measured_observations": 0,
+        "completed_total": null,
+        "retained_unfiltered_count": null,
+        "mean_elapsed_ms": null,
+        "availability": "no retained measured-frame observations; this does not imply zero completed queries",
+        "validated_for_governor": false,
+        "scope": "Experimental elapsed marker envelope; not GPU busy cost or panel delivery."
+      },
+      "mean_completed_render_ms": 18.63565295031056,
+      "serial_completion": {
+        "epoch": 2,
+        "closed_by_epoch": 3,
+        "completed_frame_fences": 322,
+        "qualified_render_frames": 322,
+        "elapsed_seconds": 6.00068025,
+        "completed_render_fps": 53.66058289808059,
+        "mean_completed_render_ms": 18.63565295031056
+      },
+      "runner_checkout": {
+        "source_head": {
+          "exit_code": 0,
+          "stdout": "9fd4d13c0c88bd3ed1ca29777506e4a58ecaa654",
+          "stderr": ""
+        },
+        "source_status": {
+          "exit_code": 0,
+          "stdout": "M tools/smoke/src/claude.rs\n M tools/smoke/src/completion.rs\n M tools/smoke/src/config.rs\n M tools/smoke/src/lifecycle.rs\n M tools/smoke/src/main.rs\n M tools/smoke/src/metrics.rs\n?? tools/smoke/src/quality.rs",
+          "stderr": ""
+        },
+        "lock_sha256": "87a667af3bd5dad9158055e658fa48872f861a1a17eeeb9b103e7315c2aa1234",
+        "toolchain_sha256": "39345e1836f9100c68f1971709f6050a83ba36dbb04617524b6dd83980db89c6"
+      }
+    },
+    {
+      "id": "008-r1-load8000-temporal-quality",
+      "repetition": 1,
+      "load": 8000,
+      "arm": "temporal-quality",
+      "position": 3,
+      "output": "/private/tmp/ushas-roadmap-evidence/claude-middle-presets-01/008-r1-load8000-temporal-quality.json",
+      "errors": [],
+      "mean_loop_ms": 21.169299561403506,
+      "loop_samples": 285,
+      "experimental_markers": {
+        "requested": false,
+        "status": null,
+        "retained_measured_observations": 0,
+        "completed_total": null,
+        "retained_unfiltered_count": null,
+        "mean_elapsed_ms": null,
+        "availability": "no retained measured-frame observations; this does not imply zero completed queries",
+        "validated_for_governor": false,
+        "scope": "Experimental elapsed marker envelope; not GPU busy cost or panel delivery."
+      },
+      "mean_completed_render_ms": 21.112657017543857,
+      "serial_completion": {
+        "epoch": 2,
+        "closed_by_epoch": 3,
+        "completed_frame_fences": 285,
+        "qualified_render_frames": 285,
+        "elapsed_seconds": 6.01710725,
+        "completed_render_fps": 47.36495265228986,
+        "mean_completed_render_ms": 21.112657017543857
+      },
+      "runner_checkout": {
+        "source_head": {
+          "exit_code": 0,
+          "stdout": "9fd4d13c0c88bd3ed1ca29777506e4a58ecaa654",
+          "stderr": ""
+        },
+        "source_status": {
+          "exit_code": 0,
+          "stdout": "M tools/smoke/src/claude.rs\n M tools/smoke/src/config.rs\n M tools/smoke/src/main.rs\n?? tools/smoke/src/quality.rs",
+          "stderr": ""
+        },
+        "lock_sha256": "87a667af3bd5dad9158055e658fa48872f861a1a17eeeb9b103e7315c2aa1234",
+        "toolchain_sha256": "39345e1836f9100c68f1971709f6050a83ba36dbb04617524b6dd83980db89c6"
+      }
+    },
+    {
+      "id": "009-r1-load8000-native-disabled-msaa4",
+      "repetition": 1,
+      "load": 8000,
+      "arm": "native-disabled-msaa4",
+      "position": 4,
+      "output": "/private/tmp/ushas-roadmap-evidence/claude-middle-presets-01/009-r1-load8000-native-disabled-msaa4.json",
+      "errors": [],
+      "mean_loop_ms": 29.340458336585385,
+      "loop_samples": 205,
+      "experimental_markers": {
+        "requested": false,
+        "status": null,
+        "retained_measured_observations": 0,
+        "completed_total": null,
+        "retained_unfiltered_count": null,
+        "mean_elapsed_ms": null,
+        "availability": "no retained measured-frame observations; this does not imply zero completed queries",
+        "validated_for_governor": false,
+        "scope": "Experimental elapsed marker envelope; not GPU busy cost or panel delivery."
+      },
+      "mean_completed_render_ms": 29.29376483414634,
+      "serial_completion": {
+        "epoch": 2,
+        "closed_by_epoch": 3,
+        "completed_frame_fences": 205,
+        "qualified_render_frames": 205,
+        "elapsed_seconds": 6.005221791,
+        "completed_render_fps": 34.1369573239131,
+        "mean_completed_render_ms": 29.29376483414634
+      },
+      "runner_checkout": {
+        "source_head": {
+          "exit_code": 0,
+          "stdout": "9fd4d13c0c88bd3ed1ca29777506e4a58ecaa654",
+          "stderr": ""
+        },
+        "source_status": {
+          "exit_code": 0,
+          "stdout": "M tools/smoke/src/claude.rs\n M tools/smoke/src/config.rs\n M tools/smoke/src/main.rs\n?? tools/smoke/src/quality.rs",
+          "stderr": ""
+        },
+        "lock_sha256": "87a667af3bd5dad9158055e658fa48872f861a1a17eeeb9b103e7315c2aa1234",
+        "toolchain_sha256": "39345e1836f9100c68f1971709f6050a83ba36dbb04617524b6dd83980db89c6"
+      }
+    },
+    {
+      "id": "010-r2-load8000-temporal-quality",
+      "repetition": 2,
+      "load": 8000,
+      "arm": "temporal-quality",
+      "position": 0,
+      "output": "/private/tmp/ushas-roadmap-evidence/claude-middle-presets-01/010-r2-load8000-temporal-quality.json",
+      "errors": [],
+      "mean_loop_ms": 20.48991170408165,
+      "loop_samples": 294,
+      "experimental_markers": {
+        "requested": false,
+        "status": null,
+        "retained_measured_observations": 0,
+        "completed_total": null,
+        "retained_unfiltered_count": null,
+        "mean_elapsed_ms": null,
+        "availability": "no retained measured-frame observations; this does not imply zero completed queries",
+        "validated_for_governor": false,
+        "scope": "Experimental elapsed marker envelope; not GPU busy cost or panel delivery."
+      },
+      "mean_completed_render_ms": 20.435224914965985,
+      "serial_completion": {
+        "epoch": 2,
+        "closed_by_epoch": 3,
+        "completed_frame_fences": 294,
+        "qualified_render_frames": 294,
+        "elapsed_seconds": 6.007956125,
+        "completed_render_fps": 48.93511102330162,
+        "mean_completed_render_ms": 20.435224914965985
+      },
+      "runner_checkout": {
+        "source_head": {
+          "exit_code": 0,
+          "stdout": "9fd4d13c0c88bd3ed1ca29777506e4a58ecaa654",
+          "stderr": ""
+        },
+        "source_status": {
+          "exit_code": 0,
+          "stdout": "M tools/smoke/src/claude.rs\n M tools/smoke/src/config.rs\n M tools/smoke/src/main.rs\n?? tools/smoke/src/quality.rs",
+          "stderr": ""
+        },
+        "lock_sha256": "87a667af3bd5dad9158055e658fa48872f861a1a17eeeb9b103e7315c2aa1234",
+        "toolchain_sha256": "39345e1836f9100c68f1971709f6050a83ba36dbb04617524b6dd83980db89c6"
+      }
+    },
+    {
+      "id": "011-r2-load8000-temporal-balanced",
+      "repetition": 2,
+      "load": 8000,
+      "arm": "temporal-balanced",
+      "position": 1,
+      "output": "/private/tmp/ushas-roadmap-evidence/claude-middle-presets-01/011-r2-load8000-temporal-balanced.json",
+      "errors": [],
+      "mean_loop_ms": 18.509565567484664,
+      "loop_samples": 326,
+      "experimental_markers": {
+        "requested": false,
+        "status": null,
+        "retained_measured_observations": 0,
+        "completed_total": null,
+        "retained_unfiltered_count": null,
+        "mean_elapsed_ms": null,
+        "availability": "no retained measured-frame observations; this does not imply zero completed queries",
+        "validated_for_governor": false,
+        "scope": "Experimental elapsed marker envelope; not GPU busy cost or panel delivery."
+      },
+      "mean_completed_render_ms": 18.441380496932517,
+      "serial_completion": {
+        "epoch": 2,
+        "closed_by_epoch": 3,
+        "completed_frame_fences": 326,
+        "qualified_render_frames": 326,
+        "elapsed_seconds": 6.011890042,
+        "completed_render_fps": 54.225875344111955,
+        "mean_completed_render_ms": 18.441380496932517
+      },
+      "runner_checkout": {
+        "source_head": {
+          "exit_code": 0,
+          "stdout": "9fd4d13c0c88bd3ed1ca29777506e4a58ecaa654",
+          "stderr": ""
+        },
+        "source_status": {
+          "exit_code": 0,
+          "stdout": "M tools/smoke/src/claude.rs\n M tools/smoke/src/config.rs\n M tools/smoke/src/main.rs\n?? tools/smoke/src/quality.rs",
+          "stderr": ""
+        },
+        "lock_sha256": "87a667af3bd5dad9158055e658fa48872f861a1a17eeeb9b103e7315c2aa1234",
+        "toolchain_sha256": "39345e1836f9100c68f1971709f6050a83ba36dbb04617524b6dd83980db89c6"
+      }
+    },
+    {
+      "id": "012-r2-load8000-bilinear-quality",
+      "repetition": 2,
+      "load": 8000,
+      "arm": "bilinear-quality",
+      "position": 2,
+      "output": "/private/tmp/ushas-roadmap-evidence/claude-middle-presets-01/012-r2-load8000-bilinear-quality.json",
+      "errors": [],
+      "mean_loop_ms": 20.76116108247422,
+      "loop_samples": 291,
+      "experimental_markers": {
+        "requested": false,
+        "status": null,
+        "retained_measured_observations": 0,
+        "completed_total": null,
+        "retained_unfiltered_count": null,
+        "mean_elapsed_ms": null,
+        "availability": "no retained measured-frame observations; this does not imply zero completed queries",
+        "validated_for_governor": false,
+        "scope": "Experimental elapsed marker envelope; not GPU busy cost or panel delivery."
+      },
+      "mean_completed_render_ms": 20.663619845360824,
+      "serial_completion": {
+        "epoch": 2,
+        "closed_by_epoch": 3,
+        "completed_frame_fences": 291,
+        "qualified_render_frames": 291,
+        "elapsed_seconds": 6.013113375,
+        "completed_render_fps": 48.39423138267371,
+        "mean_completed_render_ms": 20.663619845360824
+      },
+      "runner_checkout": {
+        "source_head": {
+          "exit_code": 0,
+          "stdout": "9fd4d13c0c88bd3ed1ca29777506e4a58ecaa654",
+          "stderr": ""
+        },
+        "source_status": {
+          "exit_code": 0,
+          "stdout": "M tools/smoke/src/claude.rs\n M tools/smoke/src/config.rs\n M tools/smoke/src/main.rs\n?? tools/smoke/src/quality.rs",
+          "stderr": ""
+        },
+        "lock_sha256": "87a667af3bd5dad9158055e658fa48872f861a1a17eeeb9b103e7315c2aa1234",
+        "toolchain_sha256": "39345e1836f9100c68f1971709f6050a83ba36dbb04617524b6dd83980db89c6"
+      }
+    },
+    {
+      "id": "013-r2-load8000-bilinear-balanced",
+      "repetition": 2,
+      "load": 8000,
+      "arm": "bilinear-balanced",
+      "position": 3,
+      "output": "/private/tmp/ushas-roadmap-evidence/claude-middle-presets-01/013-r2-load8000-bilinear-balanced.json",
+      "errors": [],
+      "mean_loop_ms": 18.26753206969698,
+      "loop_samples": 330,
+      "experimental_markers": {
+        "requested": false,
+        "status": null,
+        "retained_measured_observations": 0,
+        "completed_total": null,
+        "retained_unfiltered_count": null,
+        "mean_elapsed_ms": null,
+        "availability": "no retained measured-frame observations; this does not imply zero completed queries",
+        "validated_for_governor": false,
+        "scope": "Experimental elapsed marker envelope; not GPU busy cost or panel delivery."
+      },
+      "mean_completed_render_ms": 18.18326351212121,
+      "serial_completion": {
+        "epoch": 2,
+        "closed_by_epoch": 3,
+        "completed_frame_fences": 330,
+        "qualified_render_frames": 330,
+        "elapsed_seconds": 6.000476959,
+        "completed_render_fps": 54.9956282233597,
+        "mean_completed_render_ms": 18.18326351212121
+      },
+      "runner_checkout": {
+        "source_head": {
+          "exit_code": 0,
+          "stdout": "9fd4d13c0c88bd3ed1ca29777506e4a58ecaa654",
+          "stderr": ""
+        },
+        "source_status": {
+          "exit_code": 0,
+          "stdout": "M tools/smoke/src/claude.rs\n M tools/smoke/src/config.rs\n M tools/smoke/src/main.rs\n?? tools/smoke/src/quality.rs",
+          "stderr": ""
+        },
+        "lock_sha256": "87a667af3bd5dad9158055e658fa48872f861a1a17eeeb9b103e7315c2aa1234",
+        "toolchain_sha256": "39345e1836f9100c68f1971709f6050a83ba36dbb04617524b6dd83980db89c6"
+      }
+    },
+    {
+      "id": "014-r2-load8000-native-disabled-msaa4",
+      "repetition": 2,
+      "load": 8000,
+      "arm": "native-disabled-msaa4",
+      "position": 4,
+      "output": "/private/tmp/ushas-roadmap-evidence/claude-middle-presets-01/014-r2-load8000-native-disabled-msaa4.json",
+      "errors": [],
+      "mean_loop_ms": 31.854071873015855,
+      "loop_samples": 189,
+      "experimental_markers": {
+        "requested": false,
+        "status": null,
+        "retained_measured_observations": 0,
+        "completed_total": null,
+        "retained_unfiltered_count": null,
+        "mean_elapsed_ms": null,
+        "availability": "no retained measured-frame observations; this does not imply zero completed queries",
+        "validated_for_governor": false,
+        "scope": "Experimental elapsed marker envelope; not GPU busy cost or panel delivery."
+      },
+      "mean_completed_render_ms": 31.794557100529104,
+      "serial_completion": {
+        "epoch": 2,
+        "closed_by_epoch": 3,
+        "completed_frame_fences": 189,
+        "qualified_render_frames": 189,
+        "elapsed_seconds": 6.009171292,
+        "completed_render_fps": 31.4519242031951,
+        "mean_completed_render_ms": 31.794557100529104
+      },
+      "runner_checkout": {
+        "source_head": {
+          "exit_code": 0,
+          "stdout": "9fd4d13c0c88bd3ed1ca29777506e4a58ecaa654",
+          "stderr": ""
+        },
+        "source_status": {
+          "exit_code": 0,
+          "stdout": "M tools/smoke/src/claude.rs\n M tools/smoke/src/config.rs\n M tools/smoke/src/main.rs\n?? tools/smoke/src/quality.rs",
+          "stderr": ""
+        },
+        "lock_sha256": "87a667af3bd5dad9158055e658fa48872f861a1a17eeeb9b103e7315c2aa1234",
+        "toolchain_sha256": "39345e1836f9100c68f1971709f6050a83ba36dbb04617524b6dd83980db89c6"
+      }
+    },
+    {
+      "id": "015-r3-load8000-native-disabled-msaa4",
+      "repetition": 3,
+      "load": 8000,
+      "arm": "native-disabled-msaa4",
+      "position": 0,
+      "output": "/private/tmp/ushas-roadmap-evidence/claude-middle-presets-01/015-r3-load8000-native-disabled-msaa4.json",
+      "errors": [],
+      "mean_loop_ms": 33.372463397790035,
+      "loop_samples": 181,
+      "experimental_markers": {
+        "requested": false,
+        "status": null,
+        "retained_measured_observations": 0,
+        "completed_total": null,
+        "retained_unfiltered_count": null,
+        "mean_elapsed_ms": null,
+        "availability": "no retained measured-frame observations; this does not imply zero completed queries",
+        "validated_for_governor": false,
+        "scope": "Experimental elapsed marker envelope; not GPU busy cost or panel delivery."
+      },
+      "mean_completed_render_ms": 33.257964779005526,
+      "serial_completion": {
+        "epoch": 2,
+        "closed_by_epoch": 3,
+        "completed_frame_fences": 181,
+        "qualified_render_frames": 181,
+        "elapsed_seconds": 6.019691625,
+        "completed_render_fps": 30.06798541777462,
+        "mean_completed_render_ms": 33.257964779005526
+      },
+      "runner_checkout": {
+        "source_head": {
+          "exit_code": 0,
+          "stdout": "9fd4d13c0c88bd3ed1ca29777506e4a58ecaa654",
+          "stderr": ""
+        },
+        "source_status": {
+          "exit_code": 0,
+          "stdout": "M tools/smoke/src/claude.rs\n M tools/smoke/src/config.rs\n M tools/smoke/src/main.rs\n?? tools/smoke/src/quality.rs",
+          "stderr": ""
+        },
+        "lock_sha256": "87a667af3bd5dad9158055e658fa48872f861a1a17eeeb9b103e7315c2aa1234",
+        "toolchain_sha256": "39345e1836f9100c68f1971709f6050a83ba36dbb04617524b6dd83980db89c6"
+      }
+    },
+    {
+      "id": "016-r3-load8000-bilinear-balanced",
+      "repetition": 3,
+      "load": 8000,
+      "arm": "bilinear-balanced",
+      "position": 1,
+      "output": "/private/tmp/ushas-roadmap-evidence/claude-middle-presets-01/016-r3-load8000-bilinear-balanced.json",
+      "errors": [],
+      "mean_loop_ms": 18.594102493827155,
+      "loop_samples": 324,
+      "experimental_markers": {
+        "requested": false,
+        "status": null,
+        "retained_measured_observations": 0,
+        "completed_total": null,
+        "retained_unfiltered_count": null,
+        "mean_elapsed_ms": null,
+        "availability": "no retained measured-frame observations; this does not imply zero completed queries",
+        "validated_for_governor": false,
+        "scope": "Experimental elapsed marker envelope; not GPU busy cost or panel delivery."
+      },
+      "mean_completed_render_ms": 18.54703060802469,
+      "serial_completion": {
+        "epoch": 2,
+        "closed_by_epoch": 3,
+        "completed_frame_fences": 324,
+        "qualified_render_frames": 324,
+        "elapsed_seconds": 6.009237917,
+        "completed_render_fps": 53.91698655887983,
+        "mean_completed_render_ms": 18.54703060802469
+      },
+      "runner_checkout": {
+        "source_head": {
+          "exit_code": 0,
+          "stdout": "9fd4d13c0c88bd3ed1ca29777506e4a58ecaa654",
+          "stderr": ""
+        },
+        "source_status": {
+          "exit_code": 0,
+          "stdout": "M tools/smoke/src/claude.rs\n M tools/smoke/src/config.rs\n M tools/smoke/src/main.rs\n?? tools/smoke/src/quality.rs",
+          "stderr": ""
+        },
+        "lock_sha256": "87a667af3bd5dad9158055e658fa48872f861a1a17eeeb9b103e7315c2aa1234",
+        "toolchain_sha256": "39345e1836f9100c68f1971709f6050a83ba36dbb04617524b6dd83980db89c6"
+      }
+    },
+    {
+      "id": "017-r3-load8000-bilinear-quality",
+      "repetition": 3,
+      "load": 8000,
+      "arm": "bilinear-quality",
+      "position": 2,
+      "output": "/private/tmp/ushas-roadmap-evidence/claude-middle-presets-01/017-r3-load8000-bilinear-quality.json",
+      "errors": [],
+      "mean_loop_ms": 22.38089398148148,
+      "loop_samples": 270,
+      "experimental_markers": {
+        "requested": false,
+        "status": null,
+        "retained_measured_observations": 0,
+        "completed_total": null,
+        "retained_unfiltered_count": null,
+        "mean_elapsed_ms": null,
+        "availability": "no retained measured-frame observations; this does not imply zero completed queries",
+        "validated_for_governor": false,
+        "scope": "Experimental elapsed marker envelope; not GPU busy cost or panel delivery."
+      },
+      "mean_completed_render_ms": 22.2728392,
+      "serial_completion": {
+        "epoch": 2,
+        "closed_by_epoch": 3,
+        "completed_frame_fences": 270,
+        "qualified_render_frames": 270,
+        "elapsed_seconds": 6.013666584,
+        "completed_render_fps": 44.89773355881813,
+        "mean_completed_render_ms": 22.2728392
+      },
+      "runner_checkout": {
+        "source_head": {
+          "exit_code": 0,
+          "stdout": "9fd4d13c0c88bd3ed1ca29777506e4a58ecaa654",
+          "stderr": ""
+        },
+        "source_status": {
+          "exit_code": 0,
+          "stdout": "M tools/smoke/src/claude.rs\n M tools/smoke/src/config.rs\n M tools/smoke/src/main.rs\n?? tools/smoke/quality_runner.py\n?? tools/smoke/src/quality.rs\n?? tools/smoke/test_quality_runner.py",
+          "stderr": ""
+        },
+        "lock_sha256": "87a667af3bd5dad9158055e658fa48872f861a1a17eeeb9b103e7315c2aa1234",
+        "toolchain_sha256": "39345e1836f9100c68f1971709f6050a83ba36dbb04617524b6dd83980db89c6"
+      }
+    },
+    {
+      "id": "018-r3-load8000-temporal-balanced",
+      "repetition": 3,
+      "load": 8000,
+      "arm": "temporal-balanced",
+      "position": 3,
+      "output": "/private/tmp/ushas-roadmap-evidence/claude-middle-presets-01/018-r3-load8000-temporal-balanced.json",
+      "errors": [],
+      "mean_loop_ms": 19.1136090443038,
+      "loop_samples": 316,
+      "experimental_markers": {
+        "requested": false,
+        "status": null,
+        "retained_measured_observations": 0,
+        "completed_total": null,
+        "retained_unfiltered_count": null,
+        "mean_elapsed_ms": null,
+        "availability": "no retained measured-frame observations; this does not imply zero completed queries",
+        "validated_for_governor": false,
+        "scope": "Experimental elapsed marker envelope; not GPU busy cost or panel delivery."
+      },
+      "mean_completed_render_ms": 19.013708202531642,
+      "serial_completion": {
+        "epoch": 2,
+        "closed_by_epoch": 3,
+        "completed_frame_fences": 316,
+        "qualified_render_frames": 316,
+        "elapsed_seconds": 6.008331792,
+        "completed_render_fps": 52.593633464241954,
+        "mean_completed_render_ms": 19.013708202531642
+      },
+      "runner_checkout": {
+        "source_head": {
+          "exit_code": 0,
+          "stdout": "9fd4d13c0c88bd3ed1ca29777506e4a58ecaa654",
+          "stderr": ""
+        },
+        "source_status": {
+          "exit_code": 0,
+          "stdout": "M tools/smoke/src/claude.rs\n M tools/smoke/src/config.rs\n M tools/smoke/src/main.rs\n?? tools/smoke/quality_runner.py\n?? tools/smoke/src/quality.rs\n?? tools/smoke/test_quality_runner.py",
+          "stderr": ""
+        },
+        "lock_sha256": "87a667af3bd5dad9158055e658fa48872f861a1a17eeeb9b103e7315c2aa1234",
+        "toolchain_sha256": "39345e1836f9100c68f1971709f6050a83ba36dbb04617524b6dd83980db89c6"
+      }
+    },
+    {
+      "id": "019-r3-load8000-temporal-quality",
+      "repetition": 3,
+      "load": 8000,
+      "arm": "temporal-quality",
+      "position": 4,
+      "output": "/private/tmp/ushas-roadmap-evidence/claude-middle-presets-01/019-r3-load8000-temporal-quality.json",
+      "errors": [],
+      "mean_loop_ms": 22.520716602996263,
+      "loop_samples": 267,
+      "experimental_markers": {
+        "requested": false,
+        "status": null,
+        "retained_measured_observations": 0,
+        "completed_total": null,
+        "retained_unfiltered_count": null,
+        "mean_elapsed_ms": null,
+        "availability": "no retained measured-frame observations; this does not imply zero completed queries",
+        "validated_for_governor": false,
+        "scope": "Experimental elapsed marker envelope; not GPU busy cost or panel delivery."
+      },
+      "mean_completed_render_ms": 22.484470352059926,
+      "serial_completion": {
+        "epoch": 2,
+        "closed_by_epoch": 3,
+        "completed_frame_fences": 267,
+        "qualified_render_frames": 267,
+        "elapsed_seconds": 6.003353584,
+        "completed_render_fps": 44.475141479522755,
+        "mean_completed_render_ms": 22.484470352059926
+      },
+      "runner_checkout": {
+        "source_head": {
+          "exit_code": 0,
+          "stdout": "9fd4d13c0c88bd3ed1ca29777506e4a58ecaa654",
+          "stderr": ""
+        },
+        "source_status": {
+          "exit_code": 0,
+          "stdout": "M tools/smoke/src/claude.rs\n M tools/smoke/src/config.rs\n M tools/smoke/src/main.rs\n?? tools/smoke/quality_runner.py\n?? tools/smoke/src/quality.rs\n?? tools/smoke/test_quality_runner.py",
+          "stderr": ""
+        },
+        "lock_sha256": "87a667af3bd5dad9158055e658fa48872f861a1a17eeeb9b103e7315c2aa1234",
+        "toolchain_sha256": "39345e1836f9100c68f1971709f6050a83ba36dbb04617524b6dd83980db89c6"
+      }
+    }
+  ],
+  "comparisons": [
+    {
+      "load": 8000,
+      "baseline": "native-disabled-msaa4",
+      "candidate": "temporal-quality",
+      "failed_or_missing_runs": [],
+      "paired_runs": 4,
+      "ratios": [
+        0.7569224400256134,
+        0.720721871602309,
+        0.6427271451007542,
+        0.6760627266721236
+      ],
+      "mean_ratio": 0.6991085458502001,
+      "ratio_ci95": [
+        0.6593949358864389,
+        0.7388221558139612
+      ],
+      "decision": "clear_practical_improvement",
+      "mean_completed_render_time_reduction": 0.3008914541497999
+    },
+    {
+      "load": 8000,
+      "baseline": "native-disabled-msaa4",
+      "candidate": "temporal-balanced",
+      "failed_or_missing_runs": [],
+      "paired_runs": 4,
+      "ratios": [
+        0.6818362194602465,
+        0.636164489468007,
+        0.580016901591802,
+        0.5717039009715431
+      ],
+      "mean_ratio": 0.6174303778728997,
+      "ratio_ci95": [
+        0.5758604012816726,
+        0.6590003544641267
+      ],
+      "decision": "clear_practical_improvement",
+      "mean_completed_render_time_reduction": 0.38256962212710033
+    },
+    {
+      "load": 8000,
+      "baseline": "native-disabled-msaa4",
+      "candidate": "bilinear-quality",
+      "failed_or_missing_runs": [],
+      "paired_runs": 4,
+      "ratios": [
+        0.7116195630361839,
+        0.6639883501710747,
+        0.6499106051399267,
+        0.6696994042780389
+      ],
+      "mean_ratio": 0.673804480656306,
+      "ratio_ci95": [
+        0.6548578049244548,
+        0.6997117598199066
+      ],
+      "decision": "clear_practical_improvement",
+      "mean_completed_render_time_reduction": 0.32619551934369395
+    },
+    {
+      "load": 8000,
+      "baseline": "native-disabled-msaa4",
+      "candidate": "bilinear-balanced",
+      "failed_or_missing_runs": [],
+      "paired_runs": 4,
+      "ratios": [
+        0.6675772933057327,
+        0.6115128860709299,
+        0.5718986257499595,
+        0.5576718458651059
+      ],
+      "mean_ratio": 0.602165162747932,
+      "ratio_ci95": [
+        0.5647852358075327,
+        0.6436576264167894
+      ],
+      "decision": "clear_practical_improvement",
+      "mean_completed_render_time_reduction": 0.39783483725206803
+    },
+    {
+      "load": 8000,
+      "baseline": "bilinear-quality",
+      "candidate": "temporal-quality",
+      "failed_or_missing_runs": [],
+      "paired_runs": 4,
+      "ratios": [
+        1.0636616520154967,
+        1.0854435494487473,
+        0.9889470028918426,
+        1.0095017590779323
+      ],
+      "mean_ratio": 1.0368884908585048,
+      "ratio_ci95": [
+        0.9992243809848874,
+        1.074552600732122
+      ],
+      "decision": "uncertain_or_below_practical_threshold",
+      "mean_completed_render_time_reduction": -0.03688849085850476
+    },
+    {
+      "load": 8000,
+      "baseline": "bilinear-balanced",
+      "candidate": "temporal-balanced",
+      "failed_or_missing_runs": [],
+      "paired_runs": 4,
+      "ratios": [
+        1.0213592138281187,
+        1.0403124839371214,
+        1.0141953057348172,
+        1.0251618495903616
+      ],
+      "mean_ratio": 1.0252572132726048,
+      "ratio_ci95": [
+        1.0169369416987033,
+        1.0355741664098708
+      ],
+      "decision": "uncertain_or_below_practical_threshold",
+      "mean_completed_render_time_reduction": -0.025257213272604773
+    }
+  ],
+  "completion": true,
+  "profile": "middle-presets-v1",
+  "arms": [
+    [
+      "native-disabled-msaa4",
+      "disabled",
+      "1",
+      true
+    ],
+    [
+      "temporal-quality",
+      "temporal",
+      "0.6666666666666666",
+      false
+    ],
+    [
+      "temporal-balanced",
+      "temporal",
+      "0.58",
+      false
+    ],
+    [
+      "bilinear-quality",
+      "disabled",
+      "0.6666666666666666",
+      false
+    ],
+    [
+      "bilinear-balanced",
+      "disabled",
+      "0.58",
+      false
+    ]
+  ],
+  "budget": {
+    "fps": 60.0,
+    "milliseconds": 16.666666666666668,
+    "minimum_scale": 0.5,
+    "metric": "equal-weight run-level mean serial completed-render milliseconds",
+    "criterion": "upper pointwise 95% bootstrap bound <= budget milliseconds",
+    "tails": "completion_budget.py reports nearest-rank P95/P99 and strict > budget misses separately",
+    "quality": "requires separate matched image review; mean budget is not smooth pacing"
+  },
+  "mean_budget": [
+    {
+      "arm": "native-disabled-msaa4",
+      "budget_ms": 16.666666666666668,
+      "failed_or_missing_runs": [],
+      "per_run": [
+        {
+          "id": "000-r0-load8000-native-disabled-msaa4",
+          "mean_completed_render_ms": 27.470463278538812
+        },
+        {
+          "id": "009-r1-load8000-native-disabled-msaa4",
+          "mean_completed_render_ms": 29.29376483414634
+        },
+        {
+          "id": "014-r2-load8000-native-disabled-msaa4",
+          "mean_completed_render_ms": 31.794557100529104
+        },
+        {
+          "id": "015-r3-load8000-native-disabled-msaa4",
+          "mean_completed_render_ms": 33.257964779005526
+        }
+      ],
+      "mean_completed_render_ms": 30.454187498054946,
+      "mean_ci95_ms": [
+        28.382114056342576,
+        32.52626093976731
+      ],
+      "decision": "misses_mean_budget"
+    },
+    {
+      "arm": "temporal-quality",
+      "budget_ms": 16.666666666666668,
+      "failed_or_missing_runs": [],
+      "per_run": [
+        {
+          "id": "001-r0-load8000-temporal-quality",
+          "mean_completed_render_ms": 20.793010093425607
+        },
+        {
+          "id": "008-r1-load8000-temporal-quality",
+          "mean_completed_render_ms": 21.112657017543857
+        },
+        {
+          "id": "010-r2-load8000-temporal-quality",
+          "mean_completed_render_ms": 20.435224914965985
+        },
+        {
+          "id": "019-r3-load8000-temporal-quality",
+          "mean_completed_render_ms": 22.484470352059926
+        }
+      ],
+      "mean_completed_render_ms": 21.206340594498844,
+      "mean_ci95_ms": [
+        20.604582940610452,
+        22.061605287401346
+      ],
+      "decision": "misses_mean_budget"
+    },
+    {
+      "arm": "temporal-balanced",
+      "budget_ms": 16.666666666666668,
+      "failed_or_missing_runs": [],
+      "per_run": [
+        {
+          "id": "002-r0-load8000-temporal-balanced",
+          "mean_completed_render_ms": 18.730356828660433
+        },
+        {
+          "id": "007-r1-load8000-temporal-balanced",
+          "mean_completed_render_ms": 18.63565295031056
+        },
+        {
+          "id": "011-r2-load8000-temporal-balanced",
+          "mean_completed_render_ms": 18.441380496932517
+        },
+        {
+          "id": "018-r3-load8000-temporal-balanced",
+          "mean_completed_render_ms": 19.013708202531642
+        }
+      ],
+      "mean_completed_render_ms": 18.705274619608787,
+      "mean_ci95_ms": [
+        18.513624579864498,
+        18.919194389476374
+      ],
+      "decision": "misses_mean_budget"
+    },
+    {
+      "arm": "bilinear-quality",
+      "budget_ms": 16.666666666666668,
+      "failed_or_missing_runs": [],
+      "per_run": [
+        {
+          "id": "003-r0-load8000-bilinear-quality",
+          "mean_completed_render_ms": 19.548519074675326
+        },
+        {
+          "id": "006-r1-load8000-bilinear-quality",
+          "mean_completed_render_ms": 19.450718582524274
+        },
+        {
+          "id": "012-r2-load8000-bilinear-quality",
+          "mean_completed_render_ms": 20.663619845360824
+        },
+        {
+          "id": "017-r3-load8000-bilinear-quality",
+          "mean_completed_render_ms": 22.2728392
+        }
+      ],
+      "mean_completed_render_ms": 20.483924175640105,
+      "mean_ci95_ms": [
+        19.4996188285998,
+        21.59175916866883
+      ],
+      "decision": "misses_mean_budget"
+    },
+    {
+      "arm": "bilinear-balanced",
+      "budget_ms": 16.666666666666668,
+      "failed_or_missing_runs": [],
+      "per_run": [
+        {
+          "id": "004-r0-load8000-bilinear-balanced",
+          "mean_completed_render_ms": 18.338657521341464
+        },
+        {
+          "id": "005-r1-load8000-bilinear-balanced",
+          "mean_completed_render_ms": 17.913514677611943
+        },
+        {
+          "id": "013-r2-load8000-bilinear-balanced",
+          "mean_completed_render_ms": 18.18326351212121
+        },
+        {
+          "id": "016-r3-load8000-bilinear-balanced",
+          "mean_completed_render_ms": 18.54703060802469
+        }
+      ],
+      "mean_completed_render_ms": 18.245616579774826,
+      "mean_ci95_ms": [
+        18.019800388544322,
+        18.45608883404882
+      ],
+      "decision": "misses_mean_budget"
+    }
+  ]
+}
