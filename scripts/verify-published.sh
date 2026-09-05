@@ -119,10 +119,12 @@ if [[ "${1:-}" == "--packaged" ]]; then
     DEP="bevy_metalfx = { path = \"$PKG\" }"
     SOURCE="tarball $TARBALL"
     CANDIDATE_FEATURES="candidate"
+    DIAGNOSTIC_DEPENDENCY='"bevy_metalfx/diagnostic-fault-injection"'
 else
     DEP="bevy_metalfx = \"$VERSION\""
     SOURCE="crates.io $VERSION"
     CANDIDATE_FEATURES=""
+    DIAGNOSTIC_DEPENDENCY=''
 fi
 
 WORK="$(mktemp -d)"
@@ -145,6 +147,7 @@ $DEP
 [features]
 temporal = ["bevy_metalfx/temporal"]
 candidate = []
+diagnostic = [$DIAGNOSTIC_DEPENDENCY]
 EOF
 
 cat > "$WORK/src/main.rs" <<'EOF'
@@ -173,6 +176,8 @@ fn main() {
         app.add_plugins(MinimalPlugins).add_plugins(plugin);
         #[cfg(feature = "candidate")]
         verify_candidate(&app);
+        #[cfg(all(feature = "candidate", feature = "diagnostic"))]
+        verify_diagnostic(&mut app);
 
         // Public accessor added in 0.2 — reports the mode that survived any
         // runtime fallback, which is the whole reason it is readable.
@@ -235,6 +240,21 @@ fn verify_candidate(app: &App) {
     assert!(app.world().contains_resource::<MetalFxAdaptiveContext>());
     assert!(app.world().resource::<MetalFxFrameCostInput>().latest(42).is_none());
 }
+
+#[cfg(all(feature = "candidate", feature = "diagnostic"))]
+fn verify_diagnostic(app: &mut App) {
+    use bevy_metalfx::{MetalFxDiagnosticFault, ScalerCreationFault};
+    let mut control = app.world_mut().resource_mut::<MetalFxDiagnosticFault>();
+    assert_eq!(control.snapshot().fault, ScalerCreationFault::Off);
+    let original = control.snapshot();
+    control.set(ScalerCreationFault::HoldPending);
+    let held = control.snapshot();
+    assert_eq!(held.fault, ScalerCreationFault::HoldPending);
+    assert!(held.generation > original.generation);
+    control.clear();
+    assert_eq!(control.snapshot().fault, ScalerCreationFault::Off);
+    assert!(control.snapshot().generation > held.generation);
+}
 EOF
 
 # Cross-check the non-macOS path. docs.rs builds on Linux, and a macOS-only
@@ -264,4 +284,8 @@ fi
 cargo run "${RUN_ARGS[@]}"
 echo "--- temporal ---"
 cargo run --quiet --manifest-path "$WORK/Cargo.toml" --features "temporal${CANDIDATE_FEATURES:+,$CANDIDATE_FEATURES}"
+if [[ -n "$CANDIDATE_FEATURES" ]]; then
+    echo "--- opt-in diagnostic API ---"
+    cargo run --quiet --manifest-path "$WORK/Cargo.toml" --features candidate,diagnostic
+fi
 echo "==> PASS"

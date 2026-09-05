@@ -1,5 +1,5 @@
 # bevy_metalfx is published to crates.io, so its build surface is wider than a
-# single `cargo check`: five feature combinations, two platforms, and a docs
+# single `cargo check`: six feature combinations, two platforms, and a docs
 # build that renders for a target the crate cannot run on.
 #
 # This matrix exists because three real defects shipped through a plain
@@ -143,6 +143,8 @@ jobs:
           python3 tools/smoke/completion_budget.py --self-test
           python3 tools/smoke/presentation_probe.py --self-test
           python3 tools/timing-probe/analyze_metal_trace.py --self-test
+          python3 tools/render-timing-probe/analyze.py --self-test
+          python3 tools/render-timing-probe/analyze_trace.py --self-test
           python3 -m unittest discover -s tools/consumer-smoke -p 'test_*.py' -v
           rustc --test tools/consumer-smoke/readiness.rs -o "$RUNNER_TEMP/consumer-readiness-tests"
           "$RUNNER_TEMP/consumer-readiness-tests"
