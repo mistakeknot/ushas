@@ -14,9 +14,9 @@ use bevy::render::render_resource::{PollType, TextureFormat, TextureUsages};
 use bevy::render::renderer::{RenderAdapterInfo, RenderDevice, RenderQueue};
 use bevy::render::sync_world::MainEntity;
 use bevy::render::view::screenshot::Screenshot;
-use bevy::render::view::ExtractedView;
+use bevy::render::view::{ExtractedView, ViewTarget};
 use bevy::render::{Extract, ExtractSchedule, Render, RenderApp, RenderSystems};
-use bevy::window::{PresentMode, WindowResolution};
+use bevy::window::{PresentMode, WindowOccluded, WindowResolution};
 use bevy::winit::{WinitPlugin, WinitSettings};
 use bevy_metalfx::{
     MetalFxEffectState, MetalFxEffectStatus, MetalFxHistoryReset, MetalFxObservationFrame,
@@ -58,6 +58,9 @@ struct Request {
     reset_expected: bool,
     configuration_generation: u64,
     load: StressLoad,
+    window_visible: Option<bool>,
+    window_focused: Option<bool>,
+    window_occluded: Option<bool>,
 }
 impl Default for Request {
     fn default() -> Self {
@@ -75,6 +78,9 @@ impl Default for Request {
             reset_expected: false,
             configuration_generation: 1,
             load: StressLoad::default(),
+            window_visible: None,
+            window_focused: None,
+            window_occluded: None,
         }
     }
 }
@@ -117,6 +123,7 @@ struct SharedData {
     adapter: Value,
     metadata: BTreeMap<u64, Value>,
     terminal: bool,
+    readiness: BTreeMap<u64, Value>,
 }
 #[derive(Resource, Clone, Default)]
 struct Shared(Arc<Mutex<SharedData>>);
@@ -150,6 +157,7 @@ struct Controller {
     evicted_stress_samples: u64,
     outcome: Arc<Mutex<Option<MainOutcome>>>,
     shared: Shared,
+    window_occluded: Option<bool>,
 }
 
 #[derive(Clone)]
@@ -204,6 +212,7 @@ pub fn run(config: RunConfig) -> EngineResult {
             .with_scale_factor_override(1.0),
         present_mode: PresentMode::Immediate,
         resizable: false,
+        focused: true,
         visible: config.action != Action::Capture,
         ..default()
     };
@@ -288,6 +297,7 @@ pub fn run(config: RunConfig) -> EngineResult {
             evicted_stress_samples: 0,
             outcome: outcome.clone(),
             shared: shared.clone(),
+            window_occluded: None,
         });
     app.insert_resource(bevy_metalfx::MetalFxGpuTimingDisabled);
     app.add_plugins((
@@ -366,7 +376,7 @@ pub fn run(config: RunConfig) -> EngineResult {
         "presentation_note":"Completed-render throughput of this native window path may include drawable acquisition and presentation backpressure; it is not uncapped hardware capacity.",
         "output_physical_pixels":[config.width,config.height],
         "stress_retention":{"maximum_samples":8192,"evicted_completed_samples":evicted_stress_samples,"retained_completed_cohort_details":8},
-        "adapter":data.adapter,"platform":platform(),"cohorts":cohort_records,
+        "adapter":data.adapter,"platform":platform(),"cohorts":cohort_records,"readiness":data.readiness,
         "capture_scope":"separate deterministic image-target replay; no capture in scored intervals"});
     result.captures = captures.0.lock().expect("capture results poisoned").clone();
     for capture in &mut result.captures {
@@ -443,6 +453,9 @@ fn phase_request(
         reset_expected: false,
         configuration_generation: scene.generation,
         load: scene.load.clone(),
+        window_visible: None,
+        window_focused: None,
+        window_occluded: controller.window_occluded,
     };
 }
 
@@ -458,6 +471,7 @@ fn drive(
     frame: Res<MetalFxObservationFrame>,
     mut cameras: Query<(Entity, &mut Camera), With<LabCamera>>,
     windows: Query<&Window>,
+    mut occlusions: MessageReader<WindowOccluded>,
     keys: Res<ButtonInput<KeyCode>>,
     mut reset: Option<ResMut<MetalFxHistoryReset>>,
     mut exit: MessageWriter<AppExit>,
@@ -469,6 +483,9 @@ fn drive(
         return;
     };
     let view = camera_entity.to_bits();
+    if let Some(event) = occlusions.read().last() {
+        controller.window_occluded = Some(event.occluded);
+    }
     let target_valid = settings.image.is_some()
         || windows.single().is_ok_and(|w| {
             [w.physical_width(), w.physical_height()]
@@ -589,10 +606,11 @@ fn drive(
                 controller.phase = Phase::Opening;
                 controller.phase_started = Instant::now();
             } else if controller.phase_started.elapsed() > WARMUP_TIMEOUT {
+                let epoch = controller.epoch;
                 controller
                     .result
                     .errors
-                    .push("fresh output warmup timed out".into());
+                    .push(format!("fresh output warmup timed out for {}; see environment.readiness epoch {epoch} for original frame, target, and window state", scene.kind.as_str()));
                 finish(&mut controller, &settings, &mut exit);
                 return;
             }
@@ -752,6 +770,12 @@ fn drive(
         &scene,
         target_valid,
     );
+    if settings.image.is_none() {
+        if let Ok(window) = windows.single() {
+            request.window_visible = Some(window.visible);
+            request.window_focused = Some(window.focused);
+        }
+    }
     if controller.phase == Phase::Measure {
         scene.tick = if settings.config.action == Action::Stress {
             controller.stress_tick.min(u32::MAX as u64) as u32
@@ -1104,6 +1128,7 @@ fn record_render(
     >,
     shot: Res<ExtractedShot>,
     reset: Option<Res<MetalFxHistoryReset>>,
+    render_targets: Query<&ViewTarget, With<Camera3d>>,
 ) {
     if !matches!(request.phase, Phase::Warmup | Phase::Measure) {
         return;
@@ -1133,7 +1158,14 @@ fn record_render(
         || extracted_camera.is_some_and(|(_, _, _, jitter)| {
             jitter.is_some_and(|j| j.offset.to_array() == jitter_offset(request.tick))
         });
-    let camera_valid = pose_valid
+    let view_target_ready = render_targets.single().is_ok();
+    let window_ready = settings.image.is_some()
+        || request.window_visible == Some(true)
+            && request.window_occluded != Some(true)
+            && (request.phase != Phase::Warmup || request.window_focused == Some(true));
+    let camera_valid = view_target_ready
+        && window_ready
+        && pose_valid
         && clock_valid
         && format_valid
         && render_jitter_valid
@@ -1195,7 +1227,7 @@ fn record_render(
         mode: settings.config.mode as u8,
         output_ready,
         target_valid: request.target_valid && camera_valid && frame.0 == request.frame,
-        reason: format!("effect={:?}; history_valid={history_valid}; aa_valid={aa_valid}; jitter_valid={jitter_valid}", observation.as_ref().map(|o| (o.state, o.reason))),
+        reason: format!("effect={:?}; expected_frame={}; observed_frame={:?}; render_target_ready={view_target_ready}; window_visible={:?}; window_focused={:?}; window_occluded={:?}; camera_valid={camera_valid}; history_valid={history_valid}; aa_valid={aa_valid}; jitter_valid={jitter_valid}", observation.as_ref().map(|o| (o.state, o.reason)), request.frame, observation.as_ref().map(|o|o.frame_id), request.window_visible, request.window_focused, request.window_occluded),
     };
     let qualified = proof.output_ready
         && proof.target_valid
@@ -1203,6 +1235,13 @@ fn record_render(
         && proof.content == content
         && proof.scale_bits == token.scale_bits;
     let mut data = shared.0.lock().expect("benchmark ledger poisoned");
+    let diagnostic = json!({"scene":request.scene,"phase":format!("{:?}",request.phase),"frame":request.frame,"observed_frame":proof.frame,"view":request.view,
+        "qualified":qualified,"output_ready":proof.output_ready,"target_valid":proof.target_valid,"render_target_ready":view_target_ready,
+        "window":{"visible":request.window_visible,"focused":request.window_focused,"occluded":request.window_occluded},
+        "expected_output":expected,"observed_output":proof.output,"expected_content":content,"observed_content":proof.content,
+        "camera_pose_matches":pose_valid,"clock_matches":clock_valid,"hdr_format_matches":format_valid,"render_jitter_matches":render_jitter_valid,
+        "reason":proof.reason});
+    note_readiness(&mut data, &request, qualified, diagnostic);
     let metadata = json!({"scene":request.scene,"configuration_generation":request.configuration_generation,"load":request.load,"seed":settings.config.seed,"mode":settings.config.mode.as_str(),"scale":settings.config.scale,"output":expected});
     if let Some(existing) = data.metadata.get(&request.epoch) {
         if existing != &metadata && data.errors.len() < 32 {
@@ -1231,6 +1270,40 @@ fn record_render(
                 "clock_matches":clock_valid,"hdr_format_matches":format_valid,"render_jitter_matches":render_jitter_valid,
                 "screenshot_target_valid":shot.target_valid && shot.frame==request.frame && shot.entity==Some(entity)}));
         }
+    }
+}
+
+fn note_readiness(data: &mut SharedData, request: &Request, qualified: bool, diagnostic: Value) {
+    // Bounded, original observations survive both startup and later scene failures.
+    let entry = data.readiness.entry(request.epoch).or_insert_with(|| json!({"observations":0,"qualified_observations":0,"first_failure":null,"last_failure":null,"latest":null}));
+    entry["observations"] = json!(entry["observations"]
+        .as_u64()
+        .unwrap_or(0)
+        .saturating_add(1));
+    if qualified {
+        entry["qualified_observations"] = json!(entry["qualified_observations"]
+            .as_u64()
+            .unwrap_or(0)
+            .saturating_add(1));
+    } else {
+        if entry["first_failure"].is_null() {
+            entry["first_failure"] = diagnostic.clone();
+        }
+        entry["last_failure"] = diagnostic.clone();
+    }
+    entry["latest"] = diagnostic;
+    if !qualified && request.phase == Phase::Measure && data.errors.len() < 32 {
+        data.errors.push(format!(
+            "measured render lost qualification in {} at original frame {}: {}",
+            request.scene,
+            request.frame,
+            entry["latest"]["reason"]
+                .as_str()
+                .unwrap_or("see readiness evidence")
+        ));
+    }
+    while data.readiness.len() > 32 {
+        data.readiness.pop_first();
     }
 }
 
@@ -1325,6 +1398,7 @@ mod tests {
             evicted_stress_samples: 0,
             outcome,
             shared,
+            window_occluded: None,
         }
     }
 
@@ -1425,5 +1499,64 @@ mod tests {
             controller.result.errors.len() <= 32,
             "fault output stays bounded"
         );
+    }
+
+    #[test]
+    fn stale_observation_retains_original_failure_and_invalidates_measured_admission() {
+        let mut data = SharedData::default();
+        let mut request = Request {
+            epoch: 1,
+            phase: Phase::Warmup,
+            frame: 192,
+            scene: "materials".into(),
+            ..default()
+        };
+        let stale = json!({"frame":192,"observed_frame":191,"render_target_ready":false,
+            "window":{"visible":true,"focused":false,"occluded":true},"reason":"expected_frame=192; observed_frame=191; render_target_ready=false"});
+        note_readiness(&mut data, &request, false, stale.clone());
+        assert!(data.errors.is_empty(), "startup compilation may be unready");
+        request.phase = Phase::Measure;
+        note_readiness(&mut data, &request, false, stale.clone());
+        assert_eq!(
+            data.errors.len(),
+            1,
+            "the next main update must stop admission"
+        );
+        assert!(data.errors[0].contains("original frame 192"));
+        request.frame = 193;
+        note_readiness(
+            &mut data,
+            &request,
+            true,
+            json!({"frame":193,"observed_frame":193,"qualified":true}),
+        );
+        assert_eq!(data.readiness[&1]["first_failure"], stale);
+        assert_eq!(data.readiness[&1]["last_failure"], stale);
+        assert_eq!(data.readiness[&1]["latest"]["frame"], 193);
+        assert_eq!(data.readiness[&1]["observations"], 3);
+        assert_eq!(data.readiness[&1]["qualified_observations"], 1);
+    }
+
+    #[test]
+    fn readiness_history_and_repeated_failure_output_are_bounded() {
+        let mut data = SharedData::default();
+        for epoch in 1..=100 {
+            let request = Request {
+                epoch,
+                phase: Phase::Measure,
+                frame: epoch,
+                ..default()
+            };
+            note_readiness(
+                &mut data,
+                &request,
+                false,
+                json!({"reason":"no view target"}),
+            );
+        }
+        assert_eq!(data.readiness.len(), 32);
+        assert_eq!(data.errors.len(), 32);
+        assert!(data.readiness.contains_key(&100));
+        assert!(!data.readiness.contains_key(&1));
     }
 }

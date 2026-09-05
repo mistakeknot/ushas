@@ -125,6 +125,10 @@ fn child_details(value: &Value) -> Vec<String> {
     errors
 }
 
+fn child_requested_stop(value: &Value) -> bool {
+    value["stopped"] == true
+}
+
 fn args(config: &RunConfig) -> Vec<String> {
     let mut a = vec![
         config.action.as_str().into(),
@@ -283,6 +287,12 @@ fn child(
                 .unwrap_or_else(|| format!("child exited {status} without a structured result")))
         }
     };
+    // Escape stops the renderer locally. Propagate its final stop state to the
+    // coordinator before either phase can launch another arm. Return the report
+    // normally so the stopped arm and its artifacts remain in the comparison.
+    if child_requested_stop(&value) {
+        control::request_stop();
+    }
     if !status.success() {
         failure.get_or_insert_with(|| format!("child exited {status}"));
     }
@@ -462,6 +472,31 @@ pub fn run(config: RunConfig, rounds: u32, mut envelope: Value) -> Value {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn child_escape_stops_both_phases_but_an_ordinary_failure_does_not() {
+        for kind in ["benchmark", "capture"] {
+            let stopped = json!({"kind":kind,"valid":false,"stopped":true,
+                "errors":["run stopped"],"captures":[{"path":"retained.png"}]});
+            let retained = stopped.clone();
+            assert!(child_requested_stop(&stopped));
+            assert_eq!(
+                stopped, retained,
+                "stop decisions must preserve child evidence"
+            );
+            assert!(!child_requested_stop(&json!({"kind":kind,"valid":false,
+                "stopped":false,"errors":["measurement failed"]})));
+            assert!(!child_requested_stop(&json!({"kind":kind,"valid":true,
+                "stopped":false})));
+        }
+        for malformed in [
+            json!(null),
+            json!({}),
+            json!({"stopped":"true"}),
+            json!({"stopped":1}),
+        ] {
+            assert!(!child_requested_stop(&malformed));
+        }
+    }
     #[test]
     fn four_round_order_balances_each_arm_position() {
         let mut sums = [0; 6];
