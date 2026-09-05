@@ -143,3 +143,10 @@ A future producer must establish frame ownership and meaningful GPU-cost scope
 without charging drawable/CPU waits as shader work, then pass independent CPU
 delay and pixel-load controls. This trace supports that remaining requirement;
 it does not close it or change historical presentation evidence.
+
+The finalized trace is also archived at
+`/Users/sma/projects/docs/ushas/evidence/marker-scope-01.trace`, with a sibling
+`.trace.manifest.json` containing verified hashes and link metadata. The
+`marker-scope-01-artifacts` directory beside it retains the exported tables,
+reports and analysis, with its own hash manifest. The original temporary
+artifacts remain intact.

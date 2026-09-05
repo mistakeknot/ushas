@@ -90,7 +90,7 @@ The Development APIs below require the source candidate, rather than the
 published 0.4 quick start:
 
 ```toml
-bevy_metalfx = { git = "https://github.com/mistakeknot/ushas", rev = "288718b8ef4e6a733030c27930ddaa5af2c345cc", features = ["temporal"] }
+bevy_metalfx = { git = "https://github.com/mistakeknot/ushas", rev = "f7e27698714ef236b32cfe4cc4a29273e8b3bc5f", features = ["temporal"] }
 ```
 
 This revision is an unpublished candidate; hardware validation and release
