@@ -6,6 +6,7 @@ mod gate;
 mod lifecycle;
 mod metrics;
 mod offscreen;
+mod quality;
 mod scene;
 
 use bevy::app::{AppExit, ScheduleRunnerPlugin};
@@ -77,6 +78,7 @@ fn main() -> AppExit {
             [--subject claude|shapes (default claude)]\n\
             [--adaptive --target-fps 60 --minimum-scale 0.5]\n\
             [--offscreen: fixed-scale image rendering; no lifecycle/adaptive/interpolation/presentation]\n\
+            [--quality-sequence: offscreen deterministic twelve-image Claude sequence]\n\
             [--completion: offscreen serial completed-render cadence, one frame in flight]\n\
             Runs unpaced; target-fps defines the analysis/controller budget, not a frame cap."
         );
@@ -88,6 +90,17 @@ fn main() -> AppExit {
             eprintln!("{e}");
             return AppExit::error();
         }
+    };
+    let quality_run = if config.quality_sequence {
+        match quality::QualityRun::prepare(&config) {
+            Ok(run) => Some(run),
+            Err(e) => {
+                eprintln!("quality output reservation failed: {e}");
+                return AppExit::error();
+            }
+        }
+    } else {
+        None
     };
     let lifecycle_exercise = match config
         .lifecycle
@@ -131,7 +144,7 @@ fn main() -> AppExit {
     };
     let experimental_timing = config.experimental_timing;
     let offscreen = config.offscreen;
-    let completion_enabled = config.completion;
+    let completion_enabled = config.completion || config.quality_sequence;
     let completion_scale = config.scale;
     let size = (config.width, config.height);
     let mut renderer = bevy::render::RenderPlugin::default();
@@ -207,6 +220,9 @@ fn main() -> AppExit {
     if experimental_timing {
         app.add_plugins(bevy_metalfx::frame_timing::ExperimentalFrameTimingPlugin);
     }
+    if let Some(run) = quality_run {
+        app.insert_resource(run).add_plugins(quality::QualityPlugin);
+    }
     app.run()
 }
 fn capture_image(
@@ -278,7 +294,7 @@ fn observe_run(
         Option<Res<completion::CompletionReport>>,
     ),
 ) {
-    if run.finished {
+    if config.0.quality_sequence || run.finished {
         return;
     }
     let now = Instant::now();

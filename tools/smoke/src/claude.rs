@@ -329,12 +329,13 @@ pub fn spawn(
 fn animate(
     time: Res<Time<Real>>,
     config: Res<crate::RunConfig>,
+    clock: Option<Res<crate::quality::PoseClock>>,
     mut parts: Query<(&Motion, &mut Transform)>,
 ) {
-    let seconds = time.elapsed_secs();
+    let seconds = clock.as_ref().map_or_else(|| time.elapsed_secs(), |c| c.0);
     for (motion, mut transform) in &mut parts {
         let mut pose = motion.rest;
-        if config.0.moving {
+        if config.0.moving || clock.is_some() {
             let t = seconds + motion.phase;
             let rotation = match motion.kind {
                 Joint::Root => Quat::from_rotation_y(0.52 * (t * 0.55).sin()),

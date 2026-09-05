@@ -6,6 +6,7 @@ pub struct Config {
     pub subject: String,
     pub offscreen: bool,
     pub completion: bool,
+    pub quality_sequence: bool,
     pub hdr: bool,
     pub native_aa: bool,
     pub lifecycle: Option<String>,
@@ -34,6 +35,7 @@ impl Config {
             subject: "claude".into(),
             offscreen: false,
             completion: false,
+            quality_sequence: false,
             hdr: false,
             native_aa: false,
             lifecycle: None,
@@ -59,6 +61,10 @@ impl Config {
             match flag.as_str() {
                 "--offscreen" => {
                     c.offscreen = true;
+                    continue;
+                }
+                "--quality-sequence" => {
+                    c.quality_sequence = true;
                     continue;
                 }
                 "--completion" => {
@@ -130,6 +136,19 @@ impl Config {
         if c.completion && (!c.offscreen || c.experimental_timing) {
             return Err("completion requires offscreen rendering without experimental timestamp instrumentation".into());
         }
+        if c.quality_sequence
+            && (!c.offscreen
+                || c.subject != "claude"
+                || c.completion
+                || c.moving
+                || c.experimental_timing
+                || c.screenshot.is_some()
+                || c.pixel_iterations != 0
+                || c.cpu_ms != 0
+                || (c.mode == "disabled" && c.scale == 1.0 && !c.native_aa))
+        {
+            return Err("quality-sequence requires offscreen Claude, owns its clock/captures/completion, rejects artificial load, and requires native-aa for the native control".into());
+        }
         if c.native_aa && (c.mode != "disabled" || c.scale != 1.0) {
             return Err("native-aa is the disabled native-scale MSAA4 control".into());
         }
@@ -165,6 +184,34 @@ mod tests {
 
     fn parse(args: &[&str]) -> Result<Config, String> {
         Config::parse(args.iter().map(|s| s.to_string()))
+    }
+
+    #[test]
+    fn deterministic_quality_has_its_own_offscreen_capture_contract() {
+        assert!(parse(&["--quality-sequence", "--offscreen", "--native-aa"]).is_ok());
+        assert!(parse(&[
+            "--quality-sequence",
+            "--offscreen",
+            "--mode",
+            "temporal",
+            "--scale",
+            "0.33333334",
+            "--hdr"
+        ])
+        .is_ok());
+        for extra in [
+            vec![],
+            vec!["--offscreen"],
+            vec!["--offscreen", "--native-aa", "--moving"],
+            vec!["--offscreen", "--native-aa", "--completion"],
+            vec!["--offscreen", "--native-aa", "--screenshot", "x.png"],
+            vec!["--offscreen", "--native-aa", "--subject", "shapes"],
+            vec!["--offscreen", "--native-aa", "--pixel-iterations", "1"],
+        ] {
+            let mut args = vec!["--quality-sequence"];
+            args.extend(extra);
+            assert!(parse(&args).is_err(), "accepted {args:?}");
+        }
     }
 
     #[test]

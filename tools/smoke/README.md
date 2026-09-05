@@ -142,3 +142,50 @@ is sent to the adaptive controller. See [CAMPAIGN.md](CAMPAIGN.md) for balanced
 comparisons. The original unpaced mode remains useful for CPU-cadence diagnostics;
 its [heavy-load shutdown failures](../../docs/research/claude-campaign-01.md)
 show why a valid capture alone is insufficient.
+
+For matched quality samples, use the separate quality runner (Python with
+Pillow). It requires a new output path and retains a report, twelve RGBA PNGs,
+log, binary hashes and a validation manifest:
+
+```sh
+python3 tools/smoke/quality_runner.py --binary /absolute/path/ushas-smoke \
+  --out /private/tmp/quality-native.json --mode disabled --scale 1 --native-aa
+python3 tools/smoke/quality_runner.py --binary /absolute/path/ushas-smoke \
+  --out /private/tmp/quality-temporal-half.json --mode temporal --scale 0.5
+```
+
+Repeat the Temporal arm with `--scale 0.58`, `--scale 0.66666667`,
+`--scale 0.75`, or `--scale 0.33333334`; `--hdr` runs the same sequence with an
+HDR main texture and tone-mapped PNG output. Reduced Disabled is the bilinear
+control. Native uses MSAA4; reconstruction arms use MSAA off. Keep dimensions,
+source/binary and HDR setting identical within a comparison.
+
+`--quality-sequence` owns the simulation clock, camera and screenshot schedule.
+After at least three seconds and twenty distinct ready frames, it renders 145
+serial frames at fixed 1/60 simulation steps. Ticks 0–31 hold the initial pose;
+32–127 animate the Claude models and pan the camera; tick 128 makes a hard cut
+and requests a temporal history reset; 128–144 hold the final pose. Captures are
+`settled` (31), `motion32` (63), `motion62/63/64` (93/94/95), `before-cut` (127),
+and `cut0/1/2/4/8/16` (128/129/130/132/136/144). Jitter has a fixed logical phase
+independent of warmup. The consecutive moving samples and post-cut recovery
+samples support matched inspection of rays, facial lines, rails, disocclusion,
+and the native-resolution UI. They are twelve sampled frames, not continuous
+video or a proof of quality at a real-time presentation cadence.
+
+Every scripted frame must have current effect status and the expected camera,
+MSAA, dimensions, HDR format and jitter. Each screenshot entity is frozen at
+extraction, joined to its render-frame proof and later `ScreenshotCaptured`
+readback, and paired with the same frame's final queue-completion fence. Request
+frame, render frame and readback arrival are separate fields. Reset acknowledgement
+proves CPU reset-command encoding; the image must still be inspected for visual
+recovery. The runner independently decodes all twelve PNGs, requires opaque
+scene pixels and complete identity/hash evidence, and rejects partial sequences.
+
+This mode has a 75-second internal deadline, five-second bounded queue drains,
+and a 90-second runner deadline. Normal completion uses `AppExit`; timeout or
+termination cleans up the child process group and retains invalid evidence.
+It rejects `--moving`, explicit `--completion`, custom screenshots, artificial
+load, adaptive mode, lifecycle mode and interpolation. Ordinary smoke runs keep
+their existing behavior; `run.py` deliberately cannot validate this distinct
+report. No quality result measures GPU cost, normal application FPS, or panel
+presentation.
