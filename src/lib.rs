@@ -115,6 +115,7 @@ pub mod adaptive_runtime;
 mod lifecycle_tests;
 pub use adaptive_runtime::{
     MetalFxAdaptiveConfig, MetalFxAdaptiveContext, MetalFxAdaptiveReason, MetalFxAdaptiveStatus,
+    MetalFxAdaptiveTarget, MetalFxAdaptiveTargetFallback, MetalFxAdaptiveTargetSource,
     MetalFxFrameCostInput, ValidatedGpuFrameCost,
 };
 #[cfg(target_os = "macos")]

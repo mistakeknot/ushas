@@ -51,54 +51,6 @@ fn acknowledge_encoded_reset(
     false
 }
 
-#[cfg(test)]
-mod tests {
-    use super::{acknowledge_encoded_reset, with_command_buffer};
-
-    #[test]
-    fn spatial_work_cannot_consume_a_temporal_history_reset() {
-        let mut reset = crate::MetalFxHistoryReset::default();
-        reset.request();
-        assert!(!acknowledge_encoded_reset(reset.pending_request(), false));
-        assert!(reset.is_requested());
-        assert!(acknowledge_encoded_reset(reset.pending_request(), true));
-        assert!(!reset.is_requested());
-    }
-
-    #[test]
-    fn missing_raw_command_leaves_reset_pending_for_the_retry() {
-        let mut reset = crate::MetalFxHistoryReset::default();
-        reset.request();
-        let request = reset.pending_request();
-        assert!(!with_command_buffer(None::<()>, |_| {
-            acknowledge_encoded_reset(request, true);
-        }));
-        assert!(reset.is_requested());
-        let retry = reset.pending_request();
-        assert!(with_command_buffer(Some(()), |_| {
-            acknowledge_encoded_reset(retry, true);
-        }));
-        assert!(!reset.is_requested());
-    }
-
-    #[test]
-    fn missing_command_buffer_does_not_report_encoding() {
-        assert!(!with_command_buffer(None::<()>, |_| panic!(
-            "no buffer to encode"
-        )));
-    }
-
-    #[test]
-    fn command_buffer_reports_encoding_only_after_the_callback_runs() {
-        let mut encoded = false;
-        assert!(with_command_buffer(Some(42), |buffer| {
-            assert_eq!(buffer, 42);
-            encoded = true;
-        }));
-        assert!(encoded);
-    }
-}
-
 impl MetalFxUpscaleNode {
     /// Encode the MetalFX pass for whichever scaler is cached.
     ///
@@ -582,5 +534,53 @@ impl MetalFxUpscaleNode {
         }
 
         true
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{acknowledge_encoded_reset, with_command_buffer};
+
+    #[test]
+    fn spatial_work_cannot_consume_a_temporal_history_reset() {
+        let mut reset = crate::MetalFxHistoryReset::default();
+        reset.request();
+        assert!(!acknowledge_encoded_reset(reset.pending_request(), false));
+        assert!(reset.is_requested());
+        assert!(acknowledge_encoded_reset(reset.pending_request(), true));
+        assert!(!reset.is_requested());
+    }
+
+    #[test]
+    fn missing_raw_command_leaves_reset_pending_for_the_retry() {
+        let mut reset = crate::MetalFxHistoryReset::default();
+        reset.request();
+        let request = reset.pending_request();
+        assert!(!with_command_buffer(None::<()>, |_| {
+            acknowledge_encoded_reset(request, true);
+        }));
+        assert!(reset.is_requested());
+        let retry = reset.pending_request();
+        assert!(with_command_buffer(Some(()), |_| {
+            acknowledge_encoded_reset(retry, true);
+        }));
+        assert!(!reset.is_requested());
+    }
+
+    #[test]
+    fn missing_command_buffer_does_not_report_encoding() {
+        assert!(!with_command_buffer(None::<()>, |_| panic!(
+            "no buffer to encode"
+        )));
+    }
+
+    #[test]
+    fn command_buffer_reports_encoding_only_after_the_callback_runs() {
+        let mut encoded = false;
+        assert!(with_command_buffer(Some(42), |buffer| {
+            assert_eq!(buffer, 42);
+            encoded = true;
+        }));
+        assert!(encoded);
     }
 }

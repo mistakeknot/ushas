@@ -162,6 +162,12 @@ fn main() {
         assert_eq!(plugin.mode, mode);
 
         let mut app = App::new();
+        #[cfg(feature = "candidate")]
+        app.insert_resource(bevy_metalfx::MetalFxAdaptiveConfig {
+            target: bevy_metalfx::MetalFxAdaptiveTarget::Explicit(60.0),
+            minimum_scale: 0.5,
+            ..default()
+        });
         app.add_plugins(MinimalPlugins).add_plugins(plugin);
         #[cfg(feature = "candidate")]
         verify_candidate(&app);
@@ -208,11 +214,17 @@ fn main() {
 
 #[cfg(feature = "candidate")]
 fn verify_candidate(app: &App) {
-    use bevy_metalfx::{MetalFxAdaptiveContext, MetalFxAdaptiveStatus,
+    use bevy_metalfx::{MetalFxAdaptiveConfig, MetalFxAdaptiveContext, MetalFxAdaptiveStatus,
+        MetalFxAdaptiveTarget, MetalFxAdaptiveTargetSource,
         MetalFxEffectState, MetalFxEffectStatus, MetalFxFrameCostInput};
     use bevy_metalfx::adaptive::{AdaptiveConfig, AdaptiveController};
     let controller = AdaptiveController::new(AdaptiveConfig::default(), vec![0.5, 1.0], 1.0).unwrap();
     assert_eq!(controller.current_scale(), 1.0);
+    assert_eq!(MetalFxAdaptiveConfig::default().target, MetalFxAdaptiveTarget::Monitor);
+    let configured = app.world().resource::<MetalFxAdaptiveConfig>();
+    assert_eq!(configured.target, MetalFxAdaptiveTarget::Explicit(60.0));
+    assert_eq!(configured.minimum_scale, 0.5);
+    assert_eq!(MetalFxAdaptiveTargetSource::default(), MetalFxAdaptiveTargetSource::Unresolved);
     let effects = app.world().resource::<MetalFxEffectStatus>();
     let missing = effects.snapshot(42, 1);
     assert_eq!(missing.state(), MetalFxEffectState::NoRender);

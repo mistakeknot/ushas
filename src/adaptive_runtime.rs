@@ -13,18 +13,80 @@ use crate::{
 };
 use bevy::camera::RenderTarget;
 use bevy::prelude::*;
-use bevy::window::{PrimaryWindow, WindowRef};
+use bevy::window::{Monitor, OnMonitor, PrimaryWindow, WindowRef};
 use std::collections::BTreeMap;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
-/// Policy for the opt-in adaptive plugin. The default is an explicit 60 FPS
-/// fallback; applications should set their intended cap rather than assuming
-/// an advertised display refresh rate is the actual presentation cadence.
+/// Single authority for the adaptive frame budget. Neither option paces frames.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub enum MetalFxAdaptiveTarget {
+    /// Use the primary window's current monitor metadata, or a labelled 60 FPS
+    /// fallback. Reported refresh is not measured VRR or presentation cadence.
+    #[default]
+    Monitor,
+    /// The application's intended rendered FPS budget. Invalid values are
+    /// reported as configuration errors rather than replaced by a fallback.
+    Explicit(f64),
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum MetalFxAdaptiveTargetFallback {
+    PrimaryWindowUnavailable,
+    CurrentMonitorUnavailable,
+    RefreshUnavailable,
+}
+
+/// Provenance of the resolved budget, independent of GPU sample provenance.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum MetalFxAdaptiveTargetSource {
+    /// No adaptive update has run (for example, adaptive is not enabled).
+    #[default]
+    Unresolved,
+    Explicit,
+    /// Bevy's OS-reported metadata for the window's associated monitor. Bevy
+    /// 0.19 may retain this value after an in-place display-mode change.
+    MonitorReportedRefresh {
+        window_id: u64,
+        monitor_id: u64,
+    },
+    Fallback60(MetalFxAdaptiveTargetFallback),
+}
+
+/// Policy for the opt-in adaptive plugin. `target` is its only FPS input;
+/// the remaining fields configure quality, evidence and freshness.
+///
+/// ```
+/// use bevy_metalfx::{MetalFxAdaptiveConfig, MetalFxAdaptiveTarget};
+/// let config = MetalFxAdaptiveConfig {
+///     target: MetalFxAdaptiveTarget::Explicit(60.0),
+///     minimum_scale: 0.5,
+///     ..Default::default()
+/// };
+/// assert_eq!(config.target, MetalFxAdaptiveTarget::Explicit(60.0));
+/// ```
 #[derive(Resource, Clone, Debug, PartialEq)]
 pub struct MetalFxAdaptiveConfig {
-    pub policy: AdaptiveConfig,
+    pub target: MetalFxAdaptiveTarget,
+    /// Lowest acceptable render scale. Default 0.5.
+    pub minimum_scale: f32,
+    /// Exponential smoothing time constant in wall-clock time.
+    pub smoothing_time: Duration,
+    /// Continuous smoothed overload before one downward step.
+    pub over_budget_for: Duration,
+    /// Continuous smoothed headroom before one upward step.
+    pub headroom_for: Duration,
+    /// Fresh, ready evidence required after a transition.
+    pub settling_time: Duration,
+    /// Maximum wall-clock age and gap between usable GPU samples.
+    pub max_sample_age: Duration,
+    /// Overload threshold as a multiple of the resolved frame budget.
+    pub over_budget_ratio: f64,
+    /// Headroom threshold as a fraction of the resolved frame budget.
+    pub headroom_ratio: f64,
+    /// Required fractional GPU-cost reduction after a downward step.
+    pub minimum_downshift_benefit: f64,
     /// Main-world camera entity bits. `None` selects the only active 3D camera.
     pub primary_view: Option<u64>,
     pub max_effect_age_frames: u64,
@@ -34,13 +96,80 @@ pub struct MetalFxAdaptiveConfig {
 
 impl Default for MetalFxAdaptiveConfig {
     fn default() -> Self {
+        let policy = AdaptiveConfig::default();
         Self {
-            policy: AdaptiveConfig::default(),
+            target: MetalFxAdaptiveTarget::Monitor,
+            minimum_scale: policy.minimum_scale,
+            smoothing_time: policy.smoothing_time,
+            over_budget_for: policy.over_budget_for,
+            headroom_for: policy.headroom_for,
+            settling_time: policy.settling_time,
+            max_sample_age: policy.max_sample_age,
+            over_budget_ratio: policy.over_budget_ratio,
+            headroom_ratio: policy.headroom_ratio,
+            minimum_downshift_benefit: policy.minimum_downshift_benefit,
             primary_view: None,
             max_effect_age_frames: 2,
             max_effect_wall_age: Duration::from_millis(250),
             max_sample_age_frames: 4,
         }
+    }
+}
+
+impl MetalFxAdaptiveConfig {
+    fn controller_policy(&self, target_fps: f64) -> AdaptiveConfig {
+        AdaptiveConfig {
+            target_fps,
+            minimum_scale: self.minimum_scale,
+            smoothing_time: self.smoothing_time,
+            over_budget_for: self.over_budget_for,
+            headroom_for: self.headroom_for,
+            settling_time: self.settling_time,
+            max_sample_age: self.max_sample_age,
+            over_budget_ratio: self.over_budget_ratio,
+            headroom_ratio: self.headroom_ratio,
+            minimum_downshift_benefit: self.minimum_downshift_benefit,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct ResolvedTarget {
+    fps: f64,
+    source: MetalFxAdaptiveTargetSource,
+}
+
+fn resolve_target(world: &mut World, target: MetalFxAdaptiveTarget) -> ResolvedTarget {
+    if let MetalFxAdaptiveTarget::Explicit(fps) = target {
+        return ResolvedTarget {
+            fps,
+            source: MetalFxAdaptiveTargetSource::Explicit,
+        };
+    }
+    let fallback = |reason| ResolvedTarget {
+        fps: 60.0,
+        source: MetalFxAdaptiveTargetSource::Fallback60(reason),
+    };
+    let mut windows =
+        world.query_filtered::<(Entity, Option<&OnMonitor>), (With<Window>, With<PrimaryWindow>)>();
+    let Ok((window, monitor_link)) = windows.single(world) else {
+        return fallback(MetalFxAdaptiveTargetFallback::PrimaryWindowUnavailable);
+    };
+    let Some(monitor_entity) = monitor_link.map(|link| link.0) else {
+        return fallback(MetalFxAdaptiveTargetFallback::CurrentMonitorUnavailable);
+    };
+    let Some(monitor) = world.get::<Monitor>(monitor_entity) else {
+        return fallback(MetalFxAdaptiveTargetFallback::CurrentMonitorUnavailable);
+    };
+    let Some(rate) = monitor.refresh_rate_millihertz.filter(|rate| *rate > 0) else {
+        return fallback(MetalFxAdaptiveTargetFallback::RefreshUnavailable);
+    };
+    ResolvedTarget {
+        fps: f64::from(rate) / 1000.0,
+        source: MetalFxAdaptiveTargetSource::MonitorReportedRefresh {
+            window_id: window.to_bits(),
+            monitor_id: monitor_entity.to_bits(),
+        },
     }
 }
 
@@ -202,6 +331,9 @@ pub struct MetalFxAdaptiveStatus {
     pub sample_frame: Option<u64>,
     pub source: Option<&'static str>,
     pub validation: Option<&'static str>,
+    /// Resolved budget, or the invalid explicit value when configuration fails.
+    pub target_fps: f64,
+    pub target_source: MetalFxAdaptiveTargetSource,
 }
 
 impl Default for MetalFxAdaptiveStatus {
@@ -215,6 +347,8 @@ impl Default for MetalFxAdaptiveStatus {
             sample_frame: None,
             source: None,
             validation: None,
+            target_fps: 60.0,
+            target_source: MetalFxAdaptiveTargetSource::Unresolved,
         }
     }
 }
@@ -227,6 +361,7 @@ struct AdaptiveRuntime {
     origin: Instant,
     controller: Option<AdaptiveController>,
     applied_config: Option<MetalFxAdaptiveConfig>,
+    applied_target: Option<ResolvedTarget>,
     fingerprint: Option<ViewFingerprint>,
     last_mode: Option<MetalFxMode>,
     reset_generation: u64,
@@ -252,6 +387,7 @@ pub(crate) fn install(app: &mut App, enabled: bool) {
             origin: Instant::now(),
             controller: None,
             applied_config: None,
+            applied_target: None,
             fingerprint: None,
             last_mode: None,
             reset_generation: 0,
@@ -282,6 +418,7 @@ pub(crate) fn configure_ladder(app: &mut App, ladder: Vec<f32>, starting_scale: 
     runtime.starting_scale = starting_scale;
     runtime.controller = None;
     runtime.applied_config = None;
+    runtime.applied_target = None;
 }
 
 pub(crate) fn adaptive_scale_system(world: &mut World) {
@@ -290,6 +427,8 @@ pub(crate) fn adaptive_scale_system(world: &mut World) {
 
 fn update_at(world: &mut World, now: Instant) {
     let config = world.resource::<MetalFxAdaptiveConfig>().clone();
+    let target = resolve_target(world, config.target);
+    let policy = config.controller_policy(target.fps);
     let mode = world
         .get_resource::<MetalFxModeResource>()
         .map(MetalFxModeResource::get)
@@ -310,6 +449,8 @@ fn update_at(world: &mut World, now: Instant) {
     world.resource_scope(|world, mut runtime: Mut<AdaptiveRuntime>| {
         let mut status = MetalFxAdaptiveStatus {
             scale,
+            target_fps: target.fps,
+            target_source: target.source,
             ..Default::default()
         };
         if !runtime.enabled || mode == MetalFxMode::Disabled {
@@ -329,7 +470,7 @@ fn update_at(world: &mut World, now: Instant) {
                     epoch: runtime.epoch,
                     render_scale: scale,
                     mode,
-                    target_fps: config.policy.target_fps,
+                    target_fps: target.fps,
                     ..Default::default()
                 },
             );
@@ -338,18 +479,16 @@ fn update_at(world: &mut World, now: Instant) {
             return;
         }
 
-        let config_changed = runtime.applied_config.as_ref() != Some(&config);
+        let config_changed = runtime.applied_config.as_ref() != Some(&config)
+            || runtime.applied_target != Some(target);
         let configuration = if let Some(controller) = runtime.controller.as_mut() {
-            controller.update_config(config.policy.clone())
+            controller.update_config(policy)
         } else {
-            AdaptiveController::new(
-                config.policy.clone(),
-                runtime.ladder.clone(),
-                runtime.starting_scale,
+            AdaptiveController::new(policy, runtime.ladder.clone(), runtime.starting_scale).map(
+                |controller| {
+                    runtime.controller = Some(controller);
+                },
             )
-            .map(|controller| {
-                runtime.controller = Some(controller);
-            })
         };
         if let Err(error) = configuration {
             if config_changed {
@@ -358,6 +497,7 @@ fn update_at(world: &mut World, now: Instant) {
                     .checked_add(1)
                     .expect("adaptive epoch exhausted");
                 runtime.applied_config = Some(config.clone());
+                runtime.applied_target = Some(target);
             }
             if let Some(controller) = runtime.controller.as_mut() {
                 controller.reset();
@@ -368,7 +508,7 @@ fn update_at(world: &mut World, now: Instant) {
                     epoch: runtime.epoch,
                     render_scale: scale,
                     mode,
-                    target_fps: config.policy.target_fps,
+                    target_fps: target.fps,
                     ..Default::default()
                 },
             );
@@ -395,6 +535,7 @@ fn update_at(world: &mut World, now: Instant) {
                 .expect("validated controller")
                 .reset();
             runtime.applied_config = Some(config.clone());
+            runtime.applied_target = Some(target);
             runtime.fingerprint = fingerprint;
             runtime.last_mode = Some(mode);
             runtime.reset_generation = reset_generation;
@@ -415,7 +556,7 @@ fn update_at(world: &mut World, now: Instant) {
             render_scale: active_scale,
             output_size: fingerprint.map_or([0, 0], |f| f.output_size),
             mode,
-            target_fps: config.policy.target_fps,
+            target_fps: target.fps,
         };
         publish_context(world, snapshot);
         status.scale = active_scale;
@@ -646,6 +787,185 @@ mod tests {
         update_at(app.world_mut(), at);
     }
 
+    fn monitor(app: &mut App, rate: Option<u32>) -> Entity {
+        app.world_mut()
+            .spawn(bevy::window::Monitor {
+                name: Some("test monitor".into()),
+                physical_width: 1920,
+                physical_height: 1080,
+                physical_position: IVec2::ZERO,
+                refresh_rate_millihertz: rate,
+                scale_factor: 1.0,
+                // A supported mode is not the current reported refresh.
+                video_modes: vec![bevy::window::VideoMode {
+                    physical_size: UVec2::new(1920, 1080),
+                    bit_depth: 24,
+                    refresh_rate_millihertz: 240_000,
+                }],
+            })
+            .id()
+    }
+
+    #[test]
+    fn default_target_uses_the_primary_windows_current_monitor() {
+        let (mut app, _, origin) = app();
+        let other = monitor(&mut app, Some(60_000));
+        app.world_mut()
+            .entity_mut(other)
+            .insert(bevy::window::PrimaryMonitor);
+        let current = monitor(&mut app, Some(119_880));
+        let window = app
+            .world_mut()
+            .query_filtered::<Entity, With<PrimaryWindow>>()
+            .single(app.world())
+            .unwrap();
+        app.world_mut()
+            .entity_mut(window)
+            .insert(bevy::window::OnMonitor(current));
+        let previous = app.world().resource::<MetalFxAdaptiveContext>().snapshot();
+        update_at(app.world_mut(), origin + Duration::from_millis(17));
+        let snapshot = app.world().resource::<MetalFxAdaptiveContext>().snapshot();
+        assert_eq!(snapshot.target_fps, 119.88);
+        assert!(snapshot.epoch > previous.epoch);
+        assert_eq!(
+            app.world()
+                .resource::<MetalFxAdaptiveStatus>()
+                .target_source,
+            MetalFxAdaptiveTargetSource::MonitorReportedRefresh {
+                window_id: window.to_bits(),
+                monitor_id: current.to_bits(),
+            }
+        );
+        assert_eq!(app.world().resource::<MetalFxRenderScale>().0, 1.0);
+    }
+
+    #[test]
+    fn unavailable_monitor_metadata_reports_the_specific_60_fps_fallback() {
+        let (mut app, _, origin) = app();
+        assert_eq!(
+            app.world()
+                .resource::<MetalFxAdaptiveStatus>()
+                .target_source,
+            MetalFxAdaptiveTargetSource::Fallback60(
+                MetalFxAdaptiveTargetFallback::CurrentMonitorUnavailable
+            )
+        );
+        let current = monitor(&mut app, None);
+        let window = app
+            .world_mut()
+            .query_filtered::<Entity, With<PrimaryWindow>>()
+            .single(app.world())
+            .unwrap();
+        app.world_mut()
+            .entity_mut(window)
+            .insert(OnMonitor(current));
+        for rate in [None, Some(0)] {
+            app.world_mut()
+                .get_mut::<Monitor>(current)
+                .unwrap()
+                .refresh_rate_millihertz = rate;
+            update_at(app.world_mut(), origin + Duration::from_millis(17));
+            let status = app.world().resource::<MetalFxAdaptiveStatus>();
+            assert_eq!(status.target_fps, 60.0);
+            assert_eq!(
+                status.target_source,
+                MetalFxAdaptiveTargetSource::Fallback60(
+                    MetalFxAdaptiveTargetFallback::RefreshUnavailable
+                )
+            );
+        }
+        app.world_mut().despawn(window);
+        update_at(app.world_mut(), origin + Duration::from_millis(34));
+        let status = app.world().resource::<MetalFxAdaptiveStatus>();
+        assert_eq!(status.target_fps, 60.0);
+        assert_eq!(
+            status.target_source,
+            MetalFxAdaptiveTargetSource::Fallback60(
+                MetalFxAdaptiveTargetFallback::PrimaryWindowUnavailable
+            )
+        );
+    }
+
+    #[test]
+    fn explicit_60_fps_wins_over_monitor_and_only_explicit_changes_reset_evidence() {
+        let (mut app, _, origin) = app();
+        let current = monitor(&mut app, Some(120_000));
+        let window = app
+            .world_mut()
+            .query_filtered::<Entity, With<PrimaryWindow>>()
+            .single(app.world())
+            .unwrap();
+        app.world_mut()
+            .entity_mut(window)
+            .insert(OnMonitor(current));
+        app.world_mut()
+            .resource_mut::<MetalFxAdaptiveConfig>()
+            .target = MetalFxAdaptiveTarget::Explicit(60.0);
+        update_at(app.world_mut(), origin + Duration::from_millis(17));
+        let before = app.world().resource::<MetalFxAdaptiveContext>().snapshot();
+        assert_eq!(before.target_fps, 60.0);
+        assert_eq!(
+            app.world()
+                .resource::<MetalFxAdaptiveStatus>()
+                .target_source,
+            MetalFxAdaptiveTargetSource::Explicit
+        );
+        app.world_mut()
+            .get_mut::<Monitor>(current)
+            .unwrap()
+            .refresh_rate_millihertz = Some(144_000);
+        update_at(app.world_mut(), origin + Duration::from_millis(34));
+        assert_eq!(
+            app.world()
+                .resource::<MetalFxAdaptiveContext>()
+                .snapshot()
+                .epoch,
+            before.epoch
+        );
+        app.world_mut()
+            .resource_mut::<MetalFxAdaptiveConfig>()
+            .target = MetalFxAdaptiveTarget::Explicit(90.0);
+        update_at(app.world_mut(), origin + Duration::from_millis(51));
+        let after = app.world().resource::<MetalFxAdaptiveContext>().snapshot();
+        assert_eq!(after.target_fps, 90.0);
+        assert!(after.epoch > before.epoch);
+        assert_eq!(app.world().resource::<MetalFxRenderScale>().0, 1.0);
+    }
+
+    #[test]
+    fn monitor_refresh_change_invalidates_a_pending_gpu_sample() {
+        let (mut app, view, origin) = app();
+        let current = monitor(&mut app, Some(60_000));
+        let window = app
+            .world_mut()
+            .query_filtered::<Entity, With<PrimaryWindow>>()
+            .single(app.world())
+            .unwrap();
+        app.world_mut()
+            .entity_mut(window)
+            .insert(bevy::window::OnMonitor(current));
+        update_at(app.world_mut(), origin + Duration::from_millis(1));
+        ready(&mut app, view, 2);
+        let sample = gpu(&app, view, 2, origin + Duration::from_millis(17), 40.0);
+        assert!(app
+            .world()
+            .resource::<MetalFxFrameCostInput>()
+            .publish_validated(sample));
+        app.world_mut()
+            .get_mut::<bevy::window::Monitor>(current)
+            .unwrap()
+            .refresh_rate_millihertz = Some(120_000);
+        update_at(app.world_mut(), origin + Duration::from_millis(34));
+        let snapshot = app.world().resource::<MetalFxAdaptiveContext>().snapshot();
+        assert_eq!(snapshot.target_fps, 120.0);
+        assert!(snapshot.epoch > sample.epoch);
+        assert_eq!(
+            app.world().resource::<MetalFxAdaptiveStatus>().reason,
+            MetalFxAdaptiveReason::SampleEpochMismatch
+        );
+        assert_eq!(app.world().resource::<MetalFxRenderScale>().0, 1.0);
+    }
+
     #[test]
     fn default_timing_is_unavailable_and_app_delta_cannot_lower_quality() {
         let (mut app, view, origin) = app();
@@ -749,7 +1069,6 @@ mod tests {
         assert!(app.world().resource::<MetalFxRenderScale>().0 < 1.0);
         app.world_mut()
             .resource_mut::<MetalFxAdaptiveConfig>()
-            .policy
             .minimum_scale = 0.9;
         update_at(app.world_mut(), origin + Duration::from_secs(6));
         assert_eq!(app.world().resource::<MetalFxRenderScale>().0, 1.0);
@@ -911,12 +1230,21 @@ mod tests {
         let before = app.world().resource::<MetalFxAdaptiveContext>().snapshot();
         app.world_mut()
             .resource_mut::<MetalFxAdaptiveConfig>()
-            .policy
-            .target_fps = 0.0;
+            .target = MetalFxAdaptiveTarget::Explicit(0.0);
         update_at(app.world_mut(), origin + Duration::from_millis(17));
         assert_eq!(
             app.world().resource::<MetalFxAdaptiveStatus>().reason,
             MetalFxAdaptiveReason::InvalidConfiguration(AdaptiveConfigError::InvalidTarget)
+        );
+        assert_eq!(
+            app.world().resource::<MetalFxAdaptiveStatus>().target_fps,
+            0.0
+        );
+        assert_eq!(
+            app.world()
+                .resource::<MetalFxAdaptiveStatus>()
+                .target_source,
+            MetalFxAdaptiveTargetSource::Explicit
         );
         let invalid = app.world().resource::<MetalFxAdaptiveContext>().snapshot();
         assert!(invalid.epoch > before.epoch);
@@ -924,8 +1252,7 @@ mod tests {
         assert_eq!(app.world().resource::<MetalFxRenderScale>().0, 1.0);
         app.world_mut()
             .resource_mut::<MetalFxAdaptiveConfig>()
-            .policy
-            .target_fps = 60.0;
+            .target = MetalFxAdaptiveTarget::Explicit(60.0);
         update_at(app.world_mut(), origin + Duration::from_millis(34));
         assert!(
             app.world()

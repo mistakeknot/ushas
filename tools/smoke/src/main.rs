@@ -139,11 +139,11 @@ fn main() -> AppExit {
     }
     let mut app = App::new();
     let policy = bevy_metalfx::MetalFxAdaptiveConfig {
-        policy: bevy_metalfx::adaptive::AdaptiveConfig {
-            target_fps: config.target_fps.unwrap_or(60.0),
-            minimum_scale: config.minimum_scale,
-            ..default()
-        },
+        target: config.target_fps.map_or(
+            bevy_metalfx::MetalFxAdaptiveTarget::Monitor,
+            bevy_metalfx::MetalFxAdaptiveTarget::Explicit,
+        ),
+        minimum_scale: config.minimum_scale,
         ..default()
     };
     app.insert_resource(policy);
@@ -350,6 +350,7 @@ fn observe_run(
             && run.frames.len() >= 20
             && valid_image
             && ready_count == run.frames.len();
+        let (target_fps, target_source) = analysis_budget(&config.0, &adaptive_status);
         let mut report = json!({"schema":1,"source_revision":env!("USHAS_SOURCE_REV"),
             "subject":config.0.subject,"scene_version":if config.0.subject == "claude" {claude::MODEL_VERSION} else {"shapes-v1"},
             "source_dirty_at_build":env!("USHAS_SOURCE_DIRTY"),"valid":valid,
@@ -358,12 +359,13 @@ fn observe_run(
             "pixel_iterations":config.0.pixel_iterations,"cpu_delay_ms":config.0.cpu_ms,
             "moving":config.0.moving,"hdr":config.0.hdr,"native_aa":config.0.native_aa,"adaptive_requested":config.0.adaptive,
             "offscreen":config.0.offscreen,"render_target":if config.0.offscreen {"image"} else {"window"},
-            "target_fps":config.0.target_fps.unwrap_or(60.0),"minimum_scale":config.0.minimum_scale,
+            "target_fps":target_fps,"requested_target_fps":config.0.target_fps,"target_source":target_source,
+            "minimum_scale":config.0.minimum_scale,
             "warmup_s":config.0.warmup,"measurement_s":config.0.seconds,"wall_elapsed_s":elapsed,
             "adapter":adapter.as_ref().map(|a|json!({"name":a.name,"backend":format!("{:?}",a.backend),"driver":a.driver,"driver_info":a.driver_info})),
             "validity_scope":"render smoke only; experimental timing and panel delivery have separate gates",
             "render_proof":"MetalFX OutputWritten is command encoding; screenshot checks nonuniform output; neither proves panel delivery",
-            "frame_loop":metrics::summarize(&run.frame_ms,config.0.target_fps.unwrap_or(60.0)),
+            "frame_loop":metrics::summarize(&run.frame_ms,target_fps),
             "adaptive_status":format!("{:?}", *adaptive_status),"camera":camera.map(|(e,c)|json!({"entity":e.to_bits(),"active":c.is_active,"target_size":c.physical_target_size().map(|s|s.to_array())})),
             "rendered_observations":{"unique_frames":run.rendered.len(),"first_frame":run.rendered.keys().next(),"last_frame":run.rendered.keys().next_back(),"timestamps_s":run.rendered},
             "warmup_screenshot":run.warmup_screenshot,"environment":runtime_environment(config.0.offscreen),
@@ -481,6 +483,64 @@ fn observe_run(
         } else {
             AppExit::error()
         });
+    }
+}
+
+fn analysis_budget(
+    config: &config::Config,
+    status: &bevy_metalfx::MetalFxAdaptiveStatus,
+) -> (f64, String) {
+    if config.adaptive {
+        return (status.target_fps, format!("{:?}", status.target_source));
+    }
+    (
+        config.target_fps.unwrap_or(60.0),
+        if config.target_fps.is_some() {
+            "Explicit"
+        } else {
+            "FixedAnalysisFallback60"
+        }
+        .into(),
+    )
+}
+
+#[cfg(test)]
+mod target_budget_tests {
+    use super::*;
+
+    #[test]
+    fn adaptive_analysis_uses_the_resolved_controller_budget() {
+        let config = config::Config::parse(["--adaptive".into()]).unwrap();
+        let status = bevy_metalfx::MetalFxAdaptiveStatus {
+            target_fps: 119.88,
+            target_source: bevy_metalfx::MetalFxAdaptiveTargetSource::MonitorReportedRefresh {
+                window_id: 1,
+                monitor_id: 2,
+            },
+            ..default()
+        };
+        let (fps, source) = analysis_budget(&config, &status);
+        assert_eq!(fps, 119.88);
+        assert!(source.starts_with("MonitorReportedRefresh"));
+        assert_eq!(
+            metrics::summarize(&[10.0], fps)["budget_ms"],
+            1000.0 / 119.88
+        );
+    }
+
+    #[test]
+    fn fixed_analysis_preserves_explicit_and_default_budgets() {
+        let status = bevy_metalfx::MetalFxAdaptiveStatus {
+            target_fps: 144.0,
+            ..default()
+        };
+        let config = config::Config::parse([]).unwrap();
+        assert_eq!(
+            analysis_budget(&config, &status),
+            (60.0, "FixedAnalysisFallback60".into())
+        );
+        let config = config::Config::parse(["--target-fps".into(), "90".into()]).unwrap();
+        assert_eq!(analysis_budget(&config, &status), (90.0, "Explicit".into()));
     }
 }
 

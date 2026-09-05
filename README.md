@@ -184,22 +184,20 @@ keeps one third disabled even on hardware that admits it.
 ### Development: Adaptive Resolution
 
 Set `adaptive: true` and configure `MetalFxAdaptiveConfig`. The default target
-is explicitly 60 rendered FPS, independent of monitor refresh, with a minimum
-scale of 0.5. Set the target to the application's intended budget.
+uses the refresh reported for the primary window's current monitor, with a
+labelled 60 FPS fallback when that information is unavailable. The minimum
+scale defaults to 0.5. Set `Explicit` when the application has its own budget;
+an explicit 60 FPS target takes precedence even on a faster monitor.
 
 ```rust
 use bevy::prelude::*;
-use bevy_metalfx::{MetalFxAdaptiveConfig, MetalFxPlugin};
-use bevy_metalfx::adaptive::AdaptiveConfig;
+use bevy_metalfx::{MetalFxAdaptiveConfig, MetalFxAdaptiveTarget, MetalFxPlugin};
 
 fn main() {
     App::new()
         .insert_resource(MetalFxAdaptiveConfig {
-            policy: AdaptiveConfig {
-                target_fps: 60.0,
-                minimum_scale: 0.5,
-                ..default()
-            },
+            target: MetalFxAdaptiveTarget::Explicit(60.0),
+            minimum_scale: 0.5,
             ..default()
         })
         .add_plugins(DefaultPlugins)
@@ -207,6 +205,13 @@ fn main() {
         .run();
 }
 ```
+
+`MetalFxAdaptiveStatus` exposes the resolved target and its source. Monitor
+refresh is operating-system metadata, not measured presentation cadence or
+variable refresh. Bevy 0.19 can retain that metadata after an in-place display
+mode change; set an explicit budget when the distinction matters. Moving to a
+different reported monitor or changing the resolved budget resets old evidence.
+The target defines the controller's budget; it does not pace the application.
 
 **No validated GPU frame-cost source is installed by default.** The controller
 holds its configured quality and reports the reason through

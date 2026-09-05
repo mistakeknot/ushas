@@ -21,7 +21,8 @@ Hardware and release acceptance gates are still in progress.
   success. Explicit freshness checks support render-world lag. Status resources
   remain available with disabled rendering and without a `RenderApp`.
 - A deterministic `adaptive::AdaptiveController` and Bevy adapter configured by
-  `MetalFxAdaptiveConfig`: explicit target FPS (default 60), quality floor
+  `MetalFxAdaptiveConfig`: explicit application target or primary-window monitor
+  refresh (default, with a labelled 60 FPS fallback), quality floor
   (default 0.5), elapsed-time smoothing and hysteresis, settling, measured
   downshift-benefit checks, and an infeasible-budget reason at the floor.
 - `MetalFxFrameCostInput`, `ValidatedGpuFrameCost`, and `MetalFxAdaptiveContext`

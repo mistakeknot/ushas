@@ -8,10 +8,7 @@ use bevy::window::PrimaryWindow;
 fn app(mode: MetalFxMode, render_scale: f32, adaptive: bool, minimum_scale: f32) -> (App, Entity) {
     let mut app = App::new();
     app.insert_resource(MetalFxAdaptiveConfig {
-        policy: adaptive::AdaptiveConfig {
-            minimum_scale,
-            ..default()
-        },
+        minimum_scale,
         ..default()
     });
     let window = app
@@ -83,7 +80,6 @@ fn raising_quality_floor_updates_real_render_inputs_without_gpu_samples() {
     app.update();
     app.world_mut()
         .resource_mut::<MetalFxAdaptiveConfig>()
-        .policy
         .minimum_scale = 0.6;
     app.update();
     assert_eq!(app.world().resource::<MetalFxRenderScale>().0, 2.0 / 3.0);

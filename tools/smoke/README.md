@@ -57,7 +57,13 @@ caffeinate -d tools/smoke/target/release/ushas-smoke --mode temporal --scale 0.5
 caffeinate -d tools/smoke/target/release/ushas-smoke --mode temporal --scale 0.5 --moving --out /tmp/motion.json
 ```
 
-`--target-fps` defines the analysis/controller budget, not a frame cap. The
+`--target-fps` explicitly defines the analysis/controller budget, not a frame cap.
+Without it, the adaptive window fixture uses the primary window's reported monitor
+refresh, or a labelled 60 FPS fallback when unavailable. Fixed-scale runs keep a
+60 FPS analysis budget unless explicitly overridden.
+Reports retain both the requested and resolved target and the resolution source.
+Reported refresh does not measure VRR or presentation, and Bevy's cached monitor
+metadata may lag an in-place display-mode change. The
 window requests `AutoNoVsync`; its frame loop can still be presentation limited.
 `frame_loop` reports CPU loop intervals, never GPU busy time or presented FPS.
 The dedicated MetalFX command-buffer diagnostic includes dependency waits and
