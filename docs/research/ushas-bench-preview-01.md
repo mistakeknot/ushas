@@ -1,97 +1,172 @@
 # Ushas Bench preview validation
 
-The benchmark, comparison, stress and results flows are implemented in the
-native macOS preview. Final hardware qualification remains open. This receipt
-separates earlier integration checks from the packaged candidate's acceptance
-run; it does not claim a completed 24-arm comparison or ten-minute stress test.
+Background rendering passed the packaged 24-arm comparison and configured
+600-second stress run on Apple M5 Max. Chrome was observed frontmost during the
+comparison while no Ushas window was onscreen. The launcher can stay minimized;
+other applications still affect the measured throughput.
 
-The [approved plan](../plans/2026-09-05-ushas-bench.md) defines the acceptance
-contract. The [app guide](../../tools/benchmark/README.md) explains the metric
-and preview distribution. Task: `shadow-work-vzox.9`.
+The [approved plan](../plans/2026-09-05-ushas-bench.md) and
+[app guide](../../tools/benchmark/README.md) define the contract. Task:
+`shadow-work-vzox.9`. Hardware qualification and completed-report export passed. The final launcher
+Escape correction is in progress after actual keyboard testing found that the
+menu shortcut did not invoke Stop.
 
-## Candidate
+## Package provenance
 
-The package was built from clean source
-`88a2f54ca823910dbe03ca1fb2515c0abf74740f`. It contains an arm64 SwiftUI launcher,
-the Rust/Bevy renderer, character attribution and the project's license texts.
-The ZIP contains an ad-hoc-signed macOS 26 preview app, not a notarized public
-release.
-
-Artifacts are in `tools/benchmark/dist/preview-02/`:
+`tools/benchmark/dist/preview-04/` contains the ad-hoc-signed macOS26 arm64 app
+and ZIP, with the attributed procedural Claude and project license texts.
+The launcher was built from clean `fbbd7903aebe865dc9fd9d2fa9c4624df6f3ebd3`.
+Its status-label fix reuses the exact renderer built from clean
+`b4fdabb676c0d446a13459e9e8a4001f8e411bbf`, which completed the hardware runs.
+The reused renderer remains byte-identical after signing and ZIP extraction.
 
 | Artifact | SHA-256 |
 |---|---|
-| `Ushas Bench.zip` | `dc98a5f63d896461ca3382fe775dde3388a3ddd7de4980ae15af5e56539e38f4` |
-| Bundled `Contents/Helpers/ushas-bench` | `f8501d3b91b15cec8b17ffb073a5a16a84cd1bf36eeb9f242835af1acb855786` |
-| `Contents/MacOS/UshasBench` | `ba261e53b601550f2f1acd17902844d0ff9b7df38c9185730c6fde560586479d` |
+| `Ushas Bench.zip` | `64516697a0b3856c1d449f49b6c458669029ddad494b35f0910f92aafda00b81` |
+| `Contents/Helpers/ushas-bench` | `40e557604068f75acd14aa161655e0e0952f210f81512f31072bd5e75b0fc6f3` |
+| `Contents/MacOS/UshasBench` | `6d010b2ff712417210d24f8b3f14771e718e72fbe5647597e58af636bf548463` |
 
-Root verified the hashes and deep, strict code signature. The extracted ZIP's
-two executable files match the packaged originals byte for byte. The extracted
-app launched outside the repository from `/private/tmp`, with
-`PATH=/usr/bin:/bin:/usr/sbin:/sbin`, without a Rust toolchain or external assets.
-Its initial 1180 × 800 window exists; the sampled main thread was idle in the
-normal AppKit event loop.
-On the first final-candidate UI attempt, macOS reported the desktop locked;
-visible interaction and measurement had not started.
+Deep/strict signatures, ZIP integrity, executable equality and resources passed.
+The extracted app launched outside the repository from `/private/tmp` with
+`PATH=/usr/bin:/bin:/usr/sbin:/sbin`, without Rust or external asset dependencies.
+This is an ad-hoc-signed preview, not a notarized public release.
 
-## Integration evidence
+## Background qualification
 
-These checks exercised earlier candidate revisions. They are useful regression
-evidence, not substitutes for the final package's complete qualification.
+Run `27d1fd1b-cbcd-4c53-a57f-1b0472a25064` ran from
+`2026-09-05T22:43:29Z` to `22:56:09Z`. All 24 benchmark children and six separate
+capture replays passed. The launcher accepted the final report and recorded
+exit0. The profile is `claude-lab-offscreen-v1`, with a 2560×1440 image target,
+normal Bevy pipelining, no scored readbacks and no per-frame GPU waits/callbacks.
 
-| Check | Retained evidence | Observed result |
-|---|---|---|
-| Actual app, native benchmark, dirty integration build `f87830c` | App run `717e593a-33f5-41e5-8667-1f8e6c2d2f6a` | Three valid 1,200-frame chapters at 2560 × 1440; Results displayed the 120.9 completed-render FPS geometric mean. |
-| Temporal two-thirds image replay, clean `6a744734` | `/private/tmp/ushas-bench-temporal-frozen-01` | Four identified 1280 × 720 material-scene images from a custom 120-tick replay; original screenshot joins valid and the scene/HUD inspected. |
-| Actual app comparison and Stop, clean `6a744734` | App run `e7987218-56e3-4585-b2d8-841d09e19f00` | First three arms contained 10,800 valid proofs; later Temporal-half output became stale. Stop ended the comparison, retained five attempts, and withheld the score and paired summaries. No helper process remained. |
-| Actual offline export of that cancelled comparison | `/private/tmp/ushas-bench-export-cancelled-01` | HTML, launcher log, original comparison and all five child reports retained; 31 exported files checked byte for byte. |
-| Temporal-half retry, clean `35d80194` | `/private/tmp/ushas-bench-half-diagnostic-01` | All 3,600 frames qualified at 2560 × 1440; geometric mean 125.95. The window was visible, focused and reported unoccluded. |
+A foreground-only desktop probe at `22:48:50Z` recorded `com.google.Chrome`,
+zero Ushas windows onscreen, and active round-three progress. Other in-progress
+observations recorded Rio or the system notification application; unrelated
+window contents were not retained. Root minimized the launcher before these
+observations. A separate native standard background run passed all 3,600 frames
+at 423.5 geometric-mean completed-render FPS before the comparison.
 
-App runs and their launcher logs are under
-`~/Library/Application Support/Ushas Bench/Runs/`. The earlier failed comparison
-remains invalid: its observed effect frame froze at 191 while requested frames
-continued. The cause was not established. The successful retry does not prove
-that cause or erase the failure.
+The independent v3 audit checked 86,400 benchmark frame proofs, 21,600 replay
+frame proofs, 144 decoded opaque RGBA8 PNGs, 24 cross-arm camera poses, exact
+source/binary/configuration joins, balanced arm order and all paired statistics.
+The comparison report SHA-256 is
+`9489e449edb1f8f3809f5704b67c29d527f46dc92348332874d699eba5dcfb21`.
 
-The renderer now retains bounded window, target and effect-readiness diagnostics
-and stops on a measured qualification failure. Escape in a comparison child
-propagates cancellation to the parent. During active rendering a scoped public
-`NSProcessInfo` activity holds idle display/system sleep; the activity ends with
-the engine lifetime and changes no persistent power setting.
+| Arm | Four-round geometric mean FPS | Render-time reduction vs native | Paired 95% interval | Performance decision |
+|---|---:|---:|---:|---|
+| Native MSAA4 | 214.7 | — | — | Baseline |
+| Temporal native | 139.8 | −53.6% | −81.9% to −23.8% | Slower |
+| Temporal two-thirds | 158.5 | −35.5% | −90.8% to −1.5% | Slower |
+| Temporal half | 200.8 | −6.9% | −21.7% to +8.1% | No demonstrated practical benefit |
+| Spatial half | 255.9 | +16.1% | +7.85% to +27.2% | Lower bound misses the >8% gate |
+| Bilinear half | 252.6 | +15.0% | +12.4% to +17.5% | Performance gate passed |
 
-CPU validation before packaging covered 46 Rust benchmark contracts, 17 Swift
-app contracts and three shared-model tests. Strict Clippy and formatting checks
-passed. All 20 jobs in [candidate CI run
-33993163591](https://github.com/mistakeknot/ushas/actions/runs/33993163591)
-passed at the packaged source revision, including the benchmark and native-app
-contracts. The remaining hardware gates must finish before this task closes.
+These are observations with other desktop applications active and only four
+pairs per candidate. They do not isolate GPU capacity or establish a MetalFX
+performance win. Retain native as the default. Bilinear's timing result does
+not establish acceptable image quality.
 
-## Remaining acceptance
+The original v2 image audit failure is preserved. Parent JSON re-serialization
+changed copied camera/jitter values by one f64 ULP while preserving their f32
+bits. V3 permits exactly one adjacent f64 step only on the three known f32 array
+paths, with identical f32 bits; all other fields remain exact. Six regression
+cases and an independent source review passed. No renderer or report was
+modified to satisfy the audit.
 
-- Run one uninterrupted four-round comparison: 24 fresh benchmark processes,
-  three 1,200-tick chapters per process, followed by six separate image replays.
-- Independently audit frame proofs, configuration/build identity, paired
-  summaries and retained PNGs. Inspect native/reconstruction image pairs,
-  including the camera cut and recovery ticks, in Results.
-- Run stress for the full 600 seconds, exercise live load changes, and verify
-  distinct reporting epochs. Verify actual Stop and Escape behavior.
-- Export a completed comparison and verify the portable report and images.
-- Record final CI, package provenance and hardware outcomes, then close the task.
+Root visually inspected native material, geometry and lighting images and a
+matched Temporal two-thirds camera-cut image. Faces and scene composition were
+present and matched; thin-edge aliasing remains visible at the cut. The app
+loaded native/temporal-half selectors from retained files while stress continued.
+This spot inspection does not claim quality equivalence or smooth live motion.
+
+## Ten-minute stress
+
+Run `33456ba1-ac1d-400e-a791-be4741161492` used background Temporal half at
+2560×1440, starting with 64 Claudes, eight lights, 4,096 particles and no extra
+pixel load. It completed automatically, `valid:true`, `stopped:false`, no
+errors, `profile_version:custom`, and no aggregate benchmark score. The launcher
+recorded exit0; no renderer process remained afterward. Results displayed
+Completed / CUSTOM / VALID / BACKGROUND.
+
+All 574 retained checkpoint summaries passed, covering 68,479 completed frames.
+The last eight detailed cohorts supplied 843 fresh frame/proof/fence joins;
+earlier details are intentionally bounded. No summaries were evicted. Applied
+configuration generations were 64→65→129→128 Claudes, ending at 12 lights and
+8,192 particles. Intermediate loads remain in the report.
+
+The intended change began around 117 seconds of reported progress. Direct
+accessibility slider value-setting was unsupported; actual slider actions
+applied the final generation around 293 seconds and verified values around
+310 seconds. This differs from the planned two-minute change, while still
+exercising live configuration transitions and several minutes at the larger load.
+
+Report UTC lifetime was 601 seconds; the monotonic log observer measured
+602.436 seconds and saw engine progress through 599.966 seconds. The fixed
+renderer source's valid, unstopped completion supports the configured 600-second
+run. Arrival times do not independently identify exact admission/stop instants,
+and checkpoint durations were never summed to infer total duration.
+
+The stress report SHA-256 is
+`fe322c8b834eb1f040898ab1a59dec0dd0f00158774f88fd4e50d76111a683ea`.
+The original stress audit rejected the stdout-only envelope fields; its failed
+receipt remains preserved. Stress-auditor v3 validates every envelope before descent and joins every
+observed checkpoint exactly to the final report. Its 33 corruption checks and
+independent review passed; it retains the duration-evidence limitation above.
+
+## Completed export and launcher checks
+
+The final preview loaded native and Temporal-half Materials·908 in Results.
+Changing the divider revealed each image, including the matching native and
+temporal HUD labels. No renderer process was running during these interactions.
+The app displayed “Offline report exported.” after its real Export action.
+
+The export at `~/Documents/Ushas-qualification-background-preview-04` contains
+144 byte-identical PNGs, 32 byte-identical original JSON files and contained
+relative artifact links. All 267 copied source files checked out; `index.html`
+is intentionally regenerated by the exporter. Its 576 image references resolve
+to the 144 unique captures and use no remote resources. A durable copy is in
+`tools/benchmark/dist/preview-04/validation/comparison-export/`. Automated browser
+preview of the local HTML was blocked by browser URL policy; file integrity and
+resource containment were verified without bypassing that policy.
+
+The actual Stop button preserved a stopped report, and ⌘. stopped a separate
+background run. Escape did not stop while the launcher was active, even though
+the same keyboard-delivery path invoked ⌘. successfully. The foreground Escape
+fix and its actual retest remain pending.
+
+## Retained failures and checks
+
+The earlier windowed comparison `6049d5bf-9a4a-4926-9fc8-5e2121590160` remains
+invalid/stopped. Its first round completed, then later arms lost qualified view
+output with Chrome frontmost. Numeric paired conclusions remain withheld.
+The earlier cancelled comparison `e7987218-56e3-4585-b2d8-841d09e19f00` and its
+31-file export also remain separate integration evidence. Neither is silently
+replaced by the successful background campaign.
+
+The native progress label initially stayed at “Warming” after rendering began.
+The launcher-only fix advances it on measured progress while preserving
+comparison, error and Stop messages. All 25 Swift tests, strict formatting and
+launcher build passed. Renderer checks covered 59 Rust tests, strict Clippy and
+rustfmt. All 20 jobs in [renderer CI run33996152702](https://github.com/mistakeknot/ushas/actions/runs/33996152702)
+passed. All 20 jobs in [launcher CI run33997862065](https://github.com/mistakeknot/ushas/actions/runs/33997862065) passed for `fbbd790`.
+
+Original app runs and logs remain under
+`~/Library/Application Support/Ushas Bench/Runs/`. Auditor sources, successful
+and failed receipts, foreground observations, observer data and test logs are
+retained in `tools/benchmark/dist/preview-04/validation/`.
 
 ## Interpretation and bounded timing assessment
 
-The number measures completed-render throughput of this windowed Bevy path.
-It includes CPU scheduling, drawable acquisition and completion-callback
-dispatch. Values near display cadence do not establish GPU capacity. Immediate
-presentation is requested; the resolved surface policy is unavailable through
-the selected public Bevy interface. The app makes no GPU-busy, panel-FPS or
-frame-pacing claim. Quality review remains separate from timing qualification.
+Background scores measure normal-pipelined completed offscreen-render throughput,
+including CPU/render scheduling and completion-callback dispatch. They exclude
+surface acquisition and scored image readback. Windowed scores use the separate
+`claude-lab-standard-v1` profile and must not be combined with background scores.
+Neither profile establishes GPU-busy time, frame pacing or panel FPS.
 
 The bounded public-API assessment did not identify a complete GPU-only frame-cost
 producer. The dedicated MetalFX command-buffer interval includes dependencies;
 selected public wgpu pass timestamps do not cover MetalFX's private encoders.
 The earlier [proxy stop decision](proxy-validation-control-03.md) remains in
 force. No new trace pair was collected: missing scope already prevents the
-proposed runtime signal from qualifying. Any future unwrapped offline Metal
-System Trace still needs explicit original-frame and physical-buffer ownership.
-Automatic adaptation retains `TimingUnavailable`.
+proposed runtime signal from qualifying. Automatic adaptation retains
+`TimingUnavailable`.
