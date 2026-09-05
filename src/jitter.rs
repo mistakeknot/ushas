@@ -11,6 +11,18 @@
 use bevy::prelude::*;
 use bevy::render::camera::TemporalJitter;
 
+/// Convert Bevy's perspective jitter into MetalFX's input-pixel coordinates.
+///
+/// Bevy adds `(2*x/width, -2*y/height)` to the projection's Z column.
+/// Perspective division by `-view_z` negates both offsets; converting NDC to
+/// Metal's downward-Y viewport negates Y once more. The resulting screen
+/// displacement is `(-x, -y)`, which is what Apple's temporal sample supplies.
+/// See `docs/research/temporal-quality.md` for the source and derivation.
+#[cfg(any(target_os = "macos", test))]
+pub(crate) fn metalfx_jitter_offset(jitter: Option<&TemporalJitter>) -> Vec2 {
+    jitter.map(|j| -j.offset).unwrap_or(Vec2::ZERO)
+}
+
 /// Halton(2,3) sequence, 32 samples, centered at 0 (subtract 0.5).
 /// Samples are the Halton points for indices 1..=32 — the leading 8 match
 /// Bevy's built-in TAA sequence exactly.
@@ -63,6 +75,36 @@ pub fn update_jitter(mut frame_count: Local<u32>, mut query: Query<&mut Temporal
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn metalfx_jitter_matches_bevy_perspective_screen_displacement() {
+        // Apple's sample sends the projected displacement, measured in input
+        // pixels with Y pointing down, as MetalFX's jitterOffsetX/Y. Exercise
+        // Bevy's actual projection mutation, perspective divide and viewport
+        // conversion instead of asserting another copy of the sign formula.
+        for size in [Vec2::new(640.0, 360.0), Vec2::new(960.0, 540.0)] {
+            let projection =
+                Mat4::perspective_infinite_reverse_rh(60.0_f32.to_radians(), size.x / size.y, 0.1);
+            for offset in HALTON_SEQUENCE {
+                let jitter = TemporalJitter { offset };
+                let mut jittered = projection;
+                jitter.jitter_projection(&mut jittered, size);
+                for point in [Vec3::new(0.0, 0.0, -1.0), Vec3::new(1.0, -0.5, -7.0)] {
+                    let to_pixel = |projection: Mat4| {
+                        let ndc = projection.project_point3(point);
+                        (ndc.truncate() * Vec2::new(0.5, -0.5) + Vec2::splat(0.5)) * size
+                    };
+                    let displacement = to_pixel(jittered) - to_pixel(projection);
+                    let supplied = metalfx_jitter_offset(Some(&jitter));
+                    assert!(
+                        supplied.abs_diff_eq(displacement, 0.0001),
+                        "offset={offset:?}, supplied={supplied:?}, screen={displacement:?}"
+                    );
+                }
+            }
+        }
+        assert_eq!(metalfx_jitter_offset(None), Vec2::ZERO);
+    }
 
     #[test]
     fn sequence_is_32_phase() {

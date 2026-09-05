@@ -27,6 +27,8 @@ use super::MetalFxFrameTiming;
 use super::PRESENT_FORMAT;
 use super::{CachedState, MetalFxUpscaleNode, SendScaler};
 use crate::gpu_timing::add_gpu_timing_handler;
+#[cfg(feature = "temporal")]
+use crate::jitter::metalfx_jitter_offset;
 use crate::platform::encode_spatial_upscale;
 #[cfg(feature = "temporal")]
 use crate::platform::encode_temporal_upscale;
@@ -368,15 +370,7 @@ impl MetalFxUpscaleNode {
             } => {
                 let (depth_ptr, motion_ptr) = temporal_ptrs.unwrap();
                 let (prev_color_ptr, interp_out_ptr) = interp_ptrs.unwrap();
-                // Bevy's `TemporalJitter.offset` is a pixel offset in [-0.5, 0.5]
-                // whose Y is flipped when it enters clip space (see
-                // `TemporalJitter::jitter_projection`: `offset * vec2(2, -2)`).
-                // MetalFX's `jitterOffsetX/Y` wants the pixel offset that returns
-                // the sample to the reference frame — the same X, but Y negated
-                // to match MetalFX's (un-flipped) pixel space.
-                let jitter = temporal_jitter
-                    .map(|j| Vec2::new(j.offset.x, -j.offset.y))
-                    .unwrap_or(Vec2::ZERO);
+                let jitter = metalfx_jitter_offset(temporal_jitter);
                 let motion_scale_x = -(input_w as f32);
                 let motion_scale_y = -(input_h as f32);
 
@@ -502,11 +496,7 @@ impl MetalFxUpscaleNode {
             #[cfg(feature = "temporal")]
             SendScaler::Temporal(scaler) => {
                 let (depth_ptr, motion_ptr) = temporal_ptrs.unwrap();
-                // Negate Y to convert Bevy's clip-space jitter convention to
-                // MetalFX's pixel-space one — see the FrameInterpolator branch.
-                let jitter = temporal_jitter
-                    .map(|j| Vec2::new(j.offset.x, -j.offset.y))
-                    .unwrap_or(Vec2::ZERO);
+                let jitter = metalfx_jitter_offset(temporal_jitter);
 
                 let motion_scale_x = -(input_w as f32);
                 let motion_scale_y = -(input_h as f32);
