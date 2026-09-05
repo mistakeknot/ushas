@@ -1,0 +1,29 @@
+version: 1
+mode: dependency-driven
+tier: deep
+max_parallel: 4
+stages:
+  - name: contracts
+    tasks:
+      - id: task-1
+        title: CLI and report contracts
+        depends: []
+  - name: implementation
+    tasks:
+      - id: task-2
+        title: Claude model and render lab
+        depends: [task-1]
+      - id: task-3
+        title: Pipelined engine and captures
+        depends: [task-1]
+      - id: task-4
+        title: Native app and packaging
+        depends: [task-1]
+  - name: integration
+    tasks:
+      - id: task-5
+        title: Review, CPU and real app verification
+        depends: [task-2, task-3, task-4]
+      - id: task-6
+        title: Qualification, stress, documentation and landing
+        depends: [task-5]
