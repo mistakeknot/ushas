@@ -23,18 +23,25 @@ GPU busy-cost producer and holds its scale with an unavailable reason. The
   remain an optional control. No shop bitmap is bundled.
 - Bounded serial-completion, matched-quality and presentation diagnostic tools;
   frozen consumer preparation; feature/platform/MSRV/docs/package checks in CI.
+- Default-off creation-fault injection with generation-safe fallback/recovery,
+  separate bounded observation windows for each lifecycle phase, and native
+  window/system-sleep observers. Observer implementation alone is not a native
+  lifecycle result.
 
 ## Measured decisions
 
 | Gate | Evidence and resulting decision |
 |---|---|
 | GPU signal feasibility | [Metal trace review](timing-feasibility.md) matched 237 descriptor intervals to the trace, but they include substantial idle/drawable waits, overlap and incomplete coverage. The instrument is unsuitable as a GPU busy-cost input. Keep automatic adaptation unavailable. |
+| Native stage investigation | [The second probe](gpu-producer-02.md) distinguishes GPU work from a CPU submission gap; its trace matches 128 encoder identities and 192 stage pairs. This is a partial positive for a synthetic native chain. Complete Bevy and raw MetalFX scope, asynchronous attribution and instrumentation overhead remain unresolved; the [source inventory](bevy-frame-scope-02.md) identifies the missing seams. |
 | Claude fixed-scale benefit | [60 completed runs](claude-completion-campaign-01.md) all exited successfully. At load 8,000, native averaged 30.486 ms and Temporal half 13.848 ms per serial completed render. Half missed the 16.667 ms budget on 8.90% of measured intervals; this does not establish smooth 60 FPS. |
 | Highest tested budget rung | [20 middle-preset runs](claude-middle-presets-01.md) all passed. Temporal 0.58 and two-thirds exceeded the mean 60 Hz budget. Half is the highest tested rung meeting the mean budget at load 8,000. At load 20,000 the lowest allowed rung fails, and no tested allowed rung meets it. |
-| Claude image quality | [Six matched arms](claude-matched-quality-01.md): 72 opaque captures and 870 frame proofs, including motion, reset and HDR. Half is softer in motion and conspicuously aliased on the reset frame; held cut16 is substantially cleaner. Third loses more detail. Retain the conservative 0.5 floor; immediate native quality and continuous temporal stability are unproved. |
+| Initial Claude image evidence | [Six matched arms](claude-matched-quality-01.md) passed artifact validation: 72 opaque captures and 870 frame proofs, including motion, reset and HDR. Half is softer in motion and conspicuously aliased on the reset frame; held cut16 is substantially cleaner. Third loses more detail. Artifact validity is separate from quality acceptance. |
+| Claude motion/reset decision | The [native Temporal control](claude-quality-acceptance-02.md) and [moving-v2 experiment](claude-moving-quality-02.md) now have explicit independent verdicts. Moving v2 retains 69 PNGs and 435 frame proofs across native MSAA4, native Temporal and Temporal half. Both reviewers accept the short sequence's readability and moving cut8–16 recovery for both Temporal arms; both arms fail immediate-cut native quality. Retain the 0.5 floor and conditional fixed-scale acceptance, without claiming continuous stability or adaptive-transition quality. |
 | Current consumer | [12 balanced completed runs](consumer-completion-trial-01.md): native 6.497 ms, Temporal half 7.849 ms, bilinear half 6.781 ms. Retain native for this frozen static Shadow Work scene. This is not a verdict on every consumer workload. |
 | Consumer cuts | [Three arms, 18 captures](consumer-cuts-01.md) completed; a visible texture seam also appears in the native baseline. No broad consumer quality pass or exact reset-recovery frame claim follows. |
 | Lifecycle | [Five window-target exercises](lifecycle-candidate-01.md) passed: resize, camera cut, late/replacement camera, unsupported multiple views and inactive-cut-resume. These do not prove window visibility, OS sleep recovery or driver-failure recovery. |
+| Creation-fault recovery | [Fresh offscreen failure and slow-creation runs](lifecycle-fault-offscreen-03.md) pass independent retained-phase gates: actual image/view/dimensions, at least 20 distinct eligible frames per phase, pending reset through fallback, later Temporal recovery and opaque captures. The slow arm declares 2,917 evictions. This closes the synthetic creation-fault slice within retained windows; it does not prove a real driver failure, native-window recovery or complete frame history. [Failed window attempts](lifecycle-fault-window-attempts-02.md) and the [incomplete earlier slow ledger](lifecycle-fault-offscreen-02.md) remain archived. |
 | Presentation | [Historical reconciliation](frame-generation-reconciliation.md) preserves prior strong-gauge evidence and its limits. The [new diagnostic](presentation-diagnostic-01.md) stopped at asleep, locked-session preflight without launching a renderer. Present cadence, content ordering, latency and net value remain unvalidated. |
 
 Completed-render cadence includes CPU submission gaps and uses one frame in
@@ -47,25 +54,37 @@ runs remain archived, including seven failures in the original unpaced
 
 1. Establish a frame-identified GPU-cost producer with complete scope and fresh
    delivery before enabling live adaptation. Validate it against GPU-heavy,
-   CPU-only and presentation-limited controls; then run hardware trajectories
-   and moving adaptive quality checks. The tested policy alone is insufficient.
-   This continuation is tracked by `shadow-work-vzox.8`. Complete a matched
-   native-resolution Temporal quality control and make an explicit acceptable
-   motion/reset quality decision; sampled settled images are not that decision.
-2. Complete lifecycle coverage for real OS sleep/resume, occlusion/minimization
-   and forced scaler-creation failure. The historical MPSGraph crash remains
-   unreproduced; successful starts cannot close it as fixed.
-3. With an eligible unlocked display, run the bounded presentation diagnostic.
+   CPU-only and presentation-limited controls, including complete submission
+   ownership, trace agreement, sample age and overhead under normal pipelining.
+   Then run hardware 60/120 FPS target trajectories, floor/target changes,
+   overload/recovery, invalidation and moving adaptive quality checks against
+   the best fixed rung. The tested policy and native stage probe are insufficient.
+   This continuation is tracked by `shadow-work-vzox.8`; the immediate-cut quality
+   failure remains disclosed rather than being converted into a pass.
+2. Complete actual OS sleep/resume and window occlusion/minimization coverage.
+   Require fresh native events, contemporaneous environment evidence, restored
+   output/reset acknowledgement and opaque captures. Camera inactivity and
+   offscreen fault recovery do not satisfy these gates. The historical MPSGraph
+   crash remains archived as unreproduced; neither synthetic faults nor successful
+   starts establish a fix.
+3. With freshly observed awake, unlocked and on-console conditions, run the
+   bounded presentation diagnostic.
    Aggregate timestamps still need frame-kind, content/order and latency
    evidence before a net-value decision. Keep frame generation experimental.
    This independent lane does not block the adaptive release.
 4. Review the concrete release artifact after the remaining acceptance gates.
+   Refresh exact-source feature/platform/MSRV/API/docs/package and render checks;
+   earlier package or CI success does not verify subsequent source changes.
    No tag, registry publication or production consumer switch has occurred.
    Frame-generation acceptance remains separate from that release decision.
 
 The implementation and frozen evidence are committed on `main`. Large raw
 artifacts and exact executables are hash-archived under
 `/Users/sma/projects/docs/ushas/evidence/`; individual reports identify their
-manifests. The local roadmap checkpoint records the final source, CI and package
-receipt without claiming that a green package closes the remaining hardware
-gates. Work remains tracked by `shadow-work-vzox` and its open children.
+manifests. The local roadmap checkpoint separates the current source from the
+latest confirmed CI and package revisions; none is labelled the final accepted
+release. A single [September 5 08:45 UTC display probe](/Users/sma/projects/docs/ushas/evidence/display-readiness-20260905-084511.json)
+found the display awake but lock state unknown, which does not establish an
+eligible presentation session or update the historical blocked run. Work remains tracked by `shadow-work-vzox`
+and its open children. Broader resolution/device matrices and copy-removal
+experiments remain optional unless evidence shows they could change the decision.

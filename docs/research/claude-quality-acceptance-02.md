@@ -183,6 +183,14 @@ PYTHONDONTWRITEBYTECODE=1 python3 \
 
 ## Prospective moving-after-cut experiment
 
+**September 5 execution update:** this protocol has now completed. The
+[separate moving-v2 report](claude-moving-quality-02.md) records all 69 captures,
+435 frame proofs and two independent inspections. Both Temporal arms pass the
+declared short-sequence readability and moving recovery gates; both fail
+immediate-cut native quality. The prospective rules below are preserved as
+written before those runs: their "not measured yet" wording refers to that
+declaration, not the current result.
+
 The separately implemented `claude-60hz-moving-cut-v2` protocol is not measured
 yet. Declare the following rules before its hardware runs. Use native Disabled
 MSAA4, native-resolution Temporal with MSAA off, and half-resolution Temporal
