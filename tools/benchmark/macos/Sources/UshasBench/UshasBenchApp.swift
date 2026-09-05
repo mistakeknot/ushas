@@ -1,8 +1,29 @@
 import AppKit
+import BenchCore
 import SwiftUI
 
 @MainActor final class BenchApplicationDelegate: NSObject, NSApplicationDelegate {
   weak var model: BenchModel?
+  private var escapeMonitor: Any?
+  func applicationDidFinishLaunching(_ notification: Notification) {
+    // Local events only: nested menu/control tracking retains its normal Escape.
+    escapeMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+      let consumed = MainActor.assumeIsolated {
+        LauncherEscapeRouter.route(
+          event, backgroundRunActive: self?.model?.canStopWithEscape == true,
+          applicationActive: NSApp.isActive,
+          modalOrTracking: NSApp.modalWindow != nil
+            || NSApp.windows.contains { $0.attachedSheet != nil || $0.sheetParent != nil }
+            || RunLoop.current.currentMode == .eventTracking,
+          stop: { self?.model?.stop() }) == nil
+      }
+      return consumed ? nil : event
+    }
+  }
+  func applicationWillTerminate(_ notification: Notification) {
+    if let escapeMonitor { NSEvent.removeMonitor(escapeMonitor) }
+    escapeMonitor = nil
+  }
   func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
     guard let model, model.running else { return .terminateNow }
     model.quitAfterStop = true
@@ -30,9 +51,7 @@ import SwiftUI
         Button("Run benchmark") { model.launch("benchmark") }.keyboardShortcut("r").disabled(
           model.running)
         Button("Stop current run") { model.stop() }.keyboardShortcut(".").disabled(!model.running)
-        // A menu key equivalent is local to this active application, never a
-        // global Escape listener affecting other apps.
-        Button("Stop background run") { model.stop() }.keyboardShortcut(.escape, modifiers: [])
+        Button("Stop background run") { model.stop() }
           .disabled(!model.canStopWithEscape)
         Button("Show live stress controls") { model.showStressControls() }.disabled(
           !model.running || model.activeCommand != "stress")
