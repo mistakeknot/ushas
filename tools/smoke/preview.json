@@ -1,0 +1,60 @@
+{
+  "source_revision": "7db0818b6374f99475995b9939afdf9032aa18ce",
+  "source_dirty_at_build": "true",
+  "subject": "claude",
+  "scene_version": "claude-toy-v1",
+  "mode": "temporal",
+  "initial_scale": 0.5,
+  "final_scale": 0.5,
+  "width": 1280,
+  "height": 720,
+  "pixel_iterations": 0,
+  "moving": false,
+  "hdr": false,
+  "native_aa": false,
+  "offscreen": true,
+  "render_target": "image",
+  "valid": true,
+  "effect_counts": {
+    "OutputWritten": 1183
+  },
+  "environment": {
+    "arguments": [
+      "--offscreen",
+      "--mode",
+      "temporal",
+      "--scale",
+      "0.5",
+      "--experimental-timing",
+      "--warmup",
+      "2",
+      "--seconds",
+      "2",
+      "--out",
+      "/private/tmp/ushas-roadmap-evidence/claude-temporal-offscreen-01.json"
+    ],
+    "binary_sha256": "f79d6b20cbc47206af148df447050676bb41a0d0183064aaa96bce8848db2a3d  /Users/sma/projects/ushas/tools/smoke/target/release/ushas-smoke",
+    "executable": "/Users/sma/projects/ushas/tools/smoke/target/release/ushas-smoke",
+    "features": "frame-interpolation (includes temporal)",
+    "metal_debug_layer": null,
+    "os": "ProductName:\t\tmacOS\nProductVersion:\t\t26.5.2\nBuildVersion:\t\t25F84",
+    "rustc": "rustc 1.97.1 (8bab26f4f 2026-07-14)",
+    "surface_mode": "offscreen image / no Winit or swapchain / unpaced ScheduleRunner"
+  },
+  "screenshot": {
+    "all_zero_rgba": false,
+    "alpha_zero_pixels": 0,
+    "capture_error": null,
+    "height": 720,
+    "nonuniform": true,
+    "opaque_fraction": 1.0,
+    "path": "preview.png",
+    "scene_luminance_max": 244,
+    "scene_luminance_min": 0,
+    "scene_unique_colors": 7706,
+    "width": 1280
+  },
+  "preview_sha256": "891c75ebd93410c48e3ea1219ce50b300f545e1ed4a2a5f6afc1e9dd8377fbef",
+  "scope": "Captured offscreen pixels, not presentation or a performance result. Exploratory scene build before the model commit; source base and dirty state retained.",
+  "source_capture": "/private/tmp/ushas-roadmap-evidence/claude-temporal-offscreen-01.json.png"
+}

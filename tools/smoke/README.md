@@ -7,6 +7,8 @@ with an articulated head, limbs, and tail. See [CHARACTER.md](CHARACTER.md) for
 the reference and attribution. `--subject shapes` restores the original cube
 and thin-rail scene for historical comparisons; reports identify the subject
 and geometry version, which must match across benchmark arms.
+The [captured half-resolution Temporal preview](preview.png) has its
+[render provenance](preview.json) alongside it.
 Build and run from the Ushas repository. Rust 1.97.1 is selected by its tracked
 toolchain file.
 
