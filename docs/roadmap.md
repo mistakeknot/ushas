@@ -4,10 +4,11 @@ The next release targets a chosen frame budget at the highest acceptable image
 quality on Apple Silicon. The work is tracked in Beads; this document states the
 acceptance contract rather than duplicating task status.
 
-The current product milestone is the [Ushas Bench Claude render
-lab](plans/2026-09-05-ushas-bench.md): a shareable native preview with benchmark,
-comparison, adjustable stress and offline results. Its [validation
-receipt](research/ushas-bench-preview-01.md) tracks package and hardware evidence.
+The [Ushas Bench Claude render lab](plans/2026-09-05-ushas-bench.md) is available
+as a packaged native preview with benchmark, comparison, adjustable stress and
+offline results. Background runs continue with other windows in front. Its
+[validation receipt](research/ushas-bench-preview-01.md) records the complete
+24-arm campaign, ten-minute stress run, package and native UI checks.
 This milestone uses completed-render throughput and independent quality images;
 it does not supply the GPU-only timing input required by automatic adaptation.
 
