@@ -1,0 +1,320 @@
+{
+  "schema": 1,
+  "valid": false,
+  "scope": "Paired run-level mean CPU-loop time ratios, candidate/native-MSAA4; lower is faster. These are not GPU cost, GPU completion rate, or panel delivery measurements.",
+  "limitations": [
+    "Four repetitions provide limited uncertainty resolution.",
+    "Each run is one observation; frame samples are not independent repetitions.",
+    "Pipeline depth, synchronization, and readback can affect CPU-loop throughput.",
+    "The unpaced image queue can retain GPU work beyond CPU observations; CPU cadence is not frame latency or GPU completion.",
+    "Intervals are pointwise bootstrap estimates, not family-wise guarantees across arms and loads."
+  ],
+  "bootstrap_seed": 21434,
+  "bootstrap_draws": 10000,
+  "practical_threshold": 0.08,
+  "provenance": {
+    "adapter": {
+      "backend": "Metal",
+      "driver": "",
+      "driver_info": "",
+      "name": "Apple M5 Max"
+    },
+    "environment": {},
+    "runtime": {
+      "features": "frame-interpolation (includes temporal)",
+      "metal_debug_layer": null,
+      "os": "ProductName:\t\tmacOS\nProductVersion:\t\t26.5.2\nBuildVersion:\t\t25F84",
+      "rustc": "rustc 1.97.1 (8bab26f4f 2026-07-14)"
+    },
+    "scene_version": "claude-toy-v1",
+    "source_dirty_at_build": "false",
+    "source_revision": "9e53efea7bd2f550e9aac0669c14616bc32618e6",
+    "subject": "claude"
+  },
+  "runner_checkout_varied": true,
+  "errors": [],
+  "planned_runs": 60,
+  "execution_records": 60,
+  "comparisons": [
+    {
+      "load": 0,
+      "baseline": "native-disabled-msaa4",
+      "candidate": "temporal-native",
+      "failed_or_missing_runs": [],
+      "paired_runs": 4,
+      "ratios": [
+        1.5279815787121107,
+        1.415964846507087,
+        1.1714256805285366,
+        1.4337547441824954
+      ],
+      "mean_ratio": 1.3872817124825574,
+      "ratio_ci95": [
+        1.2370079464420263,
+        1.4999773956608549
+      ],
+      "mean_loop_time_reduction": -0.3872817124825574,
+      "decision": "clear_practical_regression"
+    },
+    {
+      "load": 0,
+      "baseline": "native-disabled-msaa4",
+      "candidate": "temporal-half",
+      "failed_or_missing_runs": [],
+      "paired_runs": 4,
+      "ratios": [
+        1.5809472027472884,
+        1.6663556425640946,
+        1.7388266369599494,
+        1.4267235711645885
+      ],
+      "mean_ratio": 1.6032132633589802,
+      "ratio_ci95": [
+        1.486631589014465,
+        1.702591139762022
+      ],
+      "mean_loop_time_reduction": -0.6032132633589802,
+      "decision": "clear_practical_regression"
+    },
+    {
+      "load": 0,
+      "baseline": "native-disabled-msaa4",
+      "candidate": "temporal-third",
+      "failed_or_missing_runs": [],
+      "paired_runs": 4,
+      "ratios": [
+        1.6139210133350559,
+        1.5129202427856125,
+        1.4432256539498243,
+        1.5572684993805725
+      ],
+      "mean_ratio": 1.5318338523627664,
+      "ratio_ci95": [
+        1.4717363653075113,
+        1.5886708206976952
+      ],
+      "mean_loop_time_reduction": -0.5318338523627664,
+      "decision": "clear_practical_regression"
+    },
+    {
+      "load": 0,
+      "baseline": "native-disabled-msaa4",
+      "candidate": "bilinear-half",
+      "failed_or_missing_runs": [],
+      "paired_runs": 4,
+      "ratios": [
+        1.2920884763559985,
+        1.1437389215012337,
+        1.0552186623619613,
+        1.0088956554258157
+      ],
+      "mean_ratio": 1.1249854289112524,
+      "ratio_ci95": [
+        1.0320571588938885,
+        1.2328710228574893
+      ],
+      "mean_loop_time_reduction": -0.12498542891125242,
+      "decision": "uncertain_or_below_practical_threshold"
+    },
+    {
+      "load": 8000,
+      "baseline": "native-disabled-msaa4",
+      "candidate": "temporal-native",
+      "failed_or_missing_runs": [],
+      "paired_runs": 4,
+      "ratios": [
+        1.0125024079837912,
+        1.0663521259229651,
+        1.0601848155481002,
+        1.0623890834122505
+      ],
+      "mean_ratio": 1.0503571082167769,
+      "ratio_ci95": [
+        1.024974076840906,
+        1.064810298329249
+      ],
+      "mean_loop_time_reduction": -0.05035710821677686,
+      "decision": "uncertain_or_below_practical_threshold"
+    },
+    {
+      "load": 8000,
+      "baseline": "native-disabled-msaa4",
+      "candidate": "temporal-half",
+      "failed_or_missing_runs": [],
+      "paired_runs": 4,
+      "ratios": [
+        0.3748307260055522,
+        0.3408884481419037,
+        0.3928251172366146,
+        0.445163852360619
+      ],
+      "mean_ratio": 0.3884270359361724,
+      "ratio_ci95": [
+        0.35387261541558146,
+        0.4275805707718523
+      ],
+      "mean_loop_time_reduction": 0.6115729640638277,
+      "decision": "clear_practical_improvement"
+    },
+    {
+      "load": 8000,
+      "baseline": "native-disabled-msaa4",
+      "candidate": "temporal-third",
+      "failed_or_missing_runs": [],
+      "paired_runs": 4,
+      "ratios": [
+        0.19356088982231204,
+        0.1684271201970977,
+        0.1830687359652161,
+        0.19721292115161226
+      ],
+      "mean_ratio": 0.18556741678405952,
+      "ratio_ci95": [
+        0.1747105626034013,
+        0.19538690548696214
+      ],
+      "mean_loop_time_reduction": 0.8144325832159405,
+      "decision": "clear_practical_improvement"
+    },
+    {
+      "load": 8000,
+      "baseline": "native-disabled-msaa4",
+      "candidate": "bilinear-half",
+      "failed_or_missing_runs": [],
+      "paired_runs": 4,
+      "ratios": [
+        0.33856026481565993,
+        0.3205946014227144,
+        0.3222691562513988,
+        0.34844601618393733
+      ],
+      "mean_ratio": 0.33246750966842764,
+      "ratio_ci95": [
+        0.3214318788370566,
+        0.34350314049979863
+      ],
+      "mean_loop_time_reduction": 0.6675324903315724,
+      "decision": "clear_practical_improvement"
+    },
+    {
+      "load": 20000,
+      "baseline": "native-disabled-msaa4",
+      "candidate": "temporal-native",
+      "failed_or_missing_runs": [
+        "013-r0-load20000-native-disabled-msaa4",
+        "014-r0-load20000-temporal-native",
+        "016-r1-load20000-native-disabled-msaa4",
+        "015-r1-load20000-temporal-native",
+        "037-r2-load20000-native-disabled-msaa4",
+        "038-r2-load20000-temporal-native",
+        "052-r3-load20000-native-disabled-msaa4"
+      ],
+      "paired_runs": 0,
+      "mean_ratio": null,
+      "ratio_ci95": null,
+      "decision": "incomplete_or_invalid"
+    },
+    {
+      "load": 20000,
+      "baseline": "native-disabled-msaa4",
+      "candidate": "temporal-half",
+      "failed_or_missing_runs": [
+        "013-r0-load20000-native-disabled-msaa4",
+        "016-r1-load20000-native-disabled-msaa4",
+        "037-r2-load20000-native-disabled-msaa4",
+        "052-r3-load20000-native-disabled-msaa4"
+      ],
+      "paired_runs": 0,
+      "mean_ratio": null,
+      "ratio_ci95": null,
+      "decision": "incomplete_or_invalid"
+    },
+    {
+      "load": 20000,
+      "baseline": "native-disabled-msaa4",
+      "candidate": "temporal-third",
+      "failed_or_missing_runs": [
+        "013-r0-load20000-native-disabled-msaa4",
+        "016-r1-load20000-native-disabled-msaa4",
+        "037-r2-load20000-native-disabled-msaa4",
+        "052-r3-load20000-native-disabled-msaa4"
+      ],
+      "paired_runs": 0,
+      "mean_ratio": null,
+      "ratio_ci95": null,
+      "decision": "incomplete_or_invalid"
+    },
+    {
+      "load": 20000,
+      "baseline": "native-disabled-msaa4",
+      "candidate": "bilinear-half",
+      "failed_or_missing_runs": [
+        "013-r0-load20000-native-disabled-msaa4",
+        "016-r1-load20000-native-disabled-msaa4",
+        "037-r2-load20000-native-disabled-msaa4",
+        "052-r3-load20000-native-disabled-msaa4"
+      ],
+      "paired_runs": 0,
+      "mean_ratio": null,
+      "ratio_ci95": null,
+      "decision": "incomplete_or_invalid"
+    }
+  ],
+  "started_utc": "2026-09-05T02:18:41.544874+00:00",
+  "finished_utc": "2026-09-05T02:35:37.563930+00:00",
+  "binary_sha256": "6430b1db65cc58fc68125397b6756c0d5d725b8267d91137cf13e85735ce604e",
+  "runner_sha256": "b2854209f7b116110e819219a802289fa67970b9ab154a6d01f59af8f027b430",
+  "campaign_script_sha256": "6f1071b2c04f75ddcb4bd40b8ba29d6a08e669820d1991c127d833e52b702dba",
+  "valid_runs": 53,
+  "invalid_runs": [
+    {
+      "id": "013-r0-load20000-native-disabled-msaa4",
+      "errors": [
+        "run was not attempted successfully; see campaign execution record",
+        "runner manifest did not validate a successful child"
+      ]
+    },
+    {
+      "id": "014-r0-load20000-temporal-native",
+      "errors": [
+        "run was not attempted successfully; see campaign execution record",
+        "runner manifest did not validate a successful child"
+      ]
+    },
+    {
+      "id": "015-r1-load20000-temporal-native",
+      "errors": [
+        "run was not attempted successfully; see campaign execution record",
+        "runner manifest did not validate a successful child"
+      ]
+    },
+    {
+      "id": "016-r1-load20000-native-disabled-msaa4",
+      "errors": [
+        "run was not attempted successfully; see campaign execution record",
+        "runner manifest did not validate a successful child"
+      ]
+    },
+    {
+      "id": "037-r2-load20000-native-disabled-msaa4",
+      "errors": [
+        "run was not attempted successfully; see campaign execution record",
+        "runner manifest did not validate a successful child"
+      ]
+    },
+    {
+      "id": "038-r2-load20000-temporal-native",
+      "errors": [
+        "run was not attempted successfully; see campaign execution record",
+        "runner manifest did not validate a successful child"
+      ]
+    },
+    {
+      "id": "052-r3-load20000-native-disabled-msaa4",
+      "errors": [
+        "run was not attempted successfully; see campaign execution record",
+        "runner manifest did not validate a successful child"
+      ]
+    }
+  ]
+}
