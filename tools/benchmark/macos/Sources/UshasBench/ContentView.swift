@@ -294,8 +294,8 @@ struct StressSliders: View {
   var body: some View {
     VStack(spacing: 18) {
       control("Claudes", value: $model.configuration.claudes, range: 1...256, step: 1)
-      control("Lights", value: $model.configuration.lights, range: 1...32, step: 1)
-      control("Particles", value: $model.configuration.particles, range: 0...32768, step: 512)
+      control("Lights", value: $model.configuration.lights, range: 1...16, step: 1)
+      control("Particles", value: $model.configuration.particles, range: 0...16384, step: 512)
       control("Extra pixel load", value: $model.configuration.fill, range: 0...16, step: 1)
     }
   }
