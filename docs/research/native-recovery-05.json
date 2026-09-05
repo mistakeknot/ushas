@@ -1,0 +1,629 @@
+{
+  "schema": 1,
+  "result": "Four native minimize event/reset/pixel passes; run04 also has bounded independent native-window UI acceptance. Actual OS sleep/wake remains unaccepted.",
+  "source_revision": "4e3b115d8427cb4b8e7c9025cef993f98c6d2c30",
+  "binary_sha256": "74d8401f4b80ef614249a5351d687acf1cd4bb9e6b32551be5f508265d53aa82",
+  "wrapper_source_revision": "8b68098d52154a2cc3fb02faaa8fc84854ce9faf",
+  "evidence_archive": "/Users/sma/projects/docs/ushas/evidence/native-recovery-05",
+  "provenance_archive": "/Users/sma/projects/docs/ushas/evidence/native-recovery-04",
+  "auditor_sha256": "6271070498e5452460a551303e3e40f16fa63d4215878b2a09c91d287835b41d",
+  "auditor_cpu_tests": {
+    "passed": 14,
+    "failed": 0,
+    "scope": "Constructed OS sleep fixtures test the validator and are not hardware sleep evidence."
+  },
+  "minimize_runs": [
+    {
+      "schema": 1,
+      "source_revision": "4e3b115d8427cb4b8e7c9025cef993f98c6d2c30",
+      "wrapper_source_revision": "8b68098d52154a2cc3fb02faaa8fc84854ce9faf",
+      "wrapper_source_difference": [
+        "docs/plans/2026-09-05-native-recovery-04.md",
+        "docs/research/native-recovery-04.json",
+        "docs/research/native-recovery-04.md",
+        "docs/research/proxy-validation-control-03.json",
+        "docs/research/proxy-validation-control-03.md",
+        "docs/research/roadmap-execution-01.md"
+      ],
+      "binary_sha256": "74d8401f4b80ef614249a5351d687acf1cd4bb9e6b32551be5f508265d53aa82",
+      "source_archive_verified_blobs": 139,
+      "source_archive_sha256": "a3f7632bfc511026036166b8a943b92d9e523c6d612b7bff28bf1303c341bd44",
+      "provenance_archive": "/Users/sma/projects/dotfiles/common/projects/docs/ushas/evidence/native-recovery-04",
+      "report": "/Users/sma/projects/dotfiles/common/projects/docs/ushas/evidence/native-recovery-05/window-minimize-01.json",
+      "report_sha256": "dc0c3094c4c70dd185a893e9d59bd449c62f48a28cc5f43935e5b7fd5f21b3ae",
+      "manifest_sha256": "4c700c0f88793e4f6bbf6e20d567eed90e4b9482de3a3e19d08d8e7f3e76e478",
+      "auditor_sha256": "6271070498e5452460a551303e3e40f16fa63d4215878b2a09c91d287835b41d",
+      "native_event_reset_pixel_acceptance": true,
+      "interactive_window_audited": false,
+      "protocol": {
+        "exercise": "WindowMinimize",
+        "native_event_count": 9,
+        "arm_sequence": 3,
+        "after_sequence": 4,
+        "minimize_request_sequence": 4,
+        "restore_request_sequence": 7,
+        "minimized_hold_seconds": 0.5010592090000001,
+        "view_id": 4294967070,
+        "window_id": 4294967227,
+        "reset_request_app_frame": 394,
+        "reset_ack_app_frame": 396,
+        "finished_app_frame": 419,
+        "native_lifecycle_wall_seconds": 2.315535,
+        "phase_frames": {
+          "initial": {
+            "retained_rows": 25,
+            "distinct_eligible_frames": 23,
+            "max_consecutive_eligible_frames": 23
+          },
+          "changed": {
+            "retained_rows": 4,
+            "distinct_eligible_frames": 3,
+            "max_consecutive_eligible_frames": 3
+          },
+          "restored": {
+            "retained_rows": 25,
+            "distinct_eligible_frames": 24,
+            "max_consecutive_eligible_frames": 24
+          }
+        },
+        "observation_evictions": 0
+      },
+      "decoded_captures": [
+        {
+          "phase": "initial",
+          "path": "window-minimize-01.json.lifecycle-initial.png",
+          "sha256": "48e9b4bf9cf0bf0d90c9407cc5e2aad1d7b738a6234d634d47a8403b247d2415",
+          "width": 1280,
+          "height": 720,
+          "opaque_fraction": 1,
+          "scene_unique_colors": 9057,
+          "scene_luminance_min": 1,
+          "scene_luminance_max": 243
+        },
+        {
+          "phase": "restored",
+          "path": "window-minimize-01.json.lifecycle-restored.png",
+          "sha256": "d010d39d8a2d6fd3b27ae8de87d79daba1bb8e5d11264898a4b249d3f321ff65",
+          "width": 1280,
+          "height": 720,
+          "opaque_fraction": 1,
+          "scene_unique_colors": 8907,
+          "scene_luminance_min": 0,
+          "scene_luminance_max": 243
+        },
+        {
+          "phase": "warmup_screenshot",
+          "path": "window-minimize-01.json.png.warmup.png",
+          "sha256": "6f0da21ea130c9f6f7857c4053d91a9609a42b993d8d2bb7664fa3650874a444",
+          "width": 1280,
+          "height": 720,
+          "opaque_fraction": 1,
+          "scene_unique_colors": 7690,
+          "scene_luminance_min": 0,
+          "scene_luminance_max": 245
+        },
+        {
+          "phase": "screenshot",
+          "path": "window-minimize-01.json.png",
+          "sha256": "013bd39116c507fc6d1c6739de59d1157598e7bee7becd31f291143f5552553f",
+          "width": 1280,
+          "height": 720,
+          "opaque_fraction": 1,
+          "scene_unique_colors": 7606,
+          "scene_luminance_min": 0,
+          "scene_luminance_max": 245
+        }
+      ],
+      "scope": "Native event/reset/decoded-pixel acceptance for this exercise only. External action attribution, interactive window review, motion quality, panel delivery, GPU cost, adaptive behavior and historical crash reproduction require separate evidence.",
+      "run": "window-minimize-01",
+      "session_receipt_sha256": "4e7ec656738a509354f3674e9ad90c1230a5284c6147ea5b7f8164073dc7548f",
+      "environment_samples": {
+        "count": 82,
+        "all_awake": true,
+        "all_on_console": true,
+        "locked_true_count": 0,
+        "locked_unknown_count": 82
+      },
+      "interactive_window_acceptance": false,
+      "ui_scope": "No successful actual native-window image retained for this run."
+    },
+    {
+      "schema": 1,
+      "source_revision": "4e3b115d8427cb4b8e7c9025cef993f98c6d2c30",
+      "wrapper_source_revision": "8b68098d52154a2cc3fb02faaa8fc84854ce9faf",
+      "wrapper_source_difference": [
+        "docs/plans/2026-09-05-native-recovery-04.md",
+        "docs/research/native-recovery-04.json",
+        "docs/research/native-recovery-04.md",
+        "docs/research/proxy-validation-control-03.json",
+        "docs/research/proxy-validation-control-03.md",
+        "docs/research/roadmap-execution-01.md"
+      ],
+      "binary_sha256": "74d8401f4b80ef614249a5351d687acf1cd4bb9e6b32551be5f508265d53aa82",
+      "source_archive_verified_blobs": 139,
+      "source_archive_sha256": "a3f7632bfc511026036166b8a943b92d9e523c6d612b7bff28bf1303c341bd44",
+      "provenance_archive": "/Users/sma/projects/dotfiles/common/projects/docs/ushas/evidence/native-recovery-04",
+      "report": "/Users/sma/projects/dotfiles/common/projects/docs/ushas/evidence/native-recovery-05/window-minimize-02.json",
+      "report_sha256": "241ee025e548b9cb1ec8fb9a618ce8c84ab6e568388839eda056d2064bb6f2a4",
+      "manifest_sha256": "ca4bc1278c758734fee6e7535e055997916ce851d7712f81dde82206313118ca",
+      "auditor_sha256": "6271070498e5452460a551303e3e40f16fa63d4215878b2a09c91d287835b41d",
+      "native_event_reset_pixel_acceptance": true,
+      "interactive_window_audited": false,
+      "protocol": {
+        "exercise": "WindowMinimize",
+        "native_event_count": 9,
+        "arm_sequence": 3,
+        "after_sequence": 4,
+        "minimize_request_sequence": 4,
+        "restore_request_sequence": 7,
+        "minimized_hold_seconds": 0.5005343339999999,
+        "view_id": 4294967070,
+        "window_id": 4294967227,
+        "reset_request_app_frame": 368,
+        "reset_ack_app_frame": 370,
+        "finished_app_frame": 394,
+        "native_lifecycle_wall_seconds": 2.2608449999999998,
+        "phase_frames": {
+          "initial": {
+            "retained_rows": 25,
+            "distinct_eligible_frames": 23,
+            "max_consecutive_eligible_frames": 23
+          },
+          "changed": {
+            "retained_rows": 4,
+            "distinct_eligible_frames": 3,
+            "max_consecutive_eligible_frames": 3
+          },
+          "restored": {
+            "retained_rows": 25,
+            "distinct_eligible_frames": 24,
+            "max_consecutive_eligible_frames": 24
+          }
+        },
+        "observation_evictions": 0
+      },
+      "decoded_captures": [
+        {
+          "phase": "initial",
+          "path": "window-minimize-02.json.lifecycle-initial.png",
+          "sha256": "f55255d6243e4cac905a3d57ac7bed69f3794014750244f5715939c77f5af962",
+          "width": 1280,
+          "height": 720,
+          "opaque_fraction": 1,
+          "scene_unique_colors": 9070,
+          "scene_luminance_min": 1,
+          "scene_luminance_max": 243
+        },
+        {
+          "phase": "restored",
+          "path": "window-minimize-02.json.lifecycle-restored.png",
+          "sha256": "43432d7d221375e407991bac6f2a23263bfcbe8c5dd196d3d66db70de8398ca2",
+          "width": 1280,
+          "height": 720,
+          "opaque_fraction": 1,
+          "scene_unique_colors": 8957,
+          "scene_luminance_min": 0,
+          "scene_luminance_max": 243
+        },
+        {
+          "phase": "warmup_screenshot",
+          "path": "window-minimize-02.json.png.warmup.png",
+          "sha256": "54451daf306d9cde4ccf51f95f56d96cbc41e56bab49b896e62ac145d64e0da2",
+          "width": 1280,
+          "height": 720,
+          "opaque_fraction": 1,
+          "scene_unique_colors": 7676,
+          "scene_luminance_min": 0,
+          "scene_luminance_max": 244
+        },
+        {
+          "phase": "screenshot",
+          "path": "window-minimize-02.json.png",
+          "sha256": "31339d73bcc2e5a3e4ec320a330572c5f275a921eb1cc87de67867230d539a02",
+          "width": 1280,
+          "height": 720,
+          "opaque_fraction": 1,
+          "scene_unique_colors": 7713,
+          "scene_luminance_min": 0,
+          "scene_luminance_max": 244
+        }
+      ],
+      "scope": "Native event/reset/decoded-pixel acceptance for this exercise only. External action attribution, interactive window review, motion quality, panel delivery, GPU cost, adaptive behavior and historical crash reproduction require separate evidence.",
+      "run": "window-minimize-02",
+      "session_receipt_sha256": "d71cd3a8a1fe280b97d7bd3d7112ed6b884c009cb0f258bf36e2c1ccab42a532",
+      "environment_samples": {
+        "count": 83,
+        "all_awake": true,
+        "all_on_console": true,
+        "locked_true_count": 0,
+        "locked_unknown_count": 83
+      },
+      "interactive_window_acceptance": false,
+      "ui_scope": "No successful actual native-window image retained for this run."
+    },
+    {
+      "schema": 1,
+      "source_revision": "4e3b115d8427cb4b8e7c9025cef993f98c6d2c30",
+      "wrapper_source_revision": "8b68098d52154a2cc3fb02faaa8fc84854ce9faf",
+      "wrapper_source_difference": [
+        "docs/plans/2026-09-05-native-recovery-04.md",
+        "docs/research/native-recovery-04.json",
+        "docs/research/native-recovery-04.md",
+        "docs/research/proxy-validation-control-03.json",
+        "docs/research/proxy-validation-control-03.md",
+        "docs/research/roadmap-execution-01.md"
+      ],
+      "binary_sha256": "74d8401f4b80ef614249a5351d687acf1cd4bb9e6b32551be5f508265d53aa82",
+      "source_archive_verified_blobs": 139,
+      "source_archive_sha256": "a3f7632bfc511026036166b8a943b92d9e523c6d612b7bff28bf1303c341bd44",
+      "provenance_archive": "/Users/sma/projects/dotfiles/common/projects/docs/ushas/evidence/native-recovery-04",
+      "report": "/Users/sma/projects/dotfiles/common/projects/docs/ushas/evidence/native-recovery-05/window-minimize-03.json",
+      "report_sha256": "21a7d906cbadd1f9340aef6734c9ee11fe343ae610eac2163a269a01a6407a41",
+      "manifest_sha256": "00085cbc63afdf885a792ec9747e7e7e967a74ccb17f56c70ef124d2a0156555",
+      "auditor_sha256": "6271070498e5452460a551303e3e40f16fa63d4215878b2a09c91d287835b41d",
+      "native_event_reset_pixel_acceptance": true,
+      "interactive_window_audited": false,
+      "protocol": {
+        "exercise": "WindowMinimize",
+        "native_event_count": 9,
+        "arm_sequence": 3,
+        "after_sequence": 4,
+        "minimize_request_sequence": 4,
+        "restore_request_sequence": 7,
+        "minimized_hold_seconds": 0.501695708,
+        "view_id": 4294967070,
+        "window_id": 4294967227,
+        "reset_request_app_frame": 314,
+        "reset_ack_app_frame": 316,
+        "finished_app_frame": 339,
+        "native_lifecycle_wall_seconds": 2.55824,
+        "phase_frames": {
+          "initial": {
+            "retained_rows": 25,
+            "distinct_eligible_frames": 23,
+            "max_consecutive_eligible_frames": 23
+          },
+          "changed": {
+            "retained_rows": 2,
+            "distinct_eligible_frames": 1,
+            "max_consecutive_eligible_frames": 1
+          },
+          "restored": {
+            "retained_rows": 23,
+            "distinct_eligible_frames": 22,
+            "max_consecutive_eligible_frames": 22
+          }
+        },
+        "observation_evictions": 0
+      },
+      "decoded_captures": [
+        {
+          "phase": "initial",
+          "path": "window-minimize-03.json.lifecycle-initial.png",
+          "sha256": "71e96cac320e590d4afd9531f605c92ee7b4a8713a17c82d85619ae32787305d",
+          "width": 1280,
+          "height": 720,
+          "opaque_fraction": 1,
+          "scene_unique_colors": 9041,
+          "scene_luminance_min": 1,
+          "scene_luminance_max": 243
+        },
+        {
+          "phase": "restored",
+          "path": "window-minimize-03.json.lifecycle-restored.png",
+          "sha256": "b3873ffe2e1091fb1f14e89f81f2b98a45c3b8daa1218ff761ffd41368c80553",
+          "width": 1280,
+          "height": 720,
+          "opaque_fraction": 1,
+          "scene_unique_colors": 8875,
+          "scene_luminance_min": 1,
+          "scene_luminance_max": 243
+        },
+        {
+          "phase": "warmup_screenshot",
+          "path": "window-minimize-03.json.png.warmup.png",
+          "sha256": "b5645e96185b37ed4309475a81e72cb22c18e87e974a9d214c98f55a7d37111e",
+          "width": 1280,
+          "height": 720,
+          "opaque_fraction": 1,
+          "scene_unique_colors": 7654,
+          "scene_luminance_min": 0,
+          "scene_luminance_max": 245
+        },
+        {
+          "phase": "screenshot",
+          "path": "window-minimize-03.json.png",
+          "sha256": "56e84fd035990e1300dbdef5c52048f2700c80aa2549ba2c0f4e78ab7e6f62bf",
+          "width": 1280,
+          "height": 720,
+          "opaque_fraction": 1,
+          "scene_unique_colors": 7658,
+          "scene_luminance_min": 0,
+          "scene_luminance_max": 244
+        }
+      ],
+      "scope": "Native event/reset/decoded-pixel acceptance for this exercise only. External action attribution, interactive window review, motion quality, panel delivery, GPU cost, adaptive behavior and historical crash reproduction require separate evidence.",
+      "run": "window-minimize-03",
+      "session_receipt_sha256": "025e9bdce82e35b65bedb56103d5ad8e370b712ff9a6e02dd9d3a9c770d9fe61",
+      "environment_samples": {
+        "count": 82,
+        "all_awake": true,
+        "all_on_console": true,
+        "locked_true_count": 0,
+        "locked_unknown_count": 82
+      },
+      "interactive_window_acceptance": false,
+      "ui_scope": "No successful actual native-window image retained for this run."
+    },
+    {
+      "schema": 1,
+      "source_revision": "4e3b115d8427cb4b8e7c9025cef993f98c6d2c30",
+      "wrapper_source_revision": "8b68098d52154a2cc3fb02faaa8fc84854ce9faf",
+      "wrapper_source_difference": [
+        "docs/plans/2026-09-05-native-recovery-04.md",
+        "docs/research/native-recovery-04.json",
+        "docs/research/native-recovery-04.md",
+        "docs/research/proxy-validation-control-03.json",
+        "docs/research/proxy-validation-control-03.md",
+        "docs/research/roadmap-execution-01.md"
+      ],
+      "binary_sha256": "74d8401f4b80ef614249a5351d687acf1cd4bb9e6b32551be5f508265d53aa82",
+      "source_archive_verified_blobs": 139,
+      "source_archive_sha256": "a3f7632bfc511026036166b8a943b92d9e523c6d612b7bff28bf1303c341bd44",
+      "provenance_archive": "/Users/sma/projects/dotfiles/common/projects/docs/ushas/evidence/native-recovery-04",
+      "report": "/Users/sma/projects/dotfiles/common/projects/docs/ushas/evidence/native-recovery-05/window-minimize-04.json",
+      "report_sha256": "36d7ee74078f908aa42f46e8e9c47d4ea2714539c5d5a2ace51d46b0213475bb",
+      "manifest_sha256": "32ea5c640b9a9efc704a4defdb85722994debeb834d8fdc7fae1a9450cf93695",
+      "auditor_sha256": "6271070498e5452460a551303e3e40f16fa63d4215878b2a09c91d287835b41d",
+      "native_event_reset_pixel_acceptance": true,
+      "interactive_window_audited": false,
+      "protocol": {
+        "exercise": "WindowMinimize",
+        "native_event_count": 9,
+        "arm_sequence": 3,
+        "after_sequence": 4,
+        "minimize_request_sequence": 4,
+        "restore_request_sequence": 7,
+        "minimized_hold_seconds": 0.500784084,
+        "view_id": 4294967070,
+        "window_id": 4294967227,
+        "reset_request_app_frame": 388,
+        "reset_ack_app_frame": 390,
+        "finished_app_frame": 412,
+        "native_lifecycle_wall_seconds": 2.326163,
+        "phase_frames": {
+          "initial": {
+            "retained_rows": 25,
+            "distinct_eligible_frames": 23,
+            "max_consecutive_eligible_frames": 23
+          },
+          "changed": {
+            "retained_rows": 7,
+            "distinct_eligible_frames": 6,
+            "max_consecutive_eligible_frames": 6
+          },
+          "restored": {
+            "retained_rows": 24,
+            "distinct_eligible_frames": 23,
+            "max_consecutive_eligible_frames": 23
+          }
+        },
+        "observation_evictions": 0
+      },
+      "decoded_captures": [
+        {
+          "phase": "initial",
+          "path": "window-minimize-04.json.lifecycle-initial.png",
+          "sha256": "71e96cac320e590d4afd9531f605c92ee7b4a8713a17c82d85619ae32787305d",
+          "width": 1280,
+          "height": 720,
+          "opaque_fraction": 1,
+          "scene_unique_colors": 9041,
+          "scene_luminance_min": 1,
+          "scene_luminance_max": 243
+        },
+        {
+          "phase": "restored",
+          "path": "window-minimize-04.json.lifecycle-restored.png",
+          "sha256": "9d4ce31deb7db647a7e0f4fbb1636d74801d0ccfd5959d564a5fa9900ddcf71c",
+          "width": 1280,
+          "height": 720,
+          "opaque_fraction": 1,
+          "scene_unique_colors": 9068,
+          "scene_luminance_min": 1,
+          "scene_luminance_max": 243
+        },
+        {
+          "phase": "warmup_screenshot",
+          "path": "window-minimize-04.json.png.warmup.png",
+          "sha256": "ef33935dc3d4cf756a6ae4ab00e3896a9dd47b78b214db6ed2a93a6715f1f518",
+          "width": 1280,
+          "height": 720,
+          "opaque_fraction": 1,
+          "scene_unique_colors": 7824,
+          "scene_luminance_min": 0,
+          "scene_luminance_max": 243
+        },
+        {
+          "phase": "screenshot",
+          "path": "window-minimize-04.json.png",
+          "sha256": "6fd66b13e8b79bc49badeea2e12e445cb8854195a2824cd60c8207b1a699b25f",
+          "width": 1280,
+          "height": 720,
+          "opaque_fraction": 1,
+          "scene_unique_colors": 7706,
+          "scene_luminance_min": 0,
+          "scene_luminance_max": 244
+        }
+      ],
+      "scope": "Native event/reset/decoded-pixel acceptance for this exercise only. External action attribution, interactive window review, motion quality, panel delivery, GPU cost, adaptive behavior and historical crash reproduction require separate evidence.",
+      "run": "window-minimize-04",
+      "session_receipt_sha256": "e8d76e0d95c17d507378cd5b45d5590d684be05da8d1e62508525658898a9cbd",
+      "environment_samples": {
+        "count": 81,
+        "all_awake": true,
+        "all_on_console": true,
+        "locked_true_count": 0,
+        "locked_unknown_count": 81
+      },
+      "interactive_window_acceptance": true,
+      "ui_scope": "Separate independent-ui-review-04.json"
+    }
+  ],
+  "ui_review": {
+    "schema": 1,
+    "interactive_window_acceptance": true,
+    "run": "window-minimize-04",
+    "image_sha256": "4756310a700bd9469251ee68ac4255e437fb8fcfce785afb54b9c943395bdc6a",
+    "capture_receipt_sha256": "aa0e77299bd6cc7750c02ba7530e27d778fa5d6a8406a7064185e2bb9ea8e4dd",
+    "helper_sha256": "c476c591100b899ca176ce52e7d880d0cd4de5bc333c46c2c735aa03eaf0673f",
+    "pid": 23883,
+    "window_id": 3211,
+    "layer": 3,
+    "onscreen": true,
+    "stable_before_after": true,
+    "focus_request_exit": 0,
+    "capture_exit": 0,
+    "capture_utc": "2026-09-05T18:06:35.036809+00:00",
+    "encoded_recovery_reset_log_utc": "2026-09-05T18:06:34.503492Z",
+    "capture_within_run": true,
+    "image_dimensions": [
+      1280,
+      784
+    ],
+    "content_dimensions": [
+      1280,
+      720
+    ],
+    "titlebar_height_pixels": 64,
+    "content_opaque_fraction": 1.0,
+    "content_unique_rgb_colors": 19753,
+    "visual_review": {
+      "reviewer": "native_recovery independent reviewer",
+      "method": "view_image of original native-window PNG; independent Pillow dimensions/opacity check",
+      "finding": "Actual Ushas titlebar plus the complete Claude scene: three figures with readable faces, radial head shapes, clothing/tails, thin rails, checkerboard and header. No missing output or obvious corruption visible."
+    },
+    "scope": "OS frontmost request acknowledged for the uniquely observed Ushas process, followed by actual desktop capture restricted to its stable window bounds after encoded recovery reset. Not a fixture texture, queried key-window focus state, continuous focus/visibility measurement, physical panel delivery or motion-quality claim.",
+    "capture_method_causality": "Window-id capture failed in run03 at sharing state0. Rectangle capture succeeded in run04 at sharing state1. Screen-capture access preflight was true; method alone is not an isolated cause."
+  },
+  "ui_review_sha256": "85bf44da1c84a4bd75f882cdf151a396deaadc37d4dbedfe5faa13f7a5e141a7",
+  "preserved_ui_attempt_failures": [
+    {
+      "run": "window-minimize-01",
+      "helper_exit": 1,
+      "interactive_window_acceptance": false,
+      "reason": "Layer0-only selection excluded the AlwaysOnTop layer3 fixture window; no actual native capture retained.",
+      "evidence": [
+        "capture_native_window.py",
+        "capture-helper.log"
+      ]
+    },
+    {
+      "run": "window-minimize-02",
+      "helper_exit": 1,
+      "interactive_window_acceptance": false,
+      "reason": "Own-process auxiliary windows made the first selection nonunique. A later manual retry occurred after the fixture exited; frontmost and window-id capture both failed.",
+      "evidence": [
+        "capture-helper-02.log",
+        "window-minimize-02.window-candidates.json",
+        "window-minimize-02.native-window.json"
+      ],
+      "manual_retry_after_wrapper_finish_seconds": 45.343838
+    },
+    {
+      "run": "window-minimize-03",
+      "helper_exit": 0,
+      "focus_exit": 0,
+      "capture_exit": 1,
+      "interactive_window_acceptance": false,
+      "reason": "Frontmost action succeeded but window-id capture reported could not create image from window. Helper process exit0 does not make the capture successful.",
+      "evidence": [
+        "capture-helper-03.log",
+        "window-minimize-03.native-window.json"
+      ]
+    }
+  ],
+  "sleep_attempt": {
+    "schema": 1,
+    "os_sleep_recovery_acceptance": false,
+    "run": "os-sleep-resume-01",
+    "source_revision": "4e3b115d8427cb4b8e7c9025cef993f98c6d2c30",
+    "binary_sha256": "74d8401f4b80ef614249a5351d687acf1cd4bb9e6b32551be5f508265d53aa82",
+    "report_sha256": "9a57cf6bf8ad755327883c7279d0e93c1ed2a2dedab606ad3b15a5a7088b66f9",
+    "manifest_sha256": "dc982d6db36f71202778a18d7df1b45de382600657d4ea5ae3715ec3c62ee5e9",
+    "child_exit": 1,
+    "wrapper_exit": 1,
+    "lifecycle_error": "lifecycle deadline exceeded in changed",
+    "native_lifecycle_wall_seconds": 60.002593,
+    "arm_sequence": 3,
+    "arm_main_frame": 28,
+    "arm_utc_milliseconds": 1788631079080,
+    "native_observer_available": true,
+    "native_event_loss": 0,
+    "native_sleep_notifications": 0,
+    "native_wake_notifications": 0,
+    "recovery_reset_observed": false,
+    "restored_capture_present": false,
+    "decoded_captures": [
+      {
+        "phase": "initial",
+        "path": "os-sleep-resume-01.json.lifecycle-initial.png",
+        "sha256": "94c4dc182fe3bc7f55a12411327647544ded95a3d2605a3409ac66ddc1d6fb15",
+        "width": 1280,
+        "height": 720,
+        "opaque_fraction": 1,
+        "scene_unique_colors": 9026,
+        "scene_luminance_min": 1,
+        "scene_luminance_max": 243
+      },
+      {
+        "phase": "warmup_screenshot",
+        "path": "os-sleep-resume-01.json.png.warmup.png",
+        "sha256": "aa7c6c68f872aadc128f400a880ea13a3056fd7fd9bbdf66e951446608320e00",
+        "width": 1280,
+        "height": 720,
+        "opaque_fraction": 1,
+        "scene_unique_colors": 7798,
+        "scene_luminance_min": 0,
+        "scene_luminance_max": 244
+      },
+      {
+        "phase": "screenshot",
+        "path": "os-sleep-resume-01.json.png",
+        "sha256": "15beff7439feb322185ce566d7b776c6d457ed8356eb9af5a4672a6ef619e13c",
+        "width": 1280,
+        "height": 720,
+        "opaque_fraction": 1,
+        "scene_unique_colors": 7757,
+        "scene_luminance_min": 0,
+        "scene_luminance_max": 244
+      }
+    ],
+    "scope": "The armed interval did not observe native system sleep/wake. This is incomplete OS sleep acceptance, not a measured failure to recover after actual sleep. Initial and later ordinary captures cannot replace the missing native cycle or restored-phase evidence."
+  },
+  "sleep_failure_receipt_sha256": "bd2a1cd9e50fdb3fb68f19ca39d44f7decc3259112994c93bcc6d0f567c9cd62",
+  "acceptance": {
+    "bounded_native_minimize": true,
+    "interactive_window_run04": true,
+    "os_sleep_wake": false,
+    "historical_k922_resolved": false,
+    "complete_native_lifecycle": false,
+    "full_gpu_cost": false,
+    "live_adaptive": false
+  },
+  "scope": "This campaign closes the bounded real minimize/restore and native-window inspection case. It does not establish OS sleep recovery, historical driver-crash resolution, long-duration reliability, physical panel delivery, measured GPU cost or adaptive behavior.",
+  "campaign_review_receipt_sha256": "85bcb69454260d25c7338d19ee58983e8ae54cc5728f3ba45618a85d031056c3",
+  "archive_manifest": {
+    "path": "/Users/sma/projects/docs/ushas/evidence/native-recovery-05/archive-manifest.json",
+    "sha256": "d8f17cb7f889df11c2c025fddd3f8ab727a508b9785e5591dd3f5216315fa0b3",
+    "payload_files": 87,
+    "payload_bytes": 21356882
+  },
+  "root_verification": {
+    "receipt": "/Users/sma/projects/docs/ushas/evidence/native-recovery-05/root-campaign-verification.json",
+    "all_four_audits_match": true,
+    "cpu_tests_passed": 14,
+    "actual_sleep_rejected": true,
+    "native_window_visually_inspected": true
+  }
+}

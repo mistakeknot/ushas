@@ -44,7 +44,7 @@ GPU busy-cost producer and holds its scale with an unavailable reason. The
 | Consumer cuts | [Three arms, 18 captures](consumer-cuts-01.md) completed; a visible texture seam also appears in the native baseline. No broad consumer quality pass or exact reset-recovery frame claim follows. |
 | Lifecycle | [Five window-target exercises](lifecycle-candidate-01.md) passed: resize, camera cut, late/replacement camera, unsupported multiple views and inactive-cut-resume. These do not prove window visibility, OS sleep recovery or driver-failure recovery. |
 | Creation-fault recovery | [Fresh offscreen failure and slow-creation runs](lifecycle-fault-offscreen-03.md) pass independent retained-phase gates: actual image/view/dimensions, at least 20 distinct eligible frames per phase, pending reset through fallback, later Temporal recovery and opaque captures. The slow arm declares 2,917 evictions. This closes the synthetic creation-fault slice within retained windows; it does not prove a real driver failure, native-window recovery or complete frame history. [Failed window attempts](lifecycle-fault-window-attempts-02.md) and the [incomplete earlier slow ledger](lifecycle-fault-offscreen-02.md) remain archived. |
-| Native minimize/restore | [The new native fixture](native-recovery-04.md) retains an actual minimize/restore event cycle, later Temporal reset acknowledgement and restored Claude pixels. Inspection of the actual desktop window remains unverified: CUA could not select the standalone executable, and the second inspection attempt timed out before arming. A subsequent display sample reports locked; it does not establish the cause or duration of the earlier stall. OS sleep/wake was not run. |
+| Native minimize/restore | [Four fresh cycles](native-recovery-05.md) pass native-event, later Temporal reset and decoded-pixel checks. Run 04 additionally passes independent inspection of the actual restored desktop window, with all three Claude figures intact. Earlier helper failures and the [previous timeout](native-recovery-04.md) remain archived. The separate armed OS sleep attempt observed no sleep/wake notifications and expired; it leaves sleep recovery unexercised. |
 | Presentation | [Historical reconciliation](frame-generation-reconciliation.md) preserves prior strong-gauge evidence and its limits. The [new diagnostic](presentation-diagnostic-01.md) stopped at asleep, locked-session preflight without launching a renderer. Present cadence, content ordering, latency and net value remain unvalidated. |
 
 Completed-render cadence includes CPU submission gaps and uses one frame in
@@ -68,9 +68,10 @@ runs remain archived, including seven failures in the original unpaced
    the best fixed rung. The tested policy and native stage probe are insufficient.
    This continuation is tracked by `shadow-work-vzox.8`; the immediate-cut quality
    failure remains disclosed rather than being converted into a pass.
-2. Complete interactive native-window inspection and actual OS sleep/resume.
-   The first minimize run supplies bounded native-event and restored-pixel
-   evidence; it does not clear the separate desktop-window inspection gate.
+2. Complete actual OS sleep/resume. Native minimize/restore now passes both
+   bounded event/reset/pixel checks and actual desktop-window inspection.
+   The first armed sleep attempt recorded no native sleep/wake pair, so it
+   cannot establish recovery behavior after sleep.
    Require fresh native events, contemporaneous environment evidence, restored
    output/reset acknowledgement and opaque captures. Camera inactivity and
    offscreen fault recovery do not satisfy these gates. The historical MPSGraph
@@ -92,10 +93,10 @@ artifacts and exact executables are hash-archived under
 `/Users/sma/projects/docs/ushas/evidence/`; individual reports identify their
 manifests. The local roadmap checkpoint separates the current source from the
 latest confirmed CI and package revisions; none is labelled the final accepted
-release. The [September 5 16:21 UTC sample](/Users/sma/projects/docs/ushas/evidence/native-recovery-04/display-midrun-02.json)
-found the display awake and session locked. Despite its filename, this sample
-occurred after the second native attempt ended; it does not establish that
-attempt's cause. Further interactive work awaits an available unlocked session.
+release. The September 5 follow-up inspected the live restored native window;
+its environment samples report an awake, on-console session with unknown lock
+metadata. These samples and the acknowledged frontmost action remain separate
+evidence. The failed sleep attempt needs a newly coordinated actual OS cycle.
 Work remains tracked by `shadow-work-vzox`
 and its open children. Broader resolution/device matrices and copy-removal
 experiments remain optional unless evidence shows they could change the decision.
