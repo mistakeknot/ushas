@@ -1,0 +1,677 @@
+{
+  "schema": 1,
+  "valid": true,
+  "scope": "Frozen static globe, 1600x900 offscreen, serial callback-observed completed-render cadence including CPU preparation/scheduling/logging/polling. Not production pipelined FPS, GPU busy cost, latency, physical presentation, or governor input.",
+  "verdict": "Retain native for this fixture: native already meets the mean budget and no candidate demonstrates the declared 8% practical improvement. Motion/cut quality and production pacing remain separate gates.",
+  "target_fps": 60,
+  "budget_ms": 16.666666666666668,
+  "interval_definition": "First callback minus first admission; subsequent callback minus previous callback. Sum equals the closed epoch duration including CPU gaps.",
+  "aggregation": "Equal weight per process run; P95/P99 are means of four nearest-rank run quantiles. Frames are not independent repetitions.",
+  "plan": {
+    "schema": 1,
+    "created_utc": "2026-09-05T03:22:14.758484+00:00",
+    "orders": [
+      [
+        "native",
+        "temporal",
+        "bilinear"
+      ],
+      [
+        "bilinear",
+        "temporal",
+        "native"
+      ],
+      [
+        "temporal",
+        "bilinear",
+        "native"
+      ],
+      [
+        "native",
+        "bilinear",
+        "temporal"
+      ]
+    ],
+    "repetitions": 4,
+    "measurement_seconds": 6.0,
+    "warmup_seconds": 3,
+    "distinct_ready": 20,
+    "target_fps": 60.0,
+    "practical_improvement": 0.08,
+    "paired_bootstrap_seed": 21434,
+    "paired_bootstrap_draws": 10000,
+    "per_arm_timeout_seconds": 90.0,
+    "arms": {
+      "native": {
+        "mode": "Disabled",
+        "scale": 1.0,
+        "msaa_samples": 4
+      },
+      "temporal": {
+        "mode": "Temporal",
+        "scale": 0.5,
+        "msaa_samples": 1
+      },
+      "bilinear": {
+        "mode": "Disabled",
+        "scale": 0.5,
+        "msaa_samples": 1
+      }
+    },
+    "scope": "serial completed-render mean interval; four paired independent process runs; no GPU busy cost, production pipelined FPS or panel claim",
+    "prepared_sha256": "94f5f6fc0ce78fa8fea954110e4498f3a51259e57aaf6f7c1dc065d7af473bff",
+    "build_sha256": "d39365899487d97a21e2f8cdc3283756f32a77c9d2a6f88e4f2de9255c6212ed",
+    "runner_sha256": "064d6f0786c12ac3605a7a7b7bf579810959352a1bf9f620e03b73b2822c6d60",
+    "analysis_sha256": "1ce0e5a8b7d56a6150362a19a678e50a70ae44a99b17c42ee0324d9b8d591361"
+  },
+  "finished_utc": "2026-09-05T03:28:09.290347+00:00",
+  "provenance": {
+    "consumer_commit": "2a49dfcb294a69283e9e4cf9aa0662b61c51495a",
+    "ushas_commit": "56a3b16c8c1c8f12a5320adc5082c6d20b6378c1",
+    "binary_sha256": "e1eaf124a3d01637a115af46bb9f02049c4ad093adb3596d5af49416df31a126",
+    "prepared_sha256": "94f5f6fc0ce78fa8fea954110e4498f3a51259e57aaf6f7c1dc065d7af473bff",
+    "check_sha256": "3aaa1f50ad76e060e2817caa7b046f8464e8635b7729b9965533af0c0a1fb275",
+    "build_sha256": "d39365899487d97a21e2f8cdc3283756f32a77c9d2a6f88e4f2de9255c6212ed",
+    "trial_manifest_sha256": "a9a5d8cc27813493d56d7c07d669649821cdc087ec55ab3c403cd9ba9ad54194",
+    "runtime_environment": "The runner fixes OVERLAY=0 and SW_CONSUMER_COMPLETED=1; inherited environment, OS and thermal conditions were not retained per run. No interference-free claim.",
+    "native_timer_scope": "The frozen consumer installs the legacy GPU timing sink; native logs confirm an empty timed command buffer. The reported metrics use completion callbacks, not that partial GPU timer."
+  },
+  "validation": {
+    "runs": 12,
+    "hash_verified_run_artifacts": 72,
+    "independently_recomputed_ledgers": 12,
+    "rgba_captures": 24,
+    "epoch_counts_checked": "All three epochs per run; only closed Measure epoch contributes rates.",
+    "plan_position_sums": {
+      "native": 26,
+      "temporal": 26,
+      "bilinear": 26
+    },
+    "copy_payloads": 101,
+    "copy_bytes": 52352844
+  },
+  "runs": [
+    {
+      "repetition": 0,
+      "arm": "native",
+      "valid": true,
+      "directory": "native-xbac967x",
+      "manifest_sha256": "f578d94d3131c1a94f02b2653075a472437c397dfcc5b82fb768fc7927564985",
+      "metrics": {
+        "completed_frames": 923,
+        "elapsed_seconds": 6.012677333000001,
+        "completed_render_fps": 153.50898591118525,
+        "mean_interval_ms": 6.514276633802817,
+        "p95_interval_ms": 7.773874999999862,
+        "p99_interval_ms": 8.335416999999325,
+        "budget_miss_fraction": 0.0,
+        "mean_meets_60_fps": true
+      }
+    },
+    {
+      "repetition": 0,
+      "arm": "temporal",
+      "valid": true,
+      "directory": "temporal-cvp4qk6n",
+      "manifest_sha256": "37380287d206a890768fdd054a980d5e44336e8278079af570d38a524dbd5ece",
+      "metrics": {
+        "completed_frames": 775,
+        "elapsed_seconds": 6.014273459,
+        "completed_render_fps": 128.86012005993157,
+        "mean_interval_ms": 7.760352850322581,
+        "p95_interval_ms": 10.028083000001061,
+        "p99_interval_ms": 16.834540999999263,
+        "budget_miss_fraction": 0.011612903225806452,
+        "mean_meets_60_fps": true
+      }
+    },
+    {
+      "repetition": 0,
+      "arm": "bilinear",
+      "valid": true,
+      "directory": "bilinear-kv4dl4nh",
+      "manifest_sha256": "08331746da063dd7dd0c741a208fbbe000c564489c396ec7502d0ed2a9c933ba",
+      "metrics": {
+        "completed_frames": 772,
+        "elapsed_seconds": 6.006537250000001,
+        "completed_render_fps": 128.5266315463206,
+        "mean_interval_ms": 7.78048866580311,
+        "p95_interval_ms": 13.440209000000323,
+        "p99_interval_ms": 25.202041999999892,
+        "budget_miss_fraction": 0.03238341968911917,
+        "mean_meets_60_fps": true
+      }
+    },
+    {
+      "repetition": 1,
+      "arm": "bilinear",
+      "valid": true,
+      "directory": "bilinear-_nwk8w9l",
+      "manifest_sha256": "b9ef81ccded74a9ab376ac52b1ede09f68dd578df4c636677581e3257cd09f11",
+      "metrics": {
+        "completed_frames": 937,
+        "elapsed_seconds": 6.0044340410000006,
+        "completed_render_fps": 156.05134365735302,
+        "mean_interval_ms": 6.408147322305229,
+        "p95_interval_ms": 7.858208999999988,
+        "p99_interval_ms": 8.587334000000737,
+        "budget_miss_fraction": 0.0,
+        "mean_meets_60_fps": true
+      }
+    },
+    {
+      "repetition": 1,
+      "arm": "temporal",
+      "valid": true,
+      "directory": "temporal-9_evn3b8",
+      "manifest_sha256": "1db6a01865ed415e9f71a0d0e2dbadae77dd876533d00dfaa730882e0790def3",
+      "metrics": {
+        "completed_frames": 877,
+        "elapsed_seconds": 6.008429040999999,
+        "completed_render_fps": 145.96161392862825,
+        "mean_interval_ms": 6.851116352337514,
+        "p95_interval_ms": 8.491665999999896,
+        "p99_interval_ms": 9.374749999999949,
+        "budget_miss_fraction": 0.0,
+        "mean_meets_60_fps": true
+      }
+    },
+    {
+      "repetition": 1,
+      "arm": "native",
+      "valid": true,
+      "directory": "native-5y9uay41",
+      "manifest_sha256": "6141fc7cfcb997074351e83e673888fddc8bcb0936ee5c48f469839d316d3137",
+      "metrics": {
+        "completed_frames": 942,
+        "elapsed_seconds": 6.009234791999999,
+        "completed_render_fps": 156.75872762603152,
+        "mean_interval_ms": 6.3792301401273885,
+        "p95_interval_ms": 7.517582999999831,
+        "p99_interval_ms": 8.037207999999737,
+        "budget_miss_fraction": 0.0,
+        "mean_meets_60_fps": true
+      }
+    },
+    {
+      "repetition": 2,
+      "arm": "temporal",
+      "valid": true,
+      "directory": "temporal-z_645hri",
+      "manifest_sha256": "2dd66a6e340bd62e63563bc681647f8602a18198e59313f7f3634ad5595bd038",
+      "metrics": {
+        "completed_frames": 874,
+        "elapsed_seconds": 6.011816041,
+        "completed_render_fps": 145.38036327781907,
+        "mean_interval_ms": 6.878508056064073,
+        "p95_interval_ms": 8.696332999999868,
+        "p99_interval_ms": 9.337749999999687,
+        "budget_miss_fraction": 0.0,
+        "mean_meets_60_fps": true
+      }
+    },
+    {
+      "repetition": 2,
+      "arm": "bilinear",
+      "valid": true,
+      "directory": "bilinear-bgekm09e",
+      "manifest_sha256": "c12d0b440463bea1aba684354c9a9623c3b153bff3f62243dd6805fb687642e1",
+      "metrics": {
+        "completed_frames": 929,
+        "elapsed_seconds": 6.008054791,
+        "completed_render_fps": 154.62575364519506,
+        "mean_interval_ms": 6.467227977395049,
+        "p95_interval_ms": 7.655791999999565,
+        "p99_interval_ms": 7.9644159999988915,
+        "budget_miss_fraction": 0.0,
+        "mean_meets_60_fps": true
+      }
+    },
+    {
+      "repetition": 2,
+      "arm": "native",
+      "valid": true,
+      "directory": "native-o0i8s56n",
+      "manifest_sha256": "2b79338d3d9748e4f996570b12efccef13b42821591848aacecdaa95ffabe175",
+      "metrics": {
+        "completed_frames": 894,
+        "elapsed_seconds": 6.006198459,
+        "completed_render_fps": 148.84623045720107,
+        "mean_interval_ms": 6.718342795302013,
+        "p95_interval_ms": 8.1020410000001,
+        "p99_interval_ms": 8.758082999999715,
+        "budget_miss_fraction": 0.0,
+        "mean_meets_60_fps": true
+      }
+    },
+    {
+      "repetition": 3,
+      "arm": "native",
+      "valid": true,
+      "directory": "native-mqtzoti5",
+      "manifest_sha256": "1193e36c8d57be28d0f96253697b1b6fb7636adddcf68be17adde32a9829684c",
+      "metrics": {
+        "completed_frames": 942,
+        "elapsed_seconds": 6.006777208,
+        "completed_render_fps": 156.82286313955797,
+        "mean_interval_ms": 6.376621239915074,
+        "p95_interval_ms": 7.8009579999998095,
+        "p99_interval_ms": 9.287624999999935,
+        "budget_miss_fraction": 0.0,
+        "mean_meets_60_fps": true
+      }
+    },
+    {
+      "repetition": 3,
+      "arm": "bilinear",
+      "valid": true,
+      "directory": "bilinear-w4gqll08",
+      "manifest_sha256": "95933c64fb7bcd1f5e9f8e00e742debc425c1e566d18162d2111a9ed196f1811",
+      "metrics": {
+        "completed_frames": 929,
+        "elapsed_seconds": 6.007416999999999,
+        "completed_render_fps": 154.64216983771897,
+        "mean_interval_ms": 6.466541442411194,
+        "p95_interval_ms": 7.60608400000001,
+        "p99_interval_ms": 7.992582999999286,
+        "budget_miss_fraction": 0.0,
+        "mean_meets_60_fps": true
+      }
+    },
+    {
+      "repetition": 3,
+      "arm": "temporal",
+      "valid": true,
+      "directory": "temporal-v9zwcksh",
+      "manifest_sha256": "31393d8a99aa5b78feac8704a64b1cf480920839c02b28baedcafaf5a8e67a21",
+      "metrics": {
+        "completed_frames": 607,
+        "elapsed_seconds": 6.013755375000001,
+        "completed_render_fps": 100.93526626031075,
+        "mean_interval_ms": 9.907339991762768,
+        "p95_interval_ms": 12.480000000000473,
+        "p99_interval_ms": 13.446416999999201,
+        "budget_miss_fraction": 0.0,
+        "mean_meets_60_fps": true
+      }
+    }
+  ],
+  "arms": {
+    "native": {
+      "required_runs": 4,
+      "valid_runs": 4,
+      "mean_interval_ms": 6.497117702286824,
+      "mean_of_run_p95_interval_ms": 7.7986142499999005,
+      "mean_of_run_p99_interval_ms": 8.604583249999678,
+      "mean_of_run_budget_miss_fractions": 0.0,
+      "all_run_means_meet_60_fps": true
+    },
+    "temporal": {
+      "required_runs": 4,
+      "valid_runs": 4,
+      "mean_interval_ms": 7.849329312621734,
+      "mean_of_run_p95_interval_ms": 9.924020500000324,
+      "mean_of_run_p99_interval_ms": 12.248364499999525,
+      "mean_of_run_budget_miss_fractions": 0.002903225806451613,
+      "all_run_means_meet_60_fps": true
+    },
+    "bilinear": {
+      "required_runs": 4,
+      "valid_runs": 4,
+      "mean_interval_ms": 6.780601351978645,
+      "mean_of_run_p95_interval_ms": 9.140073499999971,
+      "mean_of_run_p99_interval_ms": 12.436593749999702,
+      "mean_of_run_budget_miss_fractions": 0.008095854922279792,
+      "all_run_means_meet_60_fps": true
+    }
+  },
+  "comparisons": {
+    "temporal_vs_native": {
+      "paired_interval_ratios": [
+        1.1912838963659953,
+        1.0739722822103268,
+        1.0238399953146273,
+        1.5536974236052818
+      ],
+      "mean_ratio": 1.2106983993740579,
+      "ci95_ratio": [
+        1.0489061387624772,
+        1.433766138256543
+      ],
+      "decision": "uncertain",
+      "method": "10000 paired-run mean bootstrap draws; seed 21434; four pairs; pointwise 95% interval"
+    },
+    "bilinear_vs_native": {
+      "paired_interval_ratios": [
+        1.1943749249809064,
+        1.0045330206847287,
+        0.9626225059426019,
+        1.0141015436095304
+      ],
+      "mean_ratio": 1.0439079988044417,
+      "ci95_ratio": [
+        0.9754922653593341,
+        1.146914448906862
+      ],
+      "decision": "uncertain",
+      "method": "10000 paired-run mean bootstrap draws; seed 21434; four pairs; pointwise 95% interval"
+    },
+    "temporal_vs_bilinear": {
+      "paired_interval_ratios": [
+        0.9974120114628492,
+        1.0691259123351322,
+        1.063594492123453,
+        1.5320925536462031
+      ],
+      "mean_ratio": 1.1655562423919095,
+      "ci95_ratio": [
+        1.01534048668092,
+        1.4149680382655156
+      ],
+      "decision": "uncertain",
+      "method": "10000 paired-run mean bootstrap draws; seed 21434; four pairs; pointwise 95% interval"
+    }
+  },
+  "captures": [
+    {
+      "file": "native-xbac967x/native_warmup.png",
+      "sha256": "ce9022d9bb717a350e819d1950f46c7e01e1ef9e7a07a5d37a7ce30143e39df0",
+      "size": [
+        1600,
+        900
+      ],
+      "opaque_pixels": 1440000,
+      "visible_pixels": 1427921,
+      "sampled_colors": 26619,
+      "request_completion_epoch": 1
+    },
+    {
+      "file": "native-xbac967x/native_final.png",
+      "sha256": "ce9022d9bb717a350e819d1950f46c7e01e1ef9e7a07a5d37a7ce30143e39df0",
+      "size": [
+        1600,
+        900
+      ],
+      "opaque_pixels": 1440000,
+      "visible_pixels": 1427921,
+      "sampled_colors": 26619,
+      "request_completion_epoch": 3
+    },
+    {
+      "file": "temporal-cvp4qk6n/temporal_warmup.png",
+      "sha256": "bc3a7b8516ed26cf6e676ce22a96d03718961317b4126c47519ed0761f4bdad3",
+      "size": [
+        1600,
+        900
+      ],
+      "opaque_pixels": 1440000,
+      "visible_pixels": 1428035,
+      "sampled_colors": 25074,
+      "request_completion_epoch": 1
+    },
+    {
+      "file": "temporal-cvp4qk6n/temporal_final.png",
+      "sha256": "0ac5d4a5e36643c2d83cf6ad31036ff4f067e6ec75c2c1c6e114f425dff421e4",
+      "size": [
+        1600,
+        900
+      ],
+      "opaque_pixels": 1440000,
+      "visible_pixels": 1428042,
+      "sampled_colors": 25099,
+      "request_completion_epoch": 3
+    },
+    {
+      "file": "bilinear-kv4dl4nh/bilinear_warmup.png",
+      "sha256": "e0120888211e25dbd5ce0149a2547c930bb9de94823157b6db37e49ba95e2652",
+      "size": [
+        1600,
+        900
+      ],
+      "opaque_pixels": 1440000,
+      "visible_pixels": 1428918,
+      "sampled_colors": 24120,
+      "request_completion_epoch": 1
+    },
+    {
+      "file": "bilinear-kv4dl4nh/bilinear_final.png",
+      "sha256": "e0120888211e25dbd5ce0149a2547c930bb9de94823157b6db37e49ba95e2652",
+      "size": [
+        1600,
+        900
+      ],
+      "opaque_pixels": 1440000,
+      "visible_pixels": 1428918,
+      "sampled_colors": 24120,
+      "request_completion_epoch": 3
+    },
+    {
+      "file": "bilinear-_nwk8w9l/bilinear_warmup.png",
+      "sha256": "e0120888211e25dbd5ce0149a2547c930bb9de94823157b6db37e49ba95e2652",
+      "size": [
+        1600,
+        900
+      ],
+      "opaque_pixels": 1440000,
+      "visible_pixels": 1428918,
+      "sampled_colors": 24120,
+      "request_completion_epoch": 1
+    },
+    {
+      "file": "bilinear-_nwk8w9l/bilinear_final.png",
+      "sha256": "e0120888211e25dbd5ce0149a2547c930bb9de94823157b6db37e49ba95e2652",
+      "size": [
+        1600,
+        900
+      ],
+      "opaque_pixels": 1440000,
+      "visible_pixels": 1428918,
+      "sampled_colors": 24120,
+      "request_completion_epoch": 3
+    },
+    {
+      "file": "temporal-9_evn3b8/temporal_warmup.png",
+      "sha256": "d13944025e602f9534e71b9a233534e1783451b32fd9cfef50c10ad699daee1e",
+      "size": [
+        1600,
+        900
+      ],
+      "opaque_pixels": 1440000,
+      "visible_pixels": 1428049,
+      "sampled_colors": 25086,
+      "request_completion_epoch": 1
+    },
+    {
+      "file": "temporal-9_evn3b8/temporal_final.png",
+      "sha256": "2651d861fffb619418d23f1b5d5ecf5e041967b4041db4aabd714447c81b7bcb",
+      "size": [
+        1600,
+        900
+      ],
+      "opaque_pixels": 1440000,
+      "visible_pixels": 1428038,
+      "sampled_colors": 25092,
+      "request_completion_epoch": 3
+    },
+    {
+      "file": "native-5y9uay41/native_warmup.png",
+      "sha256": "ce9022d9bb717a350e819d1950f46c7e01e1ef9e7a07a5d37a7ce30143e39df0",
+      "size": [
+        1600,
+        900
+      ],
+      "opaque_pixels": 1440000,
+      "visible_pixels": 1427921,
+      "sampled_colors": 26619,
+      "request_completion_epoch": 1
+    },
+    {
+      "file": "native-5y9uay41/native_final.png",
+      "sha256": "ce9022d9bb717a350e819d1950f46c7e01e1ef9e7a07a5d37a7ce30143e39df0",
+      "size": [
+        1600,
+        900
+      ],
+      "opaque_pixels": 1440000,
+      "visible_pixels": 1427921,
+      "sampled_colors": 26619,
+      "request_completion_epoch": 3
+    },
+    {
+      "file": "temporal-z_645hri/temporal_warmup.png",
+      "sha256": "939447843b04a1efd6a5a9d3ff95c251d0434ef4f7603b52f349dd1e5139e65c",
+      "size": [
+        1600,
+        900
+      ],
+      "opaque_pixels": 1440000,
+      "visible_pixels": 1428023,
+      "sampled_colors": 25113,
+      "request_completion_epoch": 1
+    },
+    {
+      "file": "temporal-z_645hri/temporal_final.png",
+      "sha256": "fdf8d740769c2c3cc9dd94053787cae3ae4df1d002081af27245df2f37eadfbf",
+      "size": [
+        1600,
+        900
+      ],
+      "opaque_pixels": 1440000,
+      "visible_pixels": 1428038,
+      "sampled_colors": 25021,
+      "request_completion_epoch": 3
+    },
+    {
+      "file": "bilinear-bgekm09e/bilinear_warmup.png",
+      "sha256": "e0120888211e25dbd5ce0149a2547c930bb9de94823157b6db37e49ba95e2652",
+      "size": [
+        1600,
+        900
+      ],
+      "opaque_pixels": 1440000,
+      "visible_pixels": 1428918,
+      "sampled_colors": 24120,
+      "request_completion_epoch": 1
+    },
+    {
+      "file": "bilinear-bgekm09e/bilinear_final.png",
+      "sha256": "e0120888211e25dbd5ce0149a2547c930bb9de94823157b6db37e49ba95e2652",
+      "size": [
+        1600,
+        900
+      ],
+      "opaque_pixels": 1440000,
+      "visible_pixels": 1428918,
+      "sampled_colors": 24120,
+      "request_completion_epoch": 3
+    },
+    {
+      "file": "native-o0i8s56n/native_warmup.png",
+      "sha256": "ce9022d9bb717a350e819d1950f46c7e01e1ef9e7a07a5d37a7ce30143e39df0",
+      "size": [
+        1600,
+        900
+      ],
+      "opaque_pixels": 1440000,
+      "visible_pixels": 1427921,
+      "sampled_colors": 26619,
+      "request_completion_epoch": 1
+    },
+    {
+      "file": "native-o0i8s56n/native_final.png",
+      "sha256": "ce9022d9bb717a350e819d1950f46c7e01e1ef9e7a07a5d37a7ce30143e39df0",
+      "size": [
+        1600,
+        900
+      ],
+      "opaque_pixels": 1440000,
+      "visible_pixels": 1427921,
+      "sampled_colors": 26619,
+      "request_completion_epoch": 3
+    },
+    {
+      "file": "native-mqtzoti5/native_warmup.png",
+      "sha256": "ce9022d9bb717a350e819d1950f46c7e01e1ef9e7a07a5d37a7ce30143e39df0",
+      "size": [
+        1600,
+        900
+      ],
+      "opaque_pixels": 1440000,
+      "visible_pixels": 1427921,
+      "sampled_colors": 26619,
+      "request_completion_epoch": 1
+    },
+    {
+      "file": "native-mqtzoti5/native_final.png",
+      "sha256": "ce9022d9bb717a350e819d1950f46c7e01e1ef9e7a07a5d37a7ce30143e39df0",
+      "size": [
+        1600,
+        900
+      ],
+      "opaque_pixels": 1440000,
+      "visible_pixels": 1427921,
+      "sampled_colors": 26619,
+      "request_completion_epoch": 3
+    },
+    {
+      "file": "bilinear-w4gqll08/bilinear_warmup.png",
+      "sha256": "e0120888211e25dbd5ce0149a2547c930bb9de94823157b6db37e49ba95e2652",
+      "size": [
+        1600,
+        900
+      ],
+      "opaque_pixels": 1440000,
+      "visible_pixels": 1428918,
+      "sampled_colors": 24120,
+      "request_completion_epoch": 1
+    },
+    {
+      "file": "bilinear-w4gqll08/bilinear_final.png",
+      "sha256": "e0120888211e25dbd5ce0149a2547c930bb9de94823157b6db37e49ba95e2652",
+      "size": [
+        1600,
+        900
+      ],
+      "opaque_pixels": 1440000,
+      "visible_pixels": 1428918,
+      "sampled_colors": 24120,
+      "request_completion_epoch": 3
+    },
+    {
+      "file": "temporal-v9zwcksh/temporal_warmup.png",
+      "sha256": "9c3803b16c613f9192c99a4016e4e33367c21da480a4ff62f0149692acaf15d5",
+      "size": [
+        1600,
+        900
+      ],
+      "opaque_pixels": 1440000,
+      "visible_pixels": 1428034,
+      "sampled_colors": 25052,
+      "request_completion_epoch": 1
+    },
+    {
+      "file": "temporal-v9zwcksh/temporal_final.png",
+      "sha256": "8012cb4ac01e7b77f3b4b673403d32ad799b8d10a96a3dae7e212f1d1ca8e8ca",
+      "size": [
+        1600,
+        900
+      ],
+      "opaque_pixels": 1440000,
+      "visible_pixels": 1428029,
+      "sampled_colors": 25048,
+      "request_completion_epoch": 3
+    }
+  ],
+  "visual_review": {
+    "inspected_final_captures": [
+      "native-xbac967x/native_final.png",
+      "temporal-cvp4qk6n/temporal_final.png",
+      "bilinear-kv4dl4nh/bilinear_final.png"
+    ],
+    "finding": "All show the same complete globe pose. Native retains fine coastline/terrain detail; Temporal half is visually much closer to native than the softer bilinear half, whose globe silhouette is more visibly stepped. Static captures do not establish moving/cut temporal stability."
+  },
+  "archive": {
+    "directory": "/Users/sma/projects/docs/ushas/evidence/consumer-completion-trial-01",
+    "manifest_sha256": "aafd5c6b43b2e800cf3e854a45083e53db2858c9f16c8ea9172afc66fda5839c"
+  }
+}
