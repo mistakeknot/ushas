@@ -23,15 +23,21 @@ reference; the new arm marker requires a new build.
 ## Commands and coordination
 
 Capture contemporaneous display/session state with native service access before
-launch. Awake, unlocked, on-console state is required. Unknown state is unavailable
-evidence. Record the same state after restoration and inspect the actual test
-window using the UI tools. Keep other GPU work stopped for these short runs.
+launch and after restoration. The existing probe currently reports an awake
+on-console display but an unknown lock state because its undocumented key is
+absent. Preserve that null value. For this prospective minimize/restore trial,
+acceptance rests on actual same-window native transitions, fresh output and
+independent UI inspection/interaction with the intended window. If the UI cannot
+reach that window, retain the narrower native-event/pixel result and withhold
+interactive-window acceptance. Never infer unlocked state from a missing key or
+from a texture capture. Root serializes its GPU work; unrelated application GPU
+activity is not controlled. These checks are not performance measurements.
 
 With `USHAS_SMOKE_BINARY` set to the newly frozen executable, run from the repo:
 
 ```sh
 python3 tools/smoke/run.py --timeout 90 --binary "${USHAS_SMOKE_BINARY:?}" -- \
-  --subject claude --mode temporal --scale 0.5 \
+  --subject claude --mode temporal --scale 0.5 --seconds 20 \
   --lifecycle window-minimize \
   --out /private/tmp/ushas-native-recovery-04/window-minimize-01.json
 
@@ -45,6 +51,11 @@ Execute the two commands sequentially. Never overwrite a failed attempt. The
 wrapper retains failure logs and rejects existing evidence paths. It uses
 `caffeinate -d` only for idle display sleep; the fixture contains no OS power or
 lock requests.
+
+The minimize arm's twenty-second measurement tail keeps the restored window
+available for UI inspection. It changes no native recovery criteria and does
+not establish a performance result. With warmup 4, its generic deadlines are
+84/89 seconds; the native lifecycle deadline remains 60 and the wrapper 90.
 
 Both modes require twenty distinct eligible initial frames and an opaque initial
 capture before arming. Read the flushed `USHAS_NATIVE_LIFECYCLE_ARM ` JSON line
