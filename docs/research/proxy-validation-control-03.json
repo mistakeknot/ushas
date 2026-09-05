@@ -1,0 +1,385 @@
+{
+  "schema": 1,
+  "decision": "stop_public_selector_proxy_route",
+  "diagnostic_execution_complete": true,
+  "compatibility_accepted": false,
+  "validated_for_governor": false,
+  "automatic_timing_state": "TimingUnavailable",
+  "protocol": "docs/plans/2026-09-05-proxy-validation-control.md",
+  "protocol_sha256": "f516ce12d6a59080b427119635b4c329c4453cd123d83734bf7b0c78a33e2dc5",
+  "prior_negative_report": "docs/research/metalfx-proxy-02.md",
+  "source_revision": "4e3b115d8427cb4b8e7c9025cef993f98c6d2c30",
+  "source_status": "",
+  "binary_sha256": "8779e580aae2563f338930beeb305024ea6ce7da1635dac7d7ab5b9b15869f8e",
+  "evidence_root": "/Users/sma/projects/docs/ushas/evidence/proxy-validation-control-03",
+  "resolved_evidence_root": "/Users/sma/projects/dotfiles/common/projects/docs/ushas/evidence/proxy-validation-control-03",
+  "build_receipt": {
+    "path": "build/build.json",
+    "sha256": "1309499a0c5ef87c5c7052c893c6c2e62c7c3559ae978efb2af20eb0bf0a281d"
+  },
+  "source_archive": {
+    "path": "build/source.tar",
+    "sha256": "a3f7632bfc511026036166b8a943b92d9e523c6d612b7bff28bf1303c341bd44",
+    "full_git_blob_audit": {
+      "status": "verified_independent_audit",
+      "git_blobs_verified": 139
+    }
+  },
+  "platform": {
+    "compiler": {
+      "argv": [
+        "xcrun",
+        "clang",
+        "--version"
+      ],
+      "exit_code": 0,
+      "stdout": "Apple clang version 17.0.0 (clang-1700.6.4.2)\nTarget: arm64-apple-darwin25.5.0\nThread model: posix\nInstalledDir: /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin\n",
+      "stderr": ""
+    },
+    "sdk": {
+      "argv": [
+        "xcrun",
+        "--sdk",
+        "macosx",
+        "--show-sdk-version"
+      ],
+      "exit_code": 0,
+      "stdout": "26.2\n",
+      "stderr": ""
+    },
+    "sdk_path": {
+      "argv": [
+        "xcrun",
+        "--sdk",
+        "macosx",
+        "--show-sdk-path"
+      ],
+      "exit_code": 0,
+      "stdout": "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX26.2.sdk\n",
+      "stderr": ""
+    },
+    "os": {
+      "argv": [
+        "sw_vers"
+      ],
+      "exit_code": 0,
+      "stdout": "ProductName:\t\tmacOS\nProductVersion:\t\t26.5.2\nBuildVersion:\t\t25F84\n",
+      "stderr": ""
+    }
+  },
+  "execution_order": [
+    "spatial-off-validation1",
+    "spatial-calls-validation1",
+    "spatial-off-validation0",
+    "spatial-calls-validation0"
+  ],
+  "arms": [
+    {
+      "name": "spatial-off-validation1",
+      "mode": "spatial",
+      "observation_mode": "off",
+      "pid": 94309,
+      "validation": "1",
+      "environment_controls": {
+        "MTL_DEBUG_LAYER": "1",
+        "MTL_SHADER_VALIDATION": "0",
+        "USHAS_OBSERVATION_CAPTURE_UNKNOWN_STACK": "1"
+      },
+      "started_utc": "2026-09-05T16:14:09.848792+00:00",
+      "finished_utc": "2026-09-05T16:14:10.061439+00:00",
+      "child_exit_code": 0,
+      "timed_out": false,
+      "interruption": null,
+      "strict_valid": true,
+      "strict_errors": [],
+      "strict_reference_parity": null,
+      "admitted_frames": 16,
+      "completed_frames": 16,
+      "observation_unavailable_frames": 0,
+      "gpu_failed_frames": 0,
+      "reported_pixel_failed_frames": 0,
+      "skipped_admission_ticks": 8,
+      "device_runtime_class": "MTLDebugDevice",
+      "command_buffer_runtime_classes": {
+        "MTLDebugCommandBuffer": 48
+      },
+      "completed_command_buffers_without_error": 48,
+      "selector_counts": {},
+      "encoder_labels": {},
+      "requested_gpu_samples": 0,
+      "unknown_stack_records": 0,
+      "unknown_stack_depths": [],
+      "stack_failures": 0,
+      "metalfx_symbol_offset_0x198_records": 0,
+      "artifact_hashes": {
+        ".run.json": "0e9676ca6afc3701b83f54b0cf6f72412a5ca83ca97230f1565c8fb9d07a7f1c",
+        ".analysis.json": "31d3712336bd8c5f503aee4a131a0789483ab9f3341b341ccf1a6b7d8e819b4f",
+        ".log": "901739ea954088bf2c54423a443a776613299af93db759ed12aa6b2f0c2957ea"
+      },
+      "samples_sha256": "ce9f9d70071ea8fb6fab49ca76b30999fe3c3bafdbb7f1790bf8d7c0c88f8aa9"
+    },
+    {
+      "name": "spatial-calls-validation1",
+      "mode": "spatial",
+      "observation_mode": "calls",
+      "pid": 94775,
+      "validation": "1",
+      "environment_controls": {
+        "MTL_DEBUG_LAYER": "1",
+        "MTL_SHADER_VALIDATION": "0",
+        "USHAS_OBSERVATION_CAPTURE_UNKNOWN_STACK": "1"
+      },
+      "started_utc": "2026-09-05T16:14:33.103015+00:00",
+      "finished_utc": "2026-09-05T16:14:33.209582+00:00",
+      "child_exit_code": 1,
+      "timed_out": false,
+      "interruption": null,
+      "strict_valid": false,
+      "strict_errors": [
+        "unavailable or unsealed observation"
+      ],
+      "strict_reference_parity": {
+        "errors": [
+          "invalid run cannot establish parity"
+        ],
+        "scope": "Exact per-frame raw MetalFX output and composed pixel parity only; not GPU coverage or overhead.",
+        "valid": false
+      },
+      "admitted_frames": 16,
+      "completed_frames": 16,
+      "observation_unavailable_frames": 16,
+      "gpu_failed_frames": 0,
+      "reported_pixel_failed_frames": 0,
+      "skipped_admission_ticks": 12,
+      "device_runtime_class": "MTLDebugDevice",
+      "command_buffer_runtime_classes": {
+        "MTLDebugCommandBuffer": 48
+      },
+      "completed_command_buffers_without_error": 48,
+      "selector_counts": {
+        "globalTraceObjectID": 16,
+        "renderCommandEncoderWithDescriptor:": 48
+      },
+      "encoder_labels": {
+        "MetalFX_Normalize": 16,
+        "MetalFX_Scale": 16,
+        "MetalFX_Sharpen": 16
+      },
+      "requested_gpu_samples": 0,
+      "unknown_stack_records": 16,
+      "unknown_stack_depths": [
+        16,
+        17
+      ],
+      "stack_failures": 0,
+      "metalfx_symbol_offset_0x198_records": 16,
+      "artifact_hashes": {
+        ".run.json": "b572e8fe348328b834593e1e17e309a70ce46e9d2128a0233000e46fbeca2644",
+        ".analysis.json": "57a41e984086f05351ab0e35d83cfc9e8a734a0a74e2966bb652584460a1a286",
+        ".log": "ba1a0b4d39410e424c9db2b5e4ae147fe33ff0f8440938dc4cdd6e15f3dc68ea"
+      },
+      "samples_sha256": "cf7462d2c5c211f2dc3881d390978a70e43e5b7a9c97d60e365a4427457ca211"
+    },
+    {
+      "name": "spatial-off-validation0",
+      "mode": "spatial",
+      "observation_mode": "off",
+      "pid": 95203,
+      "validation": "0",
+      "environment_controls": {
+        "MTL_DEBUG_LAYER": "0",
+        "MTL_SHADER_VALIDATION": "0",
+        "USHAS_OBSERVATION_CAPTURE_UNKNOWN_STACK": "1"
+      },
+      "started_utc": "2026-09-05T16:14:57.074301+00:00",
+      "finished_utc": "2026-09-05T16:14:57.167215+00:00",
+      "child_exit_code": 0,
+      "timed_out": false,
+      "interruption": null,
+      "strict_valid": true,
+      "strict_errors": [],
+      "strict_reference_parity": null,
+      "admitted_frames": 16,
+      "completed_frames": 16,
+      "observation_unavailable_frames": 0,
+      "gpu_failed_frames": 0,
+      "reported_pixel_failed_frames": 0,
+      "skipped_admission_ticks": 9,
+      "device_runtime_class": "AGXG17CDevice",
+      "command_buffer_runtime_classes": {
+        "AGXG17XFamilyCommandBuffer": 48
+      },
+      "completed_command_buffers_without_error": 48,
+      "selector_counts": {},
+      "encoder_labels": {},
+      "requested_gpu_samples": 0,
+      "unknown_stack_records": 0,
+      "unknown_stack_depths": [],
+      "stack_failures": 0,
+      "metalfx_symbol_offset_0x198_records": 0,
+      "artifact_hashes": {
+        ".run.json": "e498ee7ac6612928ed7e84046d8addf0eb659161658fcdbac3f50a9de84baa7d",
+        ".analysis.json": "1c6b0783aaffc492d7c0fb1bb2980058c707217733e1fa380fea10312b2e920a",
+        ".log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "samples_sha256": "0e4c67a51d2304a8e462a3aa81181ffbc166c5675b1a1b2ddc6d1771a764805e"
+    },
+    {
+      "name": "spatial-calls-validation0",
+      "mode": "spatial",
+      "observation_mode": "calls",
+      "pid": 95696,
+      "validation": "0",
+      "environment_controls": {
+        "MTL_DEBUG_LAYER": "0",
+        "MTL_SHADER_VALIDATION": "0",
+        "USHAS_OBSERVATION_CAPTURE_UNKNOWN_STACK": "1"
+      },
+      "started_utc": "2026-09-05T16:15:15.855143+00:00",
+      "finished_utc": "2026-09-05T16:15:15.978216+00:00",
+      "child_exit_code": 1,
+      "timed_out": false,
+      "interruption": null,
+      "strict_valid": false,
+      "strict_errors": [
+        "unavailable or unsealed observation"
+      ],
+      "strict_reference_parity": {
+        "errors": [
+          "invalid run cannot establish parity"
+        ],
+        "scope": "Exact per-frame raw MetalFX output and composed pixel parity only; not GPU coverage or overhead.",
+        "valid": false
+      },
+      "admitted_frames": 16,
+      "completed_frames": 16,
+      "observation_unavailable_frames": 16,
+      "gpu_failed_frames": 0,
+      "reported_pixel_failed_frames": 0,
+      "skipped_admission_ticks": 12,
+      "device_runtime_class": "AGXG17CDevice",
+      "command_buffer_runtime_classes": {
+        "AGXG17XFamilyCommandBuffer": 48
+      },
+      "completed_command_buffers_without_error": 48,
+      "selector_counts": {
+        "globalTraceObjectID": 16,
+        "renderCommandEncoderWithDescriptor:": 48
+      },
+      "encoder_labels": {
+        "MetalFX_Normalize": 16,
+        "MetalFX_Scale": 16,
+        "MetalFX_Sharpen": 16
+      },
+      "requested_gpu_samples": 0,
+      "unknown_stack_records": 16,
+      "unknown_stack_depths": [
+        16,
+        17
+      ],
+      "stack_failures": 0,
+      "metalfx_symbol_offset_0x198_records": 16,
+      "artifact_hashes": {
+        ".run.json": "377dc1f370a81d7aa9c26deda3794f45304f11658b89796833afbc6267ba0365",
+        ".analysis.json": "4bf592562662090ebdf5faec1ca94b01f337a5be1f7d788f4b05279dbe0242d7",
+        ".log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "samples_sha256": "b5c3eef40ab21fe1bd534560d60149f38ca7d7cc8b0d852feebc054c166bcb8f"
+    }
+  ],
+  "pixel_audit": {
+    "status": "verified_independent_audit",
+    "raw_outputs_decoded": 64,
+    "png_files_decoded": 64,
+    "png_mode": "RGBA8",
+    "png_size": [
+      320,
+      180
+    ],
+    "all_png_pixels_opaque": true,
+    "decoder": "Pillow 12.3.0",
+    "corresponding_frames_equal_across_all_four_arms": 16,
+    "within_validation_off_calls_frame_comparisons_equal": 32,
+    "cross_validation_equality": true,
+    "raw_file_bytes_equal": true,
+    "png_file_bytes_equal": true,
+    "decoded_rgba8_equal": true,
+    "scope": "Exact pixel equality for the deterministic synthetic Spatial gradient only. Both strict CALLS observations and strict reference comparisons remain invalid."
+  },
+  "archive_manifest": {
+    "path": "/Users/sma/projects/docs/ushas/evidence/proxy-validation-control-03/archive-manifest.json",
+    "sha256": "b5d7c63a5a8a97198105f2e0cdfd69526e4337134cc0ce41fb28b2a8e9900d68",
+    "files": 163,
+    "bytes": 37102350
+  },
+  "alternative_design": {
+    "route": "unwrapped_offline_whole_process_metal_system_trace",
+    "purpose": "profiling_only",
+    "new_capture_performed": false,
+    "new_capture_required_for_this_decision": false,
+    "runtime_gpu_cost_producer_validated": false,
+    "bevy_hal_rewrite_started": false,
+    "counter_or_temporal_proxy_followup_performed": false,
+    "requirements": [
+      "Explicit complete physical command-buffer and encoder inventory",
+      "Original extracted frame and configuration ownership; labels corroborate only",
+      "Native and Temporal controls, explicit exclusions, waits and overlap inspection"
+    ],
+    "rejected_substitutes": [
+      "dedicated-command-buffer GPUStartTime/GPUEndTime",
+      "outer marker envelopes",
+      "CPU-inclusive serial completed-render cadence"
+    ]
+  },
+  "limitations": [
+    "One fresh process per cell and 16 within-process frames, not independent performance replicates",
+    "Synchronous bounded stack capture changes CPU execution",
+    "Other applications GPU activity was not controlled",
+    "Runtime classes corroborate the requested layer control but do not establish undocumented semantics",
+    "No claim of complete MetalFX or Bevy GPU coverage, exclusive occupancy, Temporal quality or panel delivery"
+  ],
+  "aggregate": {
+    "processes": 4,
+    "completed_frames": 64,
+    "completed_command_buffers_without_error": 192,
+    "unavailable_calls_frames": 32,
+    "unknown_selector_invocations": 32,
+    "observed_render_encoders_in_calls": 96,
+    "captured_unknown_stacks": 32,
+    "requested_gpu_samples": 0
+  },
+  "inference": {
+    "narrow_hypothesis_rejected": "The tested validation setting is necessary for the observed globalTraceObjectID invocation.",
+    "observed_caller_symbol": "-[_MFXSpatialScalingEffectEFFECT_NAME_V1 encodeToCommandBuffer:]",
+    "observed_caller_symbol_offset": "0x198",
+    "selector_semantics": "unknown",
+    "public_selector_contract_changed": false,
+    "earlier_failed_runs_rehabilitated": false
+  },
+  "independent_audit": {
+    "audit_consistent": true,
+    "script": {
+      "path": "audit.py",
+      "sha256": "6c6c32fd37fe553e9939e3c14e3b4c3792fd0c08d5f5741e21ec6330c8ee0fb1"
+    },
+    "result": {
+      "path": "results-02.json",
+      "sha256": "268f1725f6c57967b5a00ecf715ff4b09ab215509535b835c8dd4ebf8b25b159"
+    },
+    "initial_result_preserved": "results.json",
+    "corruption_checks": 5,
+    "corruption_check_result": {
+      "path": "results-self-test.json",
+      "sha256": "e97c825f43129599adbb1654535db21738bddb32a95a381984b24186cf9712f5"
+    },
+    "input_inventory_payloads": 158,
+    "input_inventory_bytes": 36894598,
+    "inventory_scope": "Audit input payloads only; excludes auditor/results; complete archive_manifest is recorded separately",
+    "standalone_build_runner_verified": true
+  },
+  "root_audit": {
+    "path": "/Users/sma/projects/docs/ushas/evidence/proxy-validation-control-03/root-audit-03.json",
+    "sha256": "268f1725f6c57967b5a00ecf715ff4b09ab215509535b835c8dd4ebf8b25b159",
+    "audit_consistent": true
+  }
+}

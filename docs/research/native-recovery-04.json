@@ -1,0 +1,140 @@
+{
+  "schema": 1,
+  "source_revision": "4e3b115d8427cb4b8e7c9025cef993f98c6d2c30",
+  "wrapper_source_revision": "cbbc7f54153e370fda5313a95a583a0504cfd973",
+  "wrapper_source_difference": [
+    "docs/plans/2026-09-05-native-recovery-04.md"
+  ],
+  "binary_sha256": "74d8401f4b80ef614249a5351d687acf1cd4bb9e6b32551be5f508265d53aa82",
+  "source_archive_verified_blobs": 139,
+  "source_archive_sha256": "a3f7632bfc511026036166b8a943b92d9e523c6d612b7bff28bf1303c341bd44",
+  "run01": {
+    "native_event_reset_pixel_acceptance": true,
+    "interactive_window_acceptance": false,
+    "protocol": {
+      "native_event_count": 9,
+      "arm_sequence": 3,
+      "minimize_request_sequence": 4,
+      "restore_request_sequence": 7,
+      "minimized_hold_seconds": 0.5005187079999995,
+      "view_id": 4294967070,
+      "window_id": 4294967227,
+      "reset_request_app_frame": 358,
+      "reset_ack_app_frame": 360,
+      "finished_app_frame": 382,
+      "native_lifecycle_wall_seconds": 5.865857,
+      "phase_frames": {
+        "initial": {
+          "retained_rows": 25,
+          "distinct_eligible_frames": 23,
+          "max_consecutive_eligible_frames": 23
+        },
+        "changed": {
+          "retained_rows": 4,
+          "distinct_eligible_frames": 3,
+          "max_consecutive_eligible_frames": 3
+        },
+        "restored": {
+          "retained_rows": 24,
+          "distinct_eligible_frames": 23,
+          "max_consecutive_eligible_frames": 23
+        }
+      },
+      "observation_evictions": 0
+    },
+    "decoded_captures": [
+      {
+        "phase": "initial",
+        "path": "window-minimize-01.json.lifecycle-initial.png",
+        "sha256": "f6f9c33e179308ec03a79f901a25e7c01d1b1d14c9656431fe490e5e95fcc820",
+        "width": 1280,
+        "height": 720,
+        "opaque_fraction": 1,
+        "scene_unique_colors": 9017,
+        "scene_luminance_min": 1,
+        "scene_luminance_max": 243
+      },
+      {
+        "phase": "restored",
+        "path": "window-minimize-01.json.lifecycle-restored.png",
+        "sha256": "5ebc4ee6d30e109baaeb12a82529c46d6a609b3886384ef9dd0678911cae1429",
+        "width": 1280,
+        "height": 720,
+        "opaque_fraction": 1,
+        "scene_unique_colors": 9022,
+        "scene_luminance_min": 1,
+        "scene_luminance_max": 243
+      },
+      {
+        "phase": "warmup_screenshot",
+        "path": "window-minimize-01.json.png.warmup.png",
+        "sha256": "07a8e80d50fd03d6f7aedc142c9a2a8cc9aa43e45518eb31d678e9230aa4db64",
+        "width": 1280,
+        "height": 720,
+        "opaque_fraction": 1,
+        "scene_unique_colors": 8790,
+        "scene_luminance_min": 0,
+        "scene_luminance_max": 243
+      },
+      {
+        "phase": "screenshot",
+        "path": "window-minimize-01.json.png",
+        "sha256": "4d586e88f7f995519700262cd1d76d9b59fe2923c070c23a59a817e82ae8eb4c",
+        "width": 1280,
+        "height": 720,
+        "opaque_fraction": 1,
+        "scene_unique_colors": 7681,
+        "scene_luminance_min": 0,
+        "scene_luminance_max": 244
+      }
+    ],
+    "report_sha256": "cb76e4bfb06a95c5c1cf2caddb2a8c20feeb1364c34565873a63d3c07660dde0"
+  },
+  "run02": {
+    "accepted": false,
+    "exit_code": 124,
+    "child_exit_code": -15,
+    "arm_observed": false,
+    "creation_log_observed": false,
+    "report_present": false,
+    "captures_present": false,
+    "cause": "not established",
+    "postrun_locked_sample_delay_seconds": 23.657946,
+    "scope": "Later locked state cannot establish the cause or state during this failed run."
+  },
+  "os_sleep_run": false,
+  "historical_k922_resolved": false,
+  "scope": "One native minimize/restore ledger with fresh Temporal reset recovery and decoded pixels. No interactive window, OS sleep, panel delivery, GPU-cost, adaptive, crash-reproduction or general reliability acceptance.",
+  "auditor_self_tests": {
+    "passed": 7,
+    "failed": 0
+  },
+  "visual_review": {
+    "reviewer": "native_recovery independent reviewer",
+    "method": "view_image of all four original retained PNGs after independent Pillow decoding",
+    "accepted_for_captured_content": true,
+    "interactive_window_acceptance": false,
+    "finding": "All four images retain three Claude characters with readable faces, radial head shapes, clothing and tails, thin poles, checkerboard and header. No missing output, gross corruption or obvious restored-state regression observed. Static captures do not establish motion quality or native window interaction."
+  },
+  "environment_limit": {
+    "preflight_file": "display-preflight-01.json",
+    "preflight_utc": "2026-09-05T16:05:40.250390+00:00",
+    "locked": null,
+    "scope": "Earlier awake/on-console sample did not establish unlocked state throughout run01. Interactive window gate remains incomplete."
+  },
+  "auditor_sha256": "c2795300b7656b023fb66ca87e2a2ff377a8201d928b551fba8a488c5d6eb6d8",
+  "evidence_archive": "/Users/sma/projects/docs/ushas/evidence/native-recovery-04",
+  "audit_receipt_sha256": "b17263681ab0472522246be050cfac63d3ebedb8395af91d799c392aa921c84b",
+  "archive_manifest": {
+    "path": "/Users/sma/projects/docs/ushas/evidence/native-recovery-04/archive-manifest.json",
+    "sha256": "7054236ffd0d9fddec52beef70ed6036346381cfd8979608656c147c74a89e63",
+    "files": 25,
+    "bytes": 106644957
+  },
+  "root_audit": {
+    "path": "/Users/sma/projects/docs/ushas/evidence/native-recovery-04/root-audit-01.json",
+    "sha256": "e6e740631119892b9a47baa2708d7848c7c21cde297f38b5853ca3989b7c4bb5",
+    "exit_code": 0,
+    "self_tests_passed": 7
+  }
+}
