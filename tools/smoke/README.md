@@ -133,6 +133,12 @@ unconsumed history reset, and real Temporal output after releasing the fault.
 These are simulated creation outcomes; they do not reproduce a driver crash.
 The library feature is off by default.
 
+Lifecycle reports retain the most recent 1024 observations separately for each
+phase. `observation_retention` reports total, retained and evicted counts and
+frame bounds; `dropped_observations` totals those evictions. This keeps a long
+pending phase from displacing recovery evidence. The retained windows and
+separate transition events do not constitute a complete per-frame history.
+
 The two creation exercises also support `--offscreen`. They resolve geometry
 from the actual image asset, require the camera to keep rendering that same
 target, and retain initial, fallback and recovered captures. They reject

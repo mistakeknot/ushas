@@ -11,11 +11,12 @@ use bevy_metalfx::{
     MetalFxModeResource, MetalFxObservationFrame, MetalFxRenderScale, ScalerCreationFault,
 };
 use serde_json::{json, Value};
+use std::collections::VecDeque;
 use std::time::{Duration, Instant};
 
 const READY_FRAMES: usize = 20;
 const DEADLINE: Duration = Duration::from_secs(25);
-const MAX_OBSERVATIONS: usize = 4096;
+const OBSERVATIONS_PER_PHASE: usize = 1024;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LifecycleExercise {
@@ -85,12 +86,73 @@ enum Phase {
 }
 
 impl Phase {
+    const ALL: [Self; 3] = [Self::Initial, Self::Changed, Self::Restored];
+
+    fn index(self) -> usize {
+        match self {
+            Self::Initial => 0,
+            Self::Changed => 1,
+            Self::Restored => 2,
+        }
+    }
+
     fn name(self) -> &'static str {
         match self {
             Self::Initial => "initial",
             Self::Changed => "changed",
             Self::Restored => "restored",
         }
+    }
+}
+
+#[derive(Default)]
+struct ObservationLedger {
+    phases: [VecDeque<Value>; 3],
+    totals: [usize; 3],
+    evicted: [usize; 3],
+}
+
+impl ObservationLedger {
+    fn record(&mut self, phase: Phase, observation: Value) {
+        let index = phase.index();
+        let records = &mut self.phases[index];
+        self.totals[index] += 1;
+        if records.len() == OBSERVATIONS_PER_PHASE {
+            records.pop_front();
+            self.evicted[index] += 1;
+        }
+        records.push_back(observation);
+    }
+
+    fn observations(&self) -> Vec<Value> {
+        self.phases
+            .iter()
+            .flat_map(|records| records.iter().cloned())
+            .collect()
+    }
+
+    fn evicted(&self) -> usize {
+        self.evicted.iter().sum()
+    }
+
+    fn report(&self) -> Value {
+        let phases: serde_json::Map<String, Value> = Phase::ALL
+            .into_iter()
+            .map(|phase| {
+                let index = phase.index();
+                let records = &self.phases[index];
+                (
+                    phase.name().into(),
+                    json!({"total":self.totals[index],"retained":records.len(),
+                "evicted":self.evicted[index],
+                "first_retained_app_frame":records.front().map(|record|&record["app_frame"]),
+                "last_retained_app_frame":records.back().map(|record|&record["app_frame"])}),
+                )
+            })
+            .collect();
+        json!({"kind":"per_phase_recent_ring","max_records_per_phase":OBSERVATIONS_PER_PHASE,
+            "evicted":self.evicted(),"phases":phases,
+            "scope":"bounded recent observations within each phase; evicted records are not a complete transition history; transition events and captures are retained separately"})
     }
 }
 
@@ -124,9 +186,8 @@ pub struct LifecycleRun {
     native_cycle: Option<(u64, u64)>,
     native_evidence: Option<Value>,
     events: Vec<Value>,
-    observations: Vec<Value>,
+    observations: ObservationLedger,
     captures: Vec<Value>,
-    dropped_observations: usize,
     last_logged: Option<(Phase, Vec<ViewEvidence>, bool, ScalerFaultSnapshot)>,
 }
 
@@ -162,9 +223,8 @@ impl LifecycleRun {
             native_cycle: None,
             native_evidence: None,
             events: vec![],
-            observations: vec![],
+            observations: ObservationLedger::default(),
             captures: vec![],
-            dropped_observations: 0,
             last_logged: None,
         }
     }
@@ -199,8 +259,9 @@ impl LifecycleRun {
             "fault_generation":self.fault_generation,"creation_reason_seen":self.creation_reason_seen,
             "native_lifecycle":self.native_evidence,
             "creation_fault_scope":self.exercise.creation_fault().map(|_|"simulated creation completion only; not a reproduced driver failure or OS sleep; changed-phase pixels exercise the real bilinear fallback"),
-            "events":self.events,"observations":self.observations,"captures":self.captures,
-            "dropped_observations":self.dropped_observations})
+            "events":self.events,"observations":self.observations.observations(),"captures":self.captures,
+            "observation_retention":self.observations.report(),
+            "dropped_observations":self.observations.evicted()})
     }
 
     fn event(&mut self, now: Instant, frame: u64, name: &str, detail: Value) {
@@ -244,11 +305,7 @@ impl LifecycleRun {
             return;
         }
         self.last_logged = Some(key);
-        if self.observations.len() >= MAX_OBSERVATIONS {
-            self.dropped_observations += 1;
-            return;
-        }
-        self.observations.push(json!({"app_frame":frame,"elapsed_s":now.duration_since(self.started).as_secs_f64(),
+        self.observations.record(self.phase, json!({"app_frame":frame,"elapsed_s":now.duration_since(self.started).as_secs_f64(),
             "phase":self.phase.name(),"reset_pending":reset_pending,"adaptive_epoch":epoch,"scale":scale,
             "diagnostic_fault":{"generation":fault.generation,"mode":format!("{:?}",fault.fault),"scope":"main-world control snapshot; effect frame may lag extraction"},
             "views":views.iter().map(|v|json!({"entity":v.entity,"active":v.active,"fresh":v.fresh,
@@ -1129,6 +1186,57 @@ fn capture_is_valid(proof: &Value, actual: [u32; 2], expected: [u32; 2]) -> bool
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn long_changed_phase_preserves_each_phases_recent_evidence_and_honest_counts() {
+        let mut ledger = ObservationLedger::default();
+        let changed_count = OBSERVATIONS_PER_PHASE * 5;
+        let mut frame = 0;
+        for (phase, count) in [
+            (Phase::Initial, 30),
+            (Phase::Changed, changed_count),
+            (Phase::Restored, 30),
+        ] {
+            for _ in 0..count {
+                frame += 1;
+                ledger.record(phase, json!({"phase":phase.name(),"app_frame":frame}));
+            }
+        }
+        let rows = ledger.observations();
+        assert_eq!(rows.len(), OBSERVATIONS_PER_PHASE + 60);
+        for pair in rows.windows(2) {
+            assert!(
+                pair[0]["app_frame"].as_u64().unwrap() < pair[1]["app_frame"].as_u64().unwrap()
+            );
+        }
+        let summary = ledger.report();
+        assert_eq!(summary["evicted"], changed_count - OBSERVATIONS_PER_PHASE);
+        for (phase, total, retained) in [
+            ("initial", 30, 30),
+            ("changed", changed_count, OBSERVATIONS_PER_PHASE),
+            ("restored", 30, 30),
+        ] {
+            let records: Vec<_> = rows.iter().filter(|row| row["phase"] == phase).collect();
+            assert_eq!(records.len(), retained);
+            assert_eq!(summary["phases"][phase]["total"], total);
+            assert_eq!(summary["phases"][phase]["retained"], retained);
+            assert_eq!(summary["phases"][phase]["evicted"], total - retained);
+            assert_eq!(
+                summary["phases"][phase]["first_retained_app_frame"],
+                records[0]["app_frame"]
+            );
+            assert_eq!(
+                summary["phases"][phase]["last_retained_app_frame"],
+                records.last().unwrap()["app_frame"]
+            );
+        }
+        assert_eq!(
+            rows[30]["app_frame"],
+            30 + changed_count - OBSERVATIONS_PER_PHASE + 1
+        );
+        assert_eq!(rows.last().unwrap()["phase"], "restored");
+        assert_eq!(rows.last().unwrap()["app_frame"], frame);
+    }
 
     #[test]
     fn offscreen_fault_target_uses_the_real_image_without_a_window() {
