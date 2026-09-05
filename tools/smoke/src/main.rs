@@ -1,5 +1,7 @@
 //! Bounded, inspectable render test. JSON names each observation's actual scope.
 mod config;
+mod gate;
+mod lifecycle;
 mod metrics;
 mod scene;
 
@@ -10,12 +12,18 @@ use bevy::render::view::screenshot::{Screenshot, ScreenshotCaptured};
 use bevy::window::{PresentMode, WindowResolution};
 use bevy::winit::WinitSettings;
 use bevy_metalfx::{
-    MetalFxEffectState, MetalFxEffectStatus, MetalFxMode, MetalFxObservationFrame, MetalFxPlugin,
+    MetalFxEffectState, MetalFxEffectStatus, MetalFxObservationFrame, MetalFxPlugin,
     MetalFxRenderScale,
 };
 use serde_json::{json, Value};
 use std::collections::BTreeMap;
 use std::time::{Duration, Instant};
+
+#[derive(Component, Clone, Copy)]
+enum CapturePurpose {
+    Warmup,
+    Final,
+}
 
 #[derive(Resource)]
 pub struct RunConfig(pub config::Config);
@@ -25,7 +33,10 @@ struct RunState {
     started: Instant,
     previous: Instant,
     measurement_started: Option<Instant>,
-    stable_ready_frames: usize,
+    readiness: gate::Readiness,
+    warmup_capture_requested: bool,
+    warmup_screenshot: Option<Value>,
+    rendered: BTreeMap<u64, f64>,
     frame_ms: Vec<f64>,
     frames: Vec<Value>,
     counts: BTreeMap<String, usize>,
@@ -40,7 +51,10 @@ impl Default for RunState {
             started: now,
             previous: now,
             measurement_started: None,
-            stable_ready_frames: 0,
+            readiness: gate::Readiness::default(),
+            warmup_capture_requested: false,
+            warmup_screenshot: None,
+            rendered: BTreeMap::new(),
             frame_ms: vec![],
             frames: vec![],
             counts: BTreeMap::new(),
@@ -69,12 +83,19 @@ fn main() -> AppExit {
             return AppExit::error();
         }
     };
-    let mode = match config.mode.as_str() {
-        "spatial" => MetalFxMode::Spatial,
-        "temporal" => MetalFxMode::Temporal,
-        "interpolate" => MetalFxMode::FrameInterpolation,
-        _ => MetalFxMode::Disabled,
+    let lifecycle_exercise = match config
+        .lifecycle
+        .as_deref()
+        .map(lifecycle::LifecycleExercise::parse)
+        .transpose()
+    {
+        Ok(value) => value,
+        Err(error) => {
+            eprintln!("{error}");
+            return AppExit::error();
+        }
     };
+    let mode = gate::mode(&config.mode);
     let plugin = MetalFxPlugin {
         mode,
         render_scale: config.scale,
@@ -90,7 +111,6 @@ fn main() -> AppExit {
             .with_single_present(config.presentation == "single")
             .with_refresh_interval(1.0 / config.refresh_hz),
         ),
-        ..default()
     };
     let window = Window {
         title: format!("Ushas smoke — {} {:.3}", config.mode, config.scale),
@@ -120,6 +140,9 @@ fn main() -> AppExit {
         ..default()
     };
     app.insert_resource(policy);
+    if let Some(exercise) = lifecycle_exercise {
+        app.add_plugins(lifecycle::LifecyclePlugin::new(exercise));
+    }
     app.insert_resource(RunConfig(config))
         .insert_resource(RunState::default())
         .insert_resource(WinitSettings::continuous())
@@ -139,12 +162,17 @@ fn capture_image(
     event: On<ScreenshotCaptured>,
     config: Res<RunConfig>,
     mut state: ResMut<RunState>,
+    purposes: Query<&CapturePurpose>,
 ) {
-    let path = config
+    let mut path = config
         .0
         .screenshot
         .clone()
         .unwrap_or_else(|| format!("{}.png", config.0.output));
+    let warmup = matches!(purposes.get(event.entity), Ok(CapturePurpose::Warmup));
+    if warmup {
+        path = format!("{path}.warmup.png");
+    }
     let result = (|| -> Result<Value, String> {
         if let Some(parent) = std::path::Path::new(&path)
             .parent()
@@ -165,10 +193,15 @@ fn capture_image(
         proof["height"] = json!(rgba.height());
         Ok(proof)
     })();
-    state.screenshot = Some(match result {
+    let proof = Some(match result {
         Ok(v) => v,
         Err(e) => json!({"error":e,"path":path}),
     });
+    if warmup {
+        state.warmup_screenshot = proof;
+    } else {
+        state.screenshot = proof;
+    }
 }
 #[allow(clippy::too_many_arguments)]
 fn observe_run(
@@ -181,6 +214,7 @@ fn observe_run(
     adapter: Option<Res<RenderAdapterInfo>>,
     cameras: Query<(Entity, &Camera), With<Camera3d>>,
     adaptive_status: Res<bevy_metalfx::MetalFxAdaptiveStatus>,
+    lifecycle: Option<Res<lifecycle::LifecycleRun>>,
     mut exit: MessageWriter<AppExit>,
     #[cfg(target_os = "macos")] gpu: Option<Res<bevy_metalfx::GpuTimingDiag>>,
     #[cfg(target_os = "macos")] present: Option<Res<bevy_metalfx::present::MetalFxDualPresent>>,
@@ -204,27 +238,37 @@ fn observe_run(
     let observed = observation
         .map(|o| o.state)
         .unwrap_or(MetalFxEffectState::NoRender);
-    let active_ready = fresh && observed == MetalFxEffectState::OutputWritten;
-    // Disabled is a control, not an active-effect assertion. Its render proof
-    // comes from the captured image, including native where no node runs.
-    let ready = if config.0.mode == "disabled" {
-        fresh && observed == MetalFxEffectState::Disabled
-    } else {
-        active_ready
-    };
-    run.stable_ready_frames = if ready {
-        run.stable_ready_frames + 1
-    } else {
-        0
-    };
+    let ready = fresh
+        && observation.is_some_and(|o| {
+            gate::arm_matches(
+                o,
+                gate::mode(&config.0.mode),
+                scale.0,
+                [config.0.width, config.0.height],
+            )
+        });
+    run.readiness
+        .observe(ready, observation.map(|o| o.frame_id));
     if run.measurement_started.is_none()
+        && lifecycle.as_ref().is_none_or(|l| l.finished())
         && elapsed >= config.0.warmup
-        && run.stable_ready_frames >= 20
+        && run.readiness.count >= 20
     {
-        run.measurement_started = Some(now);
-        #[cfg(target_os = "macos")]
-        if let Some(present) = &present {
-            present.sink.reset();
+        if !run.warmup_capture_requested {
+            run.warmup_capture_requested = true;
+            commands
+                .spawn((Screenshot::primary_window(), CapturePurpose::Warmup))
+                .observe(capture_image);
+        } else if run.warmup_screenshot.as_ref().is_some_and(|s| {
+            s["nonuniform"] == true
+                && s["width"] == config.0.width
+                && s["height"] == config.0.height
+        }) {
+            run.measurement_started = Some(now);
+            #[cfg(target_os = "macos")]
+            if let Some(present) = &present {
+                present.sink.reset();
+            }
         }
     }
     let measured = run
@@ -232,6 +276,15 @@ fn observe_run(
         .map(|t| now.duration_since(t).as_secs_f64());
     if measured.is_some_and(|v| v < config.0.seconds) {
         run.frame_ms.push(dt);
+        if let Some(o) = observation.filter(|_| ready) {
+            let timestamp = o
+                .observed_at
+                .checked_duration_since(run.started)
+                .map(|d| d.as_secs_f64());
+            if let Some(timestamp) = timestamp {
+                run.rendered.entry(o.frame_id).or_insert(timestamp);
+            }
+        }
         let label = if fresh {
             format!("{observed:?}")
         } else {
@@ -240,7 +293,7 @@ fn observe_run(
         *run.counts.entry(label).or_default() += 1;
         run.frames.push(json!({"frame":frame.0,"elapsed_s":elapsed,"loop_ms":dt,
             "requested_scale":scale.0,"ready":ready,"fresh":fresh,"state":format!("{observed:?}"),
-            "effect_frame":observation.map(|o|o.frame_id),"reason":observation.and_then(|o|o.reason).map(|r|format!("{r:?}")),
+            "effect_frame":observation.map(|o|o.frame_id),"effect_age_ms":snapshot.as_ref().and_then(|s|s.wall_age()).map(|d|d.as_secs_f64()*1000.0),"reason":observation.and_then(|o|o.reason).map(|r|format!("{r:?}")),
             "content_size":observation.map(|o|o.content_size),"output_size":observation.map(|o|o.output_size),
             "effective_mode":observation.map(|o|format!("{:?}",o.effective_mode))}));
     }
@@ -249,7 +302,7 @@ fn observe_run(
     if (measured_done || timed_out) && !run.screenshot_requested {
         run.screenshot_requested = true;
         commands
-            .spawn(Screenshot::primary_window())
+            .spawn((Screenshot::primary_window(), CapturePurpose::Final))
             .observe(capture_image);
     }
     if (measured_done && run.screenshot.is_some())
@@ -261,22 +314,27 @@ fn observe_run(
                 && s["height"] == config.0.height
         });
         let ready_count = run.frames.iter().filter(|v| v["ready"] == true).count();
-        let valid = measured_done
+        let valid = lifecycle.as_ref().is_none_or(|l| l.passed())
+            && !timed_out
+            && measured_done
             && run.frames.len() >= 20
             && valid_image
             && ready_count == run.frames.len();
         let mut report = json!({"schema":1,"source_revision":env!("USHAS_SOURCE_REV"),
             "source_dirty_at_build":env!("USHAS_SOURCE_DIRTY"),"valid":valid,
-            "timed_out":timed_out,"mode":config.0.mode,"initial_scale":config.0.scale,
+            "timed_out":timed_out,"mode":config.0.mode,"lifecycle":lifecycle.as_ref().map(|l|l.report()),"initial_scale":config.0.scale,
             "final_scale":scale.0,"width":config.0.width,"height":config.0.height,
             "pixel_iterations":config.0.pixel_iterations,"cpu_delay_ms":config.0.cpu_ms,
-            "moving":config.0.moving,"adaptive_requested":config.0.adaptive,
+            "moving":config.0.moving,"hdr":config.0.hdr,"native_aa":config.0.native_aa,"adaptive_requested":config.0.adaptive,
             "target_fps":config.0.target_fps.unwrap_or(60.0),"minimum_scale":config.0.minimum_scale,
             "warmup_s":config.0.warmup,"measurement_s":config.0.seconds,"wall_elapsed_s":elapsed,
             "adapter":adapter.as_ref().map(|a|json!({"name":a.name,"backend":format!("{:?}",a.backend),"driver":a.driver,"driver_info":a.driver_info})),
+            "validity_scope":"render smoke only; experimental timing and panel delivery have separate gates",
             "render_proof":"MetalFX OutputWritten is command encoding; screenshot checks nonuniform output; neither proves panel delivery",
             "frame_loop":metrics::summarize(&run.frame_ms,config.0.target_fps.unwrap_or(60.0)),
             "adaptive_status":format!("{:?}", *adaptive_status),"camera":camera.map(|(e,c)|json!({"entity":e.to_bits(),"active":c.is_active,"target_size":c.physical_target_size().map(|s|s.to_array())})),
+            "rendered_observations":{"unique_frames":run.rendered.len(),"first_frame":run.rendered.keys().next(),"last_frame":run.rendered.keys().next_back(),"timestamps_s":run.rendered},
+            "warmup_screenshot":run.warmup_screenshot,"environment":runtime_environment(),
             "retained_effects":status.snapshots(frame.0).iter().map(|s|format!("{s:?}")).collect::<Vec<_>>(),
             "effect_counts":run.counts,"screenshot":run.screenshot,"frames":run.frames});
         #[cfg(target_os = "macos")]
@@ -304,8 +362,9 @@ fn observe_run(
                 let snapshot = timing.snapshot();
                 report["experimental_timing"] = json!({"status":format!("{:?}",snapshot.status),
                     "reason":snapshot.reason,"dropped":snapshot.dropped_samples,"validated_for_governor":false,
-                    "observations":snapshot.observations.iter().map(|o|json!({
-                        "frame":o.identity.frame_id,"view":o.identity.view_id,
+                    "observations":snapshot.observations.iter().filter(|o|run.rendered.contains_key(&o.identity.frame_id)).map(|o|json!({
+                        "frame":o.identity.frame_id,"view":o.identity.view_id,"mode":format!("{:?}",o.identity.mode),"adaptive_epoch":o.identity.adaptive_epoch,
+                        "readback_latency_ms":o.observed_at.saturating_duration_since(o.identity.encoded_at).as_secs_f64()*1000.0,
                         "generation":o.identity.configuration_generation,"scale":o.identity.render_scale,
                         "input_size":o.identity.input_size,"output_size":o.identity.output_size,
                         "raw_ticks":o.raw_ticks,"marker_ms":o.marker_ms,"gpu_elapsed_ms":o.gpu_elapsed_ms,
@@ -337,4 +396,26 @@ fn observe_run(
             AppExit::error()
         });
     }
+}
+
+fn runtime_environment() -> Value {
+    let command = |program: &str, args: &[&str]| {
+        std::process::Command::new(program)
+            .args(args)
+            .output()
+            .ok()
+            .filter(|o| o.status.success())
+            .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_owned())
+    };
+    let executable = std::env::current_exe().ok();
+    let binary_hash = executable
+        .as_ref()
+        .and_then(|p| p.to_str())
+        .and_then(|p| command("/usr/bin/shasum", &["-a", "256", p]));
+    json!({"executable":executable,"binary_sha256":binary_hash,
+        "rustc":env!("USHAS_RUSTC"),"os":command("/usr/bin/sw_vers", &[]),
+        "metal_debug_layer":std::env::var("MTL_DEBUG_LAYER").ok(),
+        "features":"frame-interpolation (includes temporal)",
+        "surface_mode":"AutoNoVsync / AlwaysOnTop / continuous event loop",
+        "arguments":std::env::args().skip(1).collect::<Vec<_>>()})
 }

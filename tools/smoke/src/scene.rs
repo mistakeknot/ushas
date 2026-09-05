@@ -34,7 +34,7 @@ impl Plugin for ScenePlugin {
         load_internal_asset!(app, LOAD_SHADER, "load.wgsl", Shader::from_wgsl);
         app.add_plugins(MaterialPlugin::<LoadMaterial>::default())
             .add_systems(Startup, setup)
-            .add_systems(Update, animate);
+            .add_systems(Update, (configure_camera, animate));
     }
 }
 
@@ -47,6 +47,7 @@ fn setup(
     mut materials: ResMut<Assets<StandardMaterial>>,
     mut load_materials: ResMut<Assets<LoadMaterial>>,
     config: Res<crate::RunConfig>,
+    lifecycle: Option<Res<crate::lifecycle::LifecycleRun>>,
 ) {
     commands.spawn((
         Text::new("USHAS  |  thin geometry / motion / disocclusion"),
@@ -63,12 +64,12 @@ fn setup(
         },
         BackgroundColor(Color::srgba(0.015, 0.02, 0.025, 0.9)),
     ));
-    commands.spawn((
-        Camera3d::default(),
-        Msaa::Off,
-        bevy::core_pipeline::tonemapping::Tonemapping::AcesFitted,
-        Transform::from_xyz(0.0, 2.4, 8.0).looking_at(Vec3::new(0.0, 0.4, 0.0), Vec3::Y),
-    ));
+    if !lifecycle
+        .as_ref()
+        .is_some_and(|l| l.exercise() == crate::lifecycle::LifecycleExercise::LateCamera)
+    {
+        spawn_camera(&mut commands);
+    }
     commands.spawn((
         DirectionalLight {
             illuminance: 12_000.0,
@@ -135,5 +136,35 @@ fn animate(
     }
     if config.0.cpu_ms > 0 {
         std::thread::sleep(std::time::Duration::from_millis(config.0.cpu_ms));
+    }
+}
+
+pub(crate) fn spawn_camera(commands: &mut Commands) -> Entity {
+    commands
+        .spawn((
+            Camera3d::default(),
+            Msaa::Off,
+            bevy::core_pipeline::tonemapping::Tonemapping::AcesFitted,
+            Transform::from_xyz(0.0, 2.4, 8.0).looking_at(Vec3::new(0.0, 0.4, 0.0), Vec3::Y),
+        ))
+        .id()
+}
+
+#[derive(Component)]
+struct ConfiguredCamera;
+fn configure_camera(
+    mut commands: Commands,
+    config: Res<crate::RunConfig>,
+    cameras: Query<Entity, (With<Camera3d>, Without<ConfiguredCamera>)>,
+) {
+    for camera in &cameras {
+        let mut entity = commands.entity(camera);
+        entity.insert(ConfiguredCamera);
+        if config.0.hdr {
+            entity.insert(bevy::camera::Hdr);
+        }
+        if config.0.native_aa {
+            entity.insert(Msaa::Sample4);
+        }
     }
 }

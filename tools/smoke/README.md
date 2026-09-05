@@ -12,17 +12,31 @@ caffeinate -d tools/smoke/target/release/ushas-smoke \
   --warmup 4 --seconds 6 --out /tmp/ushas-temporal.json
 ```
 
-The run captures a PNG beside its JSON and exits. It waits for 20 ready frames
-and the requested warmup before measuring. Active modes require fresh
-`OutputWritten` observations throughout measurement. The capture must contain
-varied scene pixels beyond the UI header; a flat colored frame fails. Missing
+The run captures warmup and final PNGs beside its JSON and exits. It waits for
+20 distinct ready render observations, the requested warmup, and a valid initial
+image before measuring. Active modes require fresh `OutputWritten` observations
+with the requested mode, scale, and physical dimensions throughout measurement.
+Both captures must contain opaque, varied scene pixels beyond the UI header;
+a flat colored or zero-alpha frame fails. Missing
 rendering, timeout, capture failure, or report-write failure returns nonzero.
 A PNG proves captured content, not panel delivery.
 
 Use an unlocked, awake display and keep other GPU workloads fixed across arms.
 `caffeinate -d` prevents idle display sleep; it does not unlock an existing
-locked session. Preserve failed reports and logs. Record the exact source
-revision; `source_dirty_at_build` marks exploratory builds.
+locked session. Preserve failed reports and logs. The fixture stays above other windows during its bounded run to avoid macOS
+occlusion skipping the render path. The JSON retains compiler, OS, binary hash,
+source revision, and distinct rendered-frame IDs; `source_dirty_at_build` marks
+exploratory builds. CPU loop samples remain separate from render observations.
+
+For retained campaigns, use the wrapper below. It refuses existing evidence
+paths, bounds the entire process (including GPU hangs), prevents idle display
+sleep, and saves exit status, thermal state, binary/lock hashes, logs, and capture
+hashes even on failure:
+
+```sh
+python3 tools/smoke/run.py --timeout 90 -- \
+  --mode temporal --scale 0.5 --out /tmp/ushas-run-001.json
+```
 
 Useful controls:
 
@@ -62,3 +76,18 @@ repeat runs, and report confidence intervals. A statistically inconclusive or
 presentation-limited comparison is not a speedup. The thin geometry and motion
 scene still requires human image review; passing its smoke checks is not a
 quality verdict.
+
+Lifecycle checks are separate from performance measurement. Each waits for actual
+render observations and captures each supported state before advancing; failure
+or a 25-second lifecycle timeout invalidates the run. Successful exercises restore
+the original dimensions and one camera before the normal measurement begins.
+
+```sh
+python3 tools/smoke/run.py -- --mode temporal --scale 0.5 --adaptive \
+  --lifecycle inactive-cut-resume --out /tmp/ushas-resume-001.json
+```
+
+Available exercises are `resize`, `camera-cut`, `late-camera`, `multiple-views`,
+and `inactive-cut-resume`. Camera inactivity is a render-pause test, not an
+operating-system sleep/resume test. `--hdr` enables Bevy's HDR main texture;
+`--native-aa` selects the native-scale Disabled MSAA4 image-quality control.

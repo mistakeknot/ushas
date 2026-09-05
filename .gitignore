@@ -6,3 +6,5 @@ Cargo.lock
 !/tools/smoke/Cargo.lock
 !/tools/timing-probe/Cargo.lock
 /tools/*/target/
+
+/tools/smoke/__pycache__/

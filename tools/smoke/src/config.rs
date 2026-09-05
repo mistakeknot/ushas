@@ -3,6 +3,9 @@
 #[derive(Debug, PartialEq)]
 pub struct Config {
     pub mode: String,
+    pub hdr: bool,
+    pub native_aa: bool,
+    pub lifecycle: Option<String>,
     pub scale: f32,
     pub width: u32,
     pub height: u32,
@@ -25,6 +28,9 @@ impl Config {
     pub fn parse(args: impl IntoIterator<Item = String>) -> Result<Self, String> {
         let mut c = Self {
             mode: "disabled".into(),
+            hdr: false,
+            native_aa: false,
+            lifecycle: None,
             scale: 1.0,
             width: 1280,
             height: 720,
@@ -45,6 +51,14 @@ impl Config {
         let mut args = args.into_iter();
         while let Some(flag) = args.next() {
             match flag.as_str() {
+                "--hdr" => {
+                    c.hdr = true;
+                    continue;
+                }
+                "--native-aa" => {
+                    c.native_aa = true;
+                    continue;
+                }
                 "--experimental-timing" => {
                     c.experimental_timing = true;
                     continue;
@@ -72,6 +86,7 @@ impl Config {
             };
             match flag.as_str() {
                 "--mode" => c.mode = value,
+                "--lifecycle" => c.lifecycle = Some(value),
                 "--presentation" => c.presentation = value,
                 "--refresh-hz" => c.refresh_hz = number()?,
                 "--scale" => c.scale = number()? as f32,
@@ -90,6 +105,9 @@ impl Config {
         }
         if !["disabled", "spatial", "temporal", "interpolate"].contains(&c.mode.as_str()) {
             return Err("mode must be disabled, spatial, temporal, or interpolate".into());
+        }
+        if c.native_aa && (c.mode != "disabled" || c.scale != 1.0) {
+            return Err("native-aa is the disabled native-scale MSAA4 control".into());
         }
         if !["default", "single", "dual"].contains(&c.presentation.as_str())
             || (c.presentation != "default" && c.mode != "interpolate")

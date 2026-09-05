@@ -4,14 +4,31 @@ use serde_json::{json, Value};
 /// Inspect the scene area, excluding the UI header and window edges. A flat
 /// colored image has channel variation but is still missing scene content.
 pub fn image_proof(rgba: &[u8], width: u32, height: u32) -> Value {
+    let pixel_count = (width as usize).checked_mul(height as usize);
+    if width == 0 || height == 0 || pixel_count.and_then(|n| n.checked_mul(4)) != Some(rgba.len()) {
+        return json!({"nonuniform":false,"error":"invalid dimensions or RGBA length"});
+    }
+    let pixel_count = pixel_count.unwrap();
+    let alpha_zero_pixels = rgba.chunks_exact(4).filter(|pixel| pixel[3] == 0).count();
+    let opaque_pixels = rgba.chunks_exact(4).filter(|pixel| pixel[3] == 255).count();
+    let all_zero_rgba = rgba.iter().all(|byte| *byte == 0);
+    let capture_error = if all_zero_rgba {
+        Some("all_zero_rgba_readback")
+    } else if alpha_zero_pixels == pixel_count {
+        Some("zero_alpha_readback")
+    } else {
+        None
+    };
     let mut colors = std::collections::BTreeSet::new();
     let (mut low, mut high) = (255u8, 0u8);
     for y in ((height / 5)..(height * 9 / 10)).step_by(2) {
         for x in ((width / 10)..(width * 9 / 10)).step_by(2) {
             let offset = ((y as usize * width as usize) + x as usize) * 4;
-            let Some(pixel) = rgba.get(offset..offset + 3) else {
-                return json!({"nonuniform":false,"error":"truncated pixels"});
-            };
+            let pixel = &rgba[offset..offset + 4];
+            // RGB bytes with zero alpha cannot prove visible scene content.
+            if pixel[3] == 0 {
+                continue;
+            }
             colors.insert([pixel[0], pixel[1], pixel[2]]);
             let luminance =
                 ((u32::from(pixel[0]) + u32::from(pixel[1]) + u32::from(pixel[2])) / 3) as u8;
@@ -19,7 +36,9 @@ pub fn image_proof(rgba: &[u8], width: u32, height: u32) -> Value {
             high = high.max(luminance);
         }
     }
-    json!({"nonuniform":colors.len() > 32 && high.saturating_sub(low) > 32,
+    json!({"nonuniform":capture_error.is_none() && colors.len() > 32 && high.saturating_sub(low) > 32,
+        "alpha_zero_pixels":alpha_zero_pixels,"opaque_fraction":opaque_pixels as f64 / pixel_count as f64,
+        "all_zero_rgba":all_zero_rgba,"capture_error":capture_error,
         "scene_unique_colors":colors.len(),"scene_luminance_min":low,"scene_luminance_max":high})
 }
 
@@ -62,5 +81,34 @@ mod tests {
         assert_eq!(image_proof(&flat, 100, 100)["nonuniform"], false);
         let varied: Vec<_> = (0..10000).flat_map(|n| [(n % 256) as u8; 4]).collect();
         assert_eq!(image_proof(&varied, 100, 100)["nonuniform"], true);
+    }
+
+    #[test]
+    fn zero_alpha_readback_is_invalid_even_with_varied_rgb() {
+        let empty = vec![0u8; 100 * 100 * 4];
+        let proof = image_proof(&empty, 100, 100);
+        assert_eq!(proof["alpha_zero_pixels"], 10000);
+        assert_eq!(proof["all_zero_rgba"], true);
+        assert_eq!(proof["nonuniform"], false);
+        let transparent: Vec<_> = (0..10000)
+            .flat_map(|n| [(n % 256) as u8, (n % 251) as u8, (n % 241) as u8, 0])
+            .collect();
+        assert_eq!(image_proof(&transparent, 100, 100)["nonuniform"], false);
+        assert_eq!(image_proof(&transparent, 100, 100)["all_zero_rgba"], false);
+    }
+
+    #[test]
+    fn validates_full_rgba_length_and_reports_opaque_coverage() {
+        let opaque: Vec<_> = (0..10000)
+            .flat_map(|n| [(n % 256) as u8, (n % 251) as u8, (n % 241) as u8, 255])
+            .collect();
+        let proof = image_proof(&opaque, 100, 100);
+        assert_eq!(proof["opaque_fraction"], 1.0);
+        assert_eq!(proof["nonuniform"], true);
+        assert_eq!(
+            image_proof(&opaque[..opaque.len() - 1], 100, 100)["nonuniform"],
+            false
+        );
+        assert_eq!(image_proof(&[], 0, 100)["nonuniform"], false);
     }
 }
