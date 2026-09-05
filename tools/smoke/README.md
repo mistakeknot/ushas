@@ -83,6 +83,21 @@ render cadence, output pixels, and physical panel delivery are separate
 observations. Compare temporal-only against dual interpolation for product
 value, and report latency/ordering separately.
 
+For a bounded diagnostic across temporal-only, single interpolation and dual
+interpolation, freeze a clean release binary and run:
+
+```sh
+python3 tools/smoke/presentation_probe.py --binary /absolute/path/ushas-smoke \
+  --source-revision FULL_COMMIT_SHA --out /private/tmp/new-presentation-probe
+```
+
+The probe retains artifacts and continuously samples the main display and
+session. Locked, asleep or unknown preflight state records
+`environment_unavailable` and exits 3 without launching the renderer. Run it
+with access to macOS display services; sandbox-denied state is unknown. Its
+aggregate timestamps cannot establish frame identity, ordering, latency or
+net benefit, even when all three arms execute successfully.
+
 Before an efficacy claim, select a practical threshold (the initial roadmap
 uses at least 8% measured GPU-cost benefit for a downshift), balance arm order,
 repeat runs, and report confidence intervals. A statistically inconclusive or
