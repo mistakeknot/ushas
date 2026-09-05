@@ -1,15 +1,19 @@
 # Metal frame-cost timing feasibility
 
-Date: 2026-09-04. Roadmap gate: `shadow-work-vzox.3`.
+Initial probe: 2026-09-04; rendered-view verdict updated 2026-09-05 UTC.
+Roadmap gate: `shadow-work-vzox.3`.
 
 **Verdict: do not enable an autonomous GPU-budget governor from the existing
 timer or Bevy diagnostics.** This Mac exposes timestamp capabilities, but the
 straightforward query path fails on hardware. A narrower path works in a
 headless dependent-compute probe: pass-descriptor timestamps, with query
-resolution submitted only after the workload completes. This is a candidate
-for a rendered-view experiment, not a validated frame-cost signal.
+resolution submitted only after the workload completes. The subsequent
+[rendered-view trace](marker-scope-01.md) matched all 237 retained intervals
+to the descriptor timestamps, but found substantial idle time, overlapping
+frames and incomplete preprocessing coverage. The interval is not GPU busy
+cost and remains unvalidated for the governor.
 
-Until that experiment passes, accept an explicitly supplied, validated frame
+Until a frame-cost producer passes its coverage and validity gates, accept an explicitly supplied, validated frame
 signal with its provenance and expose automatic GPU timing as unavailable.
 CPU frame duration and the dedicated MetalFX command-buffer duration must not
 silently substitute for a render-plus-upscale budget measurement.
@@ -94,7 +98,7 @@ Bevy's existing encoders through this API repeats the raw/wgpu mixing fault
 that Ushas already fixed. An upstream observational accessor would be a
 separate dependency change.
 
-## Integration route to test next
+## Rendered-view integration and bounded verdict
 
 An opt-in implementation now exists in `src/frame_timing.rs` as
 `ExperimentalFrameTimingPlugin`. It inserts destination-preserving render
@@ -103,8 +107,8 @@ passes before `Core3dSystems::Prepass` and after both Bevy upscaling and
 the raw output view. Neither consumes Bevy's clear bookkeeping. Both draw a
 full-screen triangle using ZERO source / ONE destination blending with
 Load/Store attachments, creating real render-attachment accesses rather than
-empty command buffers. These accesses still require trace validation of the
-intended GPU dependency envelope.
+empty command buffers. The retained trace establishes the marker envelope's
+identity, while documenting why its scope is insufficient for adaptation.
 
 The plugin exposes `ExperimentalFrameTiming` snapshots with Pending,
 Unavailable, Failed, and ObservedUnvalidated states. It retains original
@@ -124,9 +128,13 @@ states. The plugin never publishes a `ValidatedGpuFrameCost`.
 The renderer must request `TIMESTAMP_QUERY` before device creation; the helper
 `frame_timing::requested_features()` supplies that flag. Add the experiment
 after `MetalFxPlugin`, and run matching instrumented and uninstrumented scenes.
-This source and its five CPU tests compile; rendered output, added-pass
-overhead, CPU-delay controls, and trace coverage remain hardware validation
-gates below.
+Rendered output and timestamp identity have now been checked. The trace found
+that idle time occupies 59.70% of the mean envelope, with much of that idle
+overlapping drawable acquisition; 22 sampled envelopes overlap at least one
+neighboring frame.
+This negative scope verdict completes the bounded feasibility investigation.
+It does not validate an autonomous hardware trajectory or remove the need
+to measure any future producer's perturbation and workload discrimination.
 
 Bevy 0.19 offers useful schedule boundaries without replacing its renderer:
 
@@ -139,9 +147,13 @@ Bevy 0.19 offers useful schedule boundaries without replacing its renderer:
 CPU schedule order alone does not guarantee a GPU measurement boundary.
 Separate command buffers can overlap. An empty marker pass is especially
 unsuitable: a timestamp can remain unwritten, or the marker can execute
-without waiting for the work being measured. The next experiment needs
+without waiting for the work being measured. A future producer would need
 timestamps on actual, dependency-carrying first and final render passes, or
 an explicitly validated dependency chain that encloses them.
+
+The original investigation protocol is retained below. Its scope-validation
+step produced the negative verdict above; the remaining calibration steps
+are requirements for a future valid producer, not completed work.
 
 1. Instrument a pinned smoke scene's first relevant render pass and final
    composition pass through descriptor `timestamp_writes`. Include raw
@@ -172,11 +184,12 @@ an explicitly validated dependency chain that encloses them.
    60/120 Hz, resize, history reset, delayed callbacks, and two cameras before
    making multi-view claims. Only then calibrate and enable autonomous use.
 
-This route is technically plausible because the narrow descriptor/deferred
-control passed. Render-pass descriptors, raw MetalFX ordering, and presentation
-have not passed those gates. A failure there should leave the external-signal
-contract available and automatic collection unavailable, with the failure
-reason retained for diagnosis.
+Descriptor readbacks and current raw MetalFX ordering have been observed, but
+the resulting envelope failed the required cost interpretation. The
+external-signal contract remains available and automatic collection remains
+unavailable. The separate serial-completion benchmark includes CPU scheduling
+and polling, so its completed-render rates cannot replace the missing GPU
+busy-cost producer either.
 
 ## Loaded offscreen readback follow-up
 

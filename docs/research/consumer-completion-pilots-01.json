@@ -1,0 +1,289 @@
+{
+  "schema": 1,
+  "scope": "Unpaired Metal API validation pilots establishing bounded serial completion, matching effect/MSAA identity, opaque image readback and successful normal shutdown. No comparative performance or enable/disable verdict.",
+  "comparison": {
+    "design": "One process per arm; not paired or order-balanced; validation enabled.",
+    "paired_repetitions": 0,
+    "paired_confidence_interval": null,
+    "eight_percent_threshold_evaluated": false,
+    "performance_verdict": null
+  },
+  "measurement_scope": "Serial completed-render cadence includes CPU preparation, scheduling, logging, callback delivery and polling. It is not GPU busy time, normal pipelined app FPS, input latency, panel delivery or power.",
+  "archive": {
+    "directory": "/Users/sma/projects/docs/ushas/evidence/consumer-completion-pilots-01",
+    "manifest": "archive-manifest.json",
+    "manifest_sha256": "e5bc4d25d1f046417b1869a10299a1ab6bb28ae5a7cc61fce762bd9bba50831c",
+    "retained_files": 29,
+    "retained_payload_bytes": 11758335
+  },
+  "provenance": {
+    "consumer_commit": "2a49dfcb294a69283e9e4cf9aa0662b61c51495a",
+    "ushas_commit": "56a3b16c8c1c8f12a5320adc5082c6d20b6378c1",
+    "original_consumer_source": "/Users/sma/projects/shadow-work/.claude/worktrees/metalfx-m5-research",
+    "original_ushas_source": "/Users/sma/projects/ushas",
+    "frozen_directory": "/private/tmp/ushas-consumer-zex22ugt",
+    "resolved_metalfx": "path+file:///private/tmp/ushas-consumer-zex22ugt/ushas#bevy_metalfx@0.5.0-rc.1",
+    "binary_sha256": "e1eaf124a3d01637a115af46bb9f02049c4ad093adb3596d5af49416df31a126",
+    "prepared_receipt": {
+      "file": "prepared.json",
+      "sha256": "94f5f6fc0ce78fa8fea954110e4498f3a51259e57aaf6f7c1dc065d7af473bff"
+    },
+    "check_receipt": {
+      "file": "check.json",
+      "sha256": "3aaa1f50ad76e060e2817caa7b046f8464e8635b7729b9965533af0c0a1fb275",
+      "exit_code": 0
+    },
+    "build_receipt": {
+      "file": "build.json",
+      "sha256": "d39365899487d97a21e2f8cdc3283756f32a77c9d2a6f88e4f2de9255c6212ed",
+      "exit_code": 0
+    },
+    "consumer_patch": {
+      "file": "consumer.patch",
+      "sha256": "5a76c579e780fefb20049584911c98580f77bc2c5e903c77d4d4d1e98a468aaa"
+    },
+    "lock_diff_files": [
+      "check-lock.patch",
+      "build-lock.patch"
+    ],
+    "built_lock_sha256": "af93d90250f291b35f869a6a27948900bde48de475d874f8c17fa9fc130964cd",
+    "completion_module": {
+      "frozen_path": "/private/tmp/ushas-consumer-zex22ugt/ushas/tools/smoke/src/completion.rs",
+      "sha256": "b79aed5f4e5638b539de879ccff6e5ada1725c1e6c934c741e8193d50cc74f94",
+      "source_included_in": "consumer.patch"
+    },
+    "instrumentation_directory": "/Users/sma/projects/ushas/tools/consumer-smoke",
+    "instrumentation_sha256": {
+      "run.py": "064d6f0786c12ac3605a7a7b7bf579810959352a1bf9f620e03b73b2822c6d60",
+      "probe.rs": "db2707814eb8ea96daa358015ad2deaa26d517e4b47f3ac423f9817187130abe",
+      "readiness.rs": "660e9e468359f526d724bb27d04bf1f8c2ce20b45cea9c7ab840b510b3823062",
+      "trial.py": "1ce0e5a8b7d56a6150362a19a678e50a70ae44a99b17c42ee0324d9b8d591361",
+      "completion_bridge.rs": "e9d4c9f3a04054c53484eec0ead350ec3214168bdbb35e739d6a9c5b7fb031e5"
+    },
+    "source_archive_and_asset_hashes": "prepared.json; bulk archives, extracted sources, textures and binary are omitted from this compact evidence archive"
+  },
+  "fixture": {
+    "target": "Offscreen image; metadata window only",
+    "output_size": [
+      1600,
+      900
+    ],
+    "pose": "Pinned consumer PRE_CUT",
+    "max_render_frames_in_flight": 1,
+    "completion_timeout_seconds": 5.0,
+    "warmup_minimum_seconds": 3.0,
+    "minimum_distinct_ready_before_measurement": 20,
+    "measure_seconds_minimum": 6.0,
+    "screenshot_request_epochs": [
+      1,
+      3
+    ],
+    "measured_epoch": 2,
+    "camera_cut_exercised": false,
+    "history_reset_exercised": false
+  },
+  "runs": [
+    {
+      "run": "native-sw404wkt",
+      "arm": "native",
+      "mode": "Disabled",
+      "scale": 1.0,
+      "actual_msaa_samples": 4,
+      "child_exit_code": 0,
+      "valid": true,
+      "metal_api_validation_log_marker": true,
+      "max_render_frames_in_flight": 1,
+      "completion_errors": [],
+      "in_flight_at_report": null,
+      "measurement": {
+        "epoch": 2,
+        "valid": true,
+        "completed_frame_fences": 861,
+        "qualified_render_frames": 861,
+        "first_frame_id": 24,
+        "last_frame_id": 884,
+        "effective_state": "Disabled",
+        "elapsed_seconds": 6.012143291
+      },
+      "diagnostic_metrics_only": {
+        "completed_frames": 861,
+        "elapsed_seconds": 6.012143290999999,
+        "completed_render_fps": 143.21015955971833,
+        "mean_interval_ms": 6.982744821138211,
+        "p95_interval_ms": 8.732332999999926,
+        "p99_interval_ms": 9.715124999999716,
+        "budget_miss_fraction": 0.0,
+        "mean_meets_60_fps": true
+      },
+      "report_file": "native-sw404wkt/effect.json",
+      "report_sha256": "f01a2abce78bc106fd88deb91ab14bd839e87d827e3c8d42e7d4ffd3aef2632b",
+      "run_manifest_file": "native-sw404wkt/manifest.json",
+      "run_manifest_sha256": "4ec0929beb311631330672de93e5be3b04f6a3f03473532b08cc3b4cbdb279fa",
+      "captures": [
+        {
+          "file": "native-sw404wkt/native_warmup.png",
+          "sha256": "ce9022d9bb717a350e819d1950f46c7e01e1ef9e7a07a5d37a7ce30143e39df0",
+          "request_epoch": 1,
+          "request_main_frame": 21,
+          "size": [
+            1600,
+            900
+          ],
+          "pixel_count": 1440000,
+          "opaque_pixels": 1440000,
+          "valid": true
+        },
+        {
+          "file": "native-sw404wkt/native_final.png",
+          "sha256": "ce9022d9bb717a350e819d1950f46c7e01e1ef9e7a07a5d37a7ce30143e39df0",
+          "request_epoch": 3,
+          "request_main_frame": 886,
+          "size": [
+            1600,
+            900
+          ],
+          "pixel_count": 1440000,
+          "opaque_pixels": 1440000,
+          "valid": true
+        }
+      ]
+    },
+    {
+      "run": "temporal-8jh7tpv7",
+      "arm": "temporal",
+      "mode": "Temporal",
+      "scale": 0.5,
+      "actual_msaa_samples": 1,
+      "child_exit_code": 0,
+      "valid": true,
+      "metal_api_validation_log_marker": true,
+      "max_render_frames_in_flight": 1,
+      "completion_errors": [],
+      "in_flight_at_report": null,
+      "measurement": {
+        "epoch": 2,
+        "valid": true,
+        "completed_frame_fences": 781,
+        "qualified_render_frames": 781,
+        "first_frame_id": 92,
+        "last_frame_id": 872,
+        "effective_state": "OutputWritten",
+        "elapsed_seconds": 6.007622708
+      },
+      "diagnostic_metrics_only": {
+        "completed_frames": 781,
+        "elapsed_seconds": 6.007622708,
+        "completed_render_fps": 130.00150607993206,
+        "mean_interval_ms": 7.69221857618438,
+        "p95_interval_ms": 9.17337499999985,
+        "p99_interval_ms": 9.847083000000566,
+        "budget_miss_fraction": 0.0012804097311139564,
+        "mean_meets_60_fps": true
+      },
+      "report_file": "temporal-8jh7tpv7/effect.json",
+      "report_sha256": "6b9f146b09d8d33763b0160d428677c5570fd14d8d2a76ccd3dd792d53b108bb",
+      "run_manifest_file": "temporal-8jh7tpv7/manifest.json",
+      "run_manifest_sha256": "3577d6ece8a62ce9b719454d5998c269f5ee6d73c80194feac0a76942fa9ebe1",
+      "captures": [
+        {
+          "file": "temporal-8jh7tpv7/temporal_warmup.png",
+          "sha256": "2e27af65dee99cea4cc537ec593cded017065ecf95eab2f62f580690a7c5b02b",
+          "request_epoch": 1,
+          "request_main_frame": 89,
+          "size": [
+            1600,
+            900
+          ],
+          "pixel_count": 1440000,
+          "opaque_pixels": 1440000,
+          "valid": true
+        },
+        {
+          "file": "temporal-8jh7tpv7/temporal_final.png",
+          "sha256": "6ff75fa8c9fbf0149c6bd202c6a39e0eeba1dffbb1ecffbd4cf788021dd210cb",
+          "request_epoch": 3,
+          "request_main_frame": 874,
+          "size": [
+            1600,
+            900
+          ],
+          "pixel_count": 1440000,
+          "opaque_pixels": 1440000,
+          "valid": true
+        }
+      ]
+    },
+    {
+      "run": "bilinear-_dxj0xw2",
+      "arm": "bilinear",
+      "mode": "Disabled",
+      "scale": 0.5,
+      "actual_msaa_samples": 1,
+      "child_exit_code": 0,
+      "valid": true,
+      "metal_api_validation_log_marker": true,
+      "max_render_frames_in_flight": 1,
+      "completion_errors": [],
+      "in_flight_at_report": null,
+      "measurement": {
+        "epoch": 2,
+        "valid": true,
+        "completed_frame_fences": 855,
+        "qualified_render_frames": 855,
+        "first_frame_id": 406,
+        "last_frame_id": 1260,
+        "effective_state": "Disabled",
+        "elapsed_seconds": 6.007231209
+      },
+      "diagnostic_metrics_only": {
+        "completed_frames": 855,
+        "elapsed_seconds": 6.0072312089999995,
+        "completed_render_fps": 142.32846551986276,
+        "mean_interval_ms": 7.026001414035087,
+        "p95_interval_ms": 8.293499999999767,
+        "p99_interval_ms": 8.746750000000247,
+        "budget_miss_fraction": 0.0,
+        "mean_meets_60_fps": true
+      },
+      "report_file": "bilinear-_dxj0xw2/effect.json",
+      "report_sha256": "57b8f7bfdd1caf979ff9fbd8a6fccbf5349151d35c7df9341aaa1278000c319b",
+      "run_manifest_file": "bilinear-_dxj0xw2/manifest.json",
+      "run_manifest_sha256": "a2eab158e7b99eebf641e77bb2ecc070e6108eacb71b8dd546d5e0214000521d",
+      "captures": [
+        {
+          "file": "bilinear-_dxj0xw2/bilinear_warmup.png",
+          "sha256": "e0120888211e25dbd5ce0149a2547c930bb9de94823157b6db37e49ba95e2652",
+          "request_epoch": 1,
+          "request_main_frame": 403,
+          "size": [
+            1600,
+            900
+          ],
+          "pixel_count": 1440000,
+          "opaque_pixels": 1440000,
+          "valid": true
+        },
+        {
+          "file": "bilinear-_dxj0xw2/bilinear_final.png",
+          "sha256": "e0120888211e25dbd5ce0149a2547c930bb9de94823157b6db37e49ba95e2652",
+          "request_epoch": 3,
+          "request_main_frame": 1262,
+          "size": [
+            1600,
+            900
+          ],
+          "pixel_count": 1440000,
+          "opaque_pixels": 1440000,
+          "valid": true
+        }
+      ]
+    }
+  ],
+  "interpretation_limits": [
+    "No repeated paired consumer comparison is established by these pilots.",
+    "The preserved six-cut-image mode and production pacing still need their own runs.",
+    "The final Drain epoch has no throughput because it remains open; the measured epoch is closed and valid.",
+    "Early unqualified warmup frames remain recorded; they are not counted as measured ready work.",
+    "Metal API Validation Enabled is recorded in each run log; device model and OS build are not separately recorded by these consumer receipts."
+  ]
+}
