@@ -41,6 +41,7 @@ final class BenchModel {
   @ObservationIgnored var configureTask: Task<Void, Never>?
   @ObservationIgnored var quitAfterStop = false
   @ObservationIgnored var stressPanel: NSPanel?
+  @ObservationIgnored var statusUpdates = RunStatusUpdates()
   init() {
     do {
       let support = try FileManager.default.url(
@@ -61,6 +62,7 @@ final class BenchModel {
     liveFPS = nil
     progress = 0
     activeCommand = command
+    statusUpdates = RunStatusUpdates()
     let runConfiguration = configuration
     let presentation = RunPresentation(command: command, configuration: runConfiguration)
     activePresentation = presentation
@@ -91,6 +93,7 @@ final class BenchModel {
   }
   func stop() {
     guard running else { return }
+    statusUpdates.stop()
     status = "Stopping and preserving the run…"
     session.stop()
   }
@@ -107,14 +110,10 @@ final class BenchModel {
     if let scene = event.scene { currentScene = scene.capitalized }
     if let value = event.progress { progress = value }
     if let value = event.renderFPS { liveFPS = value }
-    if let message = event.message {
+    if let message = statusUpdates.message(
+      for: event, command: activeCommand, scene: currentScene)
+    {
       status = message
-    } else if event.event == "started" {
-      status = "Rendering the lab…"
-    } else if event.event == "scene_complete" {
-      status = "Scene complete. Preparing the next view…"
-    } else if event.event == "complete" {
-      status = "Checking the result…"
     }
   }
   private func finish(_ outcome: ChildOutcome) {

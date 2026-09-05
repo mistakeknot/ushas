@@ -85,6 +85,34 @@ public struct ChildEvent: Decodable, Sendable, Equatable {
   }
 }
 
+/// Progress may omit a message after warmup. Preserve errors and requested stop
+/// while late child events drain, and keep comparison-parent messages intact.
+public struct RunStatusUpdates: Sendable {
+  private var preservingCurrentStatus = false
+  public init() {}
+  public mutating func stop() { preservingCurrentStatus = true }
+  public mutating func message(for event: ChildEvent, command: String, scene: String) -> String? {
+    guard !preservingCurrentStatus else { return nil }
+    if event.event == "error" { preservingCurrentStatus = true }
+    if let message = event.message { return message }
+    switch event.event {
+    case "started": return "Rendering the lab…"
+    case "scene_complete": return "Scene complete. Preparing the next view…"
+    case "complete": return "Checking the result…"
+    case "progress":
+      guard event.valid != false,
+        (event.progress ?? 0) > 0 || (event.renderFPS ?? 0) > 0
+      else { return nil }
+      switch command {
+      case "benchmark": return "Rendering \(scene.lowercased())…"
+      case "stress": return "Stress running · \(scene)"
+      default: return nil
+      }
+    default: return nil
+    }
+  }
+}
+
 /// A complete event can arrive fragmented across reads. Unknown events are ignored;
 /// malformed known messages poison the run even if a later event claims success.
 public struct EventDecoder: Sendable {
