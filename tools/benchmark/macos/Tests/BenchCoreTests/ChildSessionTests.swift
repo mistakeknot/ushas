@@ -4,7 +4,7 @@ import Testing
 @testable import BenchCore
 
 @MainActor private func runMock(
-  script: String, cancel: Bool = false, cancelWhenStarted: Bool = false
+  script: String, cancel: Bool = false, cancelWhenStarted: Bool = false, arguments: [String] = []
 ) async throws -> (ChildOutcome, Bool) {
   let root = try temporaryDirectory()
   defer { try? FileManager.default.removeItem(at: root) }
@@ -22,11 +22,24 @@ import Testing
     session.onFinish = { outcome in continuation.resume(returning: (outcome, session.running)) }
     do {
       try session.start(
-        executable: executable, arguments: [output.path], output: output,
+        executable: executable, arguments: [output.path] + arguments, output: output,
         logURL: root.appendingPathComponent("child.log"))
       if cancel { session.stop(graceNanoseconds: 100_000_000, killGraceNanoseconds: 100_000_000) }
     } catch { continuation.resume(throwing: error) }
   }
+}
+@Test @MainActor func completionMustMatchTheRequestedBackgroundTarget() async throws {
+  let json = String(decoding: try JSONSerialization.data(withJSONObject: fixture()), as: UTF8.self)
+  let script = """
+    mkdir "$1"
+    cat > "$1/result.json" <<'REPORT'
+    \(json)
+    REPORT
+    printf '{"schema_version":1,"event":"complete","valid":true,"report":"%s/result.json"}\\n' "$1"
+    """
+  let (outcome, running) = try await runMock(script: script, arguments: ["--background"])
+  #expect(outcome.error?.contains("different execution target") == true)
+  #expect(!running)
 }
 @Test @MainActor func cancellationAllowsCoordinatorCleanupAfterTERM() async throws {
   let script = """

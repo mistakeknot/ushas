@@ -24,6 +24,8 @@ final class BenchModel {
   var configuration = BenchConfiguration()
   var running = false
   var activeCommand = ""
+  var activePresentation: RunPresentation?
+  var canStopWithEscape: Bool { running && activePresentation?.handlesLauncherEscape == true }
   var progress = 0.0
   var status = "Ready for a fresh run."
   var liveFPS: Double?
@@ -59,25 +61,32 @@ final class BenchModel {
     liveFPS = nil
     progress = 0
     activeCommand = command
+    let runConfiguration = configuration
+    let presentation = RunPresentation(command: command, configuration: runConfiguration)
+    activePresentation = presentation
     status = "Opening the render lab…"
     currentScene = "Preparing the lab"
     let output = store.newOutput()
     self.output = output
     do {
       try session.start(
-        executable: helper, arguments: configuration.arguments(command: command, output: output),
+        executable: helper, arguments: runConfiguration.arguments(command: command, output: output),
         output: output, logURL: store.logURL(for: output))
       running = true
-      if command == "stress" {
+      switch presentation.launchBehavior {
+      case .stayInLauncher:
+        break
+      case .showStressPanel:
         showStressControls()
         for window in NSApp.windows where window !== stressPanel { window.orderOut(nil) }
         stressPanel?.orderFrontRegardless()
-      } else {
+      case .hideLauncher:
         NSApp.hide(nil)
       }
     } catch {
       self.error = error.localizedDescription
       running = false
+      activePresentation = nil
     }
   }
   func stop() {
@@ -109,7 +118,9 @@ final class BenchModel {
     }
   }
   private func finish(_ outcome: ChildOutcome) {
+    let presentation = activePresentation
     running = false
+    activePresentation = nil
     configureTask?.cancel()
     configureTask = nil
     stressPanel?.close()
@@ -132,7 +143,7 @@ final class BenchModel {
     page = .results
     if quitAfterStop {
       NSApp.reply(toApplicationShouldTerminate: true)
-    } else {
+    } else if presentation?.activatesResults == true {
       NSApp.unhide(nil)
       NSApp.activate(ignoringOtherApps: true)
       NSApp.windows.first(where: { !($0 is NSPanel) })?.makeKeyAndOrderFront(nil)
@@ -166,6 +177,7 @@ final class BenchModel {
     } catch { self.error = error.localizedDescription }
   }
   func showStressControls() {
+    guard running, activeCommand == "stress" else { return }
     if let stressPanel {
       stressPanel.orderFrontRegardless()
       return
@@ -182,5 +194,6 @@ final class BenchModel {
     panel.contentView = NSHostingView(rootView: StressControlPanel(model: self))
     panel.setFrameOrigin(NSPoint(x: 36, y: 100))
     stressPanel = panel
+    panel.orderFrontRegardless()
   }
 }

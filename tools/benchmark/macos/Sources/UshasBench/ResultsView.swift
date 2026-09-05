@@ -39,6 +39,7 @@ struct ResultsView: View {
                 StatusPill(
                   title: result.accepted ? "VALID" : "NOT QUALIFIED", good: result.accepted)
               }
+              StatusPill(title: result.report.executionLabel.uppercased(), good: result.accepted)
             }.frame(maxWidth: .infinity, alignment: .leading)
           }
           VStack(alignment: .leading, spacing: 12) {
@@ -175,7 +176,10 @@ struct ResultsView: View {
               Circle().fill(entry.result?.accepted == true ? Color.labGreen : .labCoral).frame(
                 width: 6, height: 6)
               VStack(alignment: .leading, spacing: 4) {
-                Text(entry.result?.report.kind.capitalized ?? "Unreadable result").font(
+                Text(
+                  entry.result.map { "\($0.report.kind.capitalized) · \($0.report.executionLabel)" }
+                    ?? "Unreadable result"
+                ).font(
                   .custom("AvenirNext-DemiBold", size: 13))
                 Text(entry.date.formatted(date: .abbreviated, time: .shortened)).font(
                   .system(size: 11)

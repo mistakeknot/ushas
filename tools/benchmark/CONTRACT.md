@@ -17,6 +17,24 @@ elements. Native is always scale1 andMSAA4; reconstructed/bilinear armsMSAAoff.
 Preset `standard-v1` means default dimensions/frames/seed and no custom load.
 Stress always custom. Renderer mode is fixed at process creation.
 
+Background follow-up: valueless `--background` selects a persistent GPU image
+and a schedule-driven runner, independent of native window visibility. CLI
+default remains windowed; the app defaults to Background run and can switch to
+the visible lab. `RunConfig.background` defaults false when absent in legacy
+JSON. Standard background results use `claude-lab-offscreen-v1`; windowed
+results retain `claude-lab-standard-v1`. Explicit window presets combined with
+`--background` are rejected. Custom results remain custom and retain the flag.
+Every comparison child, including its quality replay, inherits the same flag;
+different execution targets cannot join a comparison.
+
+Background benchmark/stress never creates a native render window or reads back
+images. Keep normal pipelining and the existing cohort completion/proof rules.
+Environment evidence names `render_target=offscreen_image`,
+`runner=schedule_loop`, `live_preview=false`, and `measured_readbacks=false`.
+Only capture replays create screenshot/readback requests. The SwiftUI launcher
+remains available for progress, stress controls, Stop and foreground Escape;
+background launch/completion must not steal focus from another application.
+
 stdout is newlineJSON events; stderr is diagnostic log. Events have schema_version1,
 event:string and optional message,scene,progress,render_fps,report,path. Stable
 event names: started,progress,scene_complete,complete,error. The complete event
@@ -69,7 +87,7 @@ world geometry/materials/lights/particles plus minimal caption/Escape HUD.
 ## App
 
 SwiftUI launcher bundles renderer at Contents/Helpers/ushas-bench. Fresh process
-per arm; launcher hides during scored child rendering and returns for results.
+per arm; launcher hides during windowed scored rendering and returns for results.
 CLI accessible inside.app; noPython/runtime downloads. Baseline defaultnative;
 user can choose allfour modes and legal scales. App history stores runs locally;
 export produces a self-contained report bundle. Comparison slider uses retained

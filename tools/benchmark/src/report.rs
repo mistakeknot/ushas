@@ -1,4 +1,4 @@
-use crate::config::{Action, RunConfig, PROFILE_VERSION};
+use crate::config::{Action, RunConfig};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
@@ -56,13 +56,23 @@ pub fn metadata(config: &RunConfig, kind: &str, started: &str) -> Result<Value, 
     let mut portable = config.clone();
     portable.out = ".".into();
     Ok(json!({"schema_version":1,"kind":kind,"config":portable,
-        "profile_version":if config.standard(){PROFILE_VERSION}else{"custom"},
+        "profile_version":config.profile_version(),
         "source_revision":env!("USHAS_BENCH_SOURCE_REVISION"),
         "source_dirty":env!("USHAS_BENCH_SOURCE_DIRTY")=="true",
         "binary_sha256":sha256(&std::env::current_exe().map_err(|e|e.to_string())?)?,
-        "started_utc":started,"metric":"completed-render throughput",
-        "metric_scope":"First cohort admission through asynchronous closing render-queue completion; excludes separate native presentation. Not GPU-only time, displayed FPS, or 1% lows.",
+        "started_utc":started,"metric":if config.action == Action::Capture {"deterministic image replay"} else {"completed-render throughput"},
+        "metric_scope":metric_scope(config),
         "target_render_fps":120,"valid":false,"stopped":false,"errors":[],"render_fps":null}))
+}
+
+fn metric_scope(config: &RunConfig) -> &'static str {
+    if config.action == Action::Capture {
+        "Separate offscreen image replay with readbacks; no benchmark score, surface acquisition or presentation. Capture replay does not measure GPU busy time."
+    } else if config.background {
+        "Offscreen completed-render throughput from first cohort admission through asynchronous closing render-queue completion; includes CPU/render scheduling and queue callback dispatch, with no surface acquisition or presentation. This is not GPU busy time, displayed FPS, frame pacing or 1% lows."
+    } else {
+        "Window completed-render throughput from first cohort admission through asynchronous closing render-queue completion; includes CPU/render scheduling, surface acquisition and queue callback dispatch; excludes separate native presentation. This is not GPU busy time, displayed FPS, frame pacing or 1% lows."
+    }
 }
 
 pub fn contained_file(root: &Path, name: &str) -> Result<PathBuf, String> {
@@ -125,6 +135,35 @@ fn validate_capture(config: &RunConfig, capture: &mut Value) -> Result<(), Strin
 }
 
 pub fn seal(config: &RunConfig, mut result: EngineResult, mut envelope: Value) -> Value {
+    if config.background {
+        for (key, expected) in [
+            ("render_target", "offscreen_image"),
+            ("runner", "schedule_loop"),
+        ] {
+            if result.environment[key].as_str() != Some(expected) {
+                result
+                    .errors
+                    .push(format!("background {key} must be {expected}"));
+            }
+        }
+        if result.environment["live_preview"].as_bool() != Some(false) {
+            result
+                .errors
+                .push("background live_preview must be false".into());
+        }
+        if config.action != Action::Capture {
+            if result.environment["measured_readbacks"].as_bool() != Some(false) {
+                result.errors.push(
+                    "background measured_readbacks must be false outside capture replay".into(),
+                );
+            }
+            if !result.captures.is_empty() {
+                result
+                    .errors
+                    .push("background benchmark/stress cannot contain capture readbacks".into());
+            }
+        }
+    }
     let expected: Vec<_> = config
         .scenes()
         .iter()
@@ -248,7 +287,7 @@ pub fn write_bundle(root: &Path, value: &Value) -> Result<PathBuf, String> {
             }
         }
     }
-    let html=format!("<!doctype html><html lang=en><meta charset=utf-8><meta name=viewport content='width=device-width,initial-scale=1'><title>Ushas Bench result</title><style>body{{background:#171a1d;color:#eee7dc;font:16px system-ui;margin:4vw;max-width:1400px}}h1{{color:#e89980;font-size:48px}}pre{{white-space:pre-wrap;overflow-wrap:anywhere;background:#22272b;padding:20px;border-radius:12px}}img{{width:100%;border-radius:12px}}figure{{margin:2em 0}}figcaption{{padding:.5em 0;color:#b9b9b3}}a{{color:#e89980}}</style><h1>Ushas Bench</h1><p>{state} · {}</p><h2>{rate}</h2><p>Completed-render throughput covers the measured rendering cohort through its closing queue callback. It is not GPU-only time or displayed FPS. Captures come from a separate deterministic replay.</p><p><a href=result.json>Machine-readable report</a></p>{images}<details><summary>Full evidence and configuration</summary><pre>{}</pre></details></html>",esc(value["profile_version"].as_str().unwrap_or("custom")),esc(&serde_json::to_string_pretty(value).map_err(|e|e.to_string())?));
+    let html=format!("<!doctype html><html lang=en><meta charset=utf-8><meta name=viewport content='width=device-width,initial-scale=1'><title>Ushas Bench result</title><style>body{{background:#171a1d;color:#eee7dc;font:16px system-ui;margin:4vw;max-width:1400px}}h1{{color:#e89980;font-size:48px}}pre{{white-space:pre-wrap;overflow-wrap:anywhere;background:#22272b;padding:20px;border-radius:12px}}img{{width:100%;border-radius:12px}}figure{{margin:2em 0}}figcaption{{padding:.5em 0;color:#b9b9b3}}a{{color:#e89980}}</style><h1>Ushas Bench</h1><p>{state} · {}</p><h2>{rate}</h2><p>{}</p><p>Captures come from a separate deterministic replay.</p><p><a href=result.json>Machine-readable report</a></p>{images}<details><summary>Full evidence and configuration</summary><pre>{}</pre></details></html>",esc(value["profile_version"].as_str().unwrap_or("custom")),esc(value["metric_scope"].as_str().unwrap_or("Completed rendering is not GPU-only time or displayed FPS.")),esc(&serde_json::to_string_pretty(value).map_err(|e|e.to_string())?));
     std::fs::write(root.join("index.html"), html).map_err(|e| e.to_string())?;
     Ok(path)
 }
@@ -391,5 +430,201 @@ mod tests {
             "retained"
         );
         std::fs::remove_dir_all(base).unwrap();
+    }
+    fn complete_result() -> EngineResult {
+        EngineResult {
+            valid: true,
+            scenes: crate::config::SceneKind::ALL
+                .iter()
+                .map(|kind| {
+                    let mut result = scene(120.);
+                    result.scene = kind.as_str().into();
+                    result
+                })
+                .collect(),
+            environment: json!({"render_target":"offscreen_image", "runner":"schedule_loop",
+                "live_preview":false, "measured_readbacks":false}),
+            ..Default::default()
+        }
+    }
+    #[test]
+    fn background_metadata_declares_a_separate_profile_and_metric_scope() {
+        let config = RunConfig {
+            background: true,
+            ..Default::default()
+        };
+        let value = metadata(&config, "benchmark", "2026-09-05T00:00:00Z").unwrap();
+        assert_eq!(value["config"]["background"], true);
+        assert_eq!(value["profile_version"], "claude-lab-offscreen-v1");
+        let scope = value["metric_scope"].as_str().unwrap();
+        for required in [
+            "offscreen",
+            "CPU",
+            "callback",
+            "no surface",
+            "presentation",
+            "not GPU busy",
+        ] {
+            assert!(
+                scope.to_lowercase().contains(&required.to_lowercase()),
+                "missing scope: {required}"
+            );
+        }
+    }
+    #[test]
+    fn background_sealing_rejects_false_or_missing_execution_target_evidence() {
+        for action in [Action::Benchmark, Action::Stress] {
+            let config = RunConfig {
+                background: true,
+                action,
+                ..Default::default()
+            };
+            let good = seal(&config, complete_result(), json!({}));
+            assert_eq!(good["valid"], true);
+            if action == Action::Stress {
+                assert!(good["render_fps"].is_null());
+            }
+            for (key, wrong) in [
+                ("render_target", json!("window_surface")),
+                ("runner", json!("winit")),
+                ("live_preview", json!(true)),
+                ("live_preview", json!("false")),
+                ("measured_readbacks", json!(true)),
+                ("measured_readbacks", json!("false")),
+            ] {
+                let mut result = complete_result();
+                result.environment[key] = wrong;
+                let value = seal(&config, result, json!({}));
+                assert_eq!(value["valid"], false, "{action:?}/{key}");
+                assert!(value["render_fps"].is_null());
+                assert!(value["errors"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .any(|error| error.as_str().unwrap().contains(key)));
+            }
+            for key in [
+                "render_target",
+                "runner",
+                "live_preview",
+                "measured_readbacks",
+            ] {
+                let mut result = complete_result();
+                result.environment.as_object_mut().unwrap().remove(key);
+                assert_eq!(
+                    seal(&config, result, json!({}))["valid"],
+                    false,
+                    "missing {key}"
+                );
+            }
+        }
+    }
+    #[test]
+    fn background_failure_evidence_is_preserved_and_legacy_window_reports_still_seal() {
+        let config = RunConfig {
+            background: true,
+            ..Default::default()
+        };
+        let mut result = complete_result();
+        result.valid = false;
+        result.errors.push("retained engine failure".into());
+        result.environment = json!({"diagnostic":"retained"});
+        let value = seal(
+            &config,
+            result,
+            json!({"source_revision":"retained source"}),
+        );
+        assert_eq!(value["valid"], false);
+        assert!(value["render_fps"].is_null());
+        assert_eq!(value["environment"]["diagnostic"], "retained");
+        assert_eq!(value["source_revision"], "retained source");
+        assert!(value["errors"]
+            .as_array()
+            .unwrap()
+            .contains(&json!("retained engine failure")));
+        let mut legacy = complete_result();
+        legacy.environment = Value::Null;
+        assert_eq!(
+            seal(&RunConfig::default(), legacy, json!({}))["valid"],
+            true
+        );
+    }
+    #[test]
+    fn background_capture_replay_accepts_readback_but_never_scores() {
+        let base = std::env::temp_dir().join(format!(
+            "ushas-background-capture-test-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let root = reserve_output(&base).unwrap();
+        let path = root.join("capture.png");
+        let mut encoder = png::Encoder::new(std::fs::File::create(&path).unwrap(), 128, 128);
+        encoder.set_color(png::ColorType::Rgba);
+        encoder.set_depth(png::BitDepth::Eight);
+        let mut writer = encoder.write_header().unwrap();
+        writer
+            .write_image_data(&[10, 20, 30, 255].repeat(128 * 128))
+            .unwrap();
+        writer.finish().unwrap();
+        let mut config = RunConfig {
+            action: Action::Capture,
+            background: true,
+            width: 128,
+            height: 128,
+            frames: 1,
+            scene: Some(crate::config::SceneKind::Materials),
+            out: root,
+            ..Default::default()
+        };
+        let mut result = complete_result();
+        result.scenes = vec![SceneResult {
+            frames: 1,
+            elapsed_seconds: 1. / 120.,
+            ..scene(120.)
+        }];
+        result.environment["measured_readbacks"] = json!(true);
+        result.captures = vec![
+            json!({"scene":"materials", "tick":0, "valid":true, "pixel_valid":true,
+            "path":path, "pixels":{"png_sha256":sha256(&path).unwrap()}}),
+        ];
+        let good = seal(&config, result.clone(), json!({}));
+        assert_eq!(good["valid"], true);
+        assert!(good["render_fps"].is_null());
+        assert!(metric_scope(&config)
+            .contains("Separate offscreen image replay with readbacks; no benchmark score"));
+        for key in ["render_target", "runner", "live_preview"] {
+            let mut wrong = result.clone();
+            wrong.environment.as_object_mut().unwrap().remove(key);
+            assert_eq!(
+                seal(&config, wrong, json!({}))["valid"],
+                false,
+                "capture missing {key}"
+            );
+        }
+        config.background = false;
+        let legacy = seal(&config, result, json!({}));
+        assert_eq!(legacy["valid"], true);
+        assert!(legacy["render_fps"].is_null());
+        std::fs::remove_dir_all(base).unwrap();
+    }
+    #[test]
+    fn background_measurement_cannot_hide_capture_readbacks_behind_a_false_flag() {
+        for action in [Action::Benchmark, Action::Stress] {
+            let config = RunConfig {
+                background: true,
+                action,
+                ..Default::default()
+            };
+            let mut result = complete_result();
+            result.captures.push(json!({"valid":false}));
+            let value = seal(&config, result, json!({}));
+            assert_eq!(value["valid"], false);
+            assert!(value["errors"].as_array().unwrap().contains(&json!(
+                "background benchmark/stress cannot contain capture readbacks"
+            )));
+        }
     }
 }

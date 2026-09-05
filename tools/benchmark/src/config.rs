@@ -3,6 +3,7 @@ use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
 pub const PROFILE_VERSION: &str = "claude-lab-standard-v1";
+pub const OFFSCREEN_PROFILE_VERSION: &str = "claude-lab-offscreen-v1";
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -80,6 +81,8 @@ pub struct StressLoad {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RunConfig {
     pub action: Action,
+    #[serde(default)]
+    pub background: bool,
     pub mode: Mode,
     pub scale: f32,
     pub width: u32,
@@ -95,6 +98,7 @@ impl Default for RunConfig {
     fn default() -> Self {
         Self {
             action: Action::Benchmark,
+            background: false,
             mode: Mode::Native,
             scale: 1.,
             width: 2560,
@@ -153,6 +157,15 @@ impl RunConfig {
             && self.seed == 21434
             && self.scene.is_none()
             && self.load == StressLoad::default()
+    }
+    pub fn profile_version(&self) -> &'static str {
+        if !self.standard() {
+            "custom"
+        } else if self.background {
+            OFFSCREEN_PROFILE_VERSION
+        } else {
+            PROFILE_VERSION
+        }
     }
     pub fn scenes(&self) -> Vec<SceneKind> {
         self.scene
@@ -225,5 +238,44 @@ mod tests {
         let r: RunConfig = serde_json::from_str(&serde_json::to_string(&c).unwrap()).unwrap();
         assert_eq!(r.scale.to_bits(), c.scale.to_bits());
         assert_eq!(r.scenes(), vec![SceneKind::Geometry]);
+    }
+    #[test]
+    fn background_defaults_to_window_for_legacy_json_and_roundtrips_explicitly() {
+        let mut value = serde_json::to_value(config()).unwrap();
+        value.as_object_mut().unwrap().remove("background");
+        let legacy: RunConfig = serde_json::from_value(value.clone()).unwrap();
+        assert!(!legacy.background);
+        assert!(!RunConfig::default().background);
+        value["background"] = serde_json::json!(true);
+        let background: RunConfig = serde_json::from_value(value).unwrap();
+        assert!(background.background);
+        assert_eq!(
+            serde_json::to_value(background).unwrap()["background"],
+            true
+        );
+        let mut invalid = serde_json::to_value(config()).unwrap();
+        invalid["background"] = serde_json::Value::Null;
+        assert!(serde_json::from_value::<RunConfig>(invalid).is_err());
+    }
+    #[test]
+    fn background_profiles_separate_execution_targets_without_changing_workloads() {
+        for action in [Action::Benchmark, Action::Capture] {
+            let mut c = config();
+            c.action = action;
+            assert_eq!(c.profile_version(), PROFILE_VERSION);
+            c.background = true;
+            assert_eq!(c.profile_version(), OFFSCREEN_PROFILE_VERSION);
+            assert_eq!(c.scenes(), SceneKind::ALL);
+            c.width = 1280;
+            assert_eq!(c.profile_version(), "custom");
+            c.background = false;
+            assert_eq!(c.profile_version(), "custom");
+        }
+        let mut stress = config();
+        stress.action = Action::Stress;
+        for background in [false, true] {
+            stress.background = background;
+            assert_eq!(stress.profile_version(), "custom");
+        }
     }
 }

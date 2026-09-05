@@ -15,6 +15,7 @@ public enum RenderMode: String, CaseIterable, Codable, Sendable, Identifiable {
 }
 
 public struct BenchConfiguration: Sendable, Equatable {
+  public var background = true
   public var mode: RenderMode = .native
   public var scale: String = "1"
   public var rounds: Int = 1
@@ -38,6 +39,7 @@ public struct BenchConfiguration: Sendable, Equatable {
         "--particles", String(particles), "--fill", String(fill),
       ]
     }
+    if background { result.append("--background") }
     return result
   }
   public var stressMessage: Data {
@@ -46,6 +48,23 @@ public struct BenchConfiguration: Sendable, Equatable {
         "event": "configure", "claudes": claudes,
         "lights": lights, "particles": particles, "fill": fill,
       ], options: [.sortedKeys])).map { $0 + Data([10]) } ?? Data()
+  }
+}
+
+/// Capture presentation behavior when the process starts. Later form edits must
+/// not hide, show or activate windows for a different run configuration.
+public struct RunPresentation: Sendable, Equatable {
+  public enum LaunchBehavior: Sendable, Equatable {
+    case stayInLauncher, hideLauncher, showStressPanel
+  }
+  public let background: Bool
+  public let launchBehavior: LaunchBehavior
+  public var activatesResults: Bool { !background }
+  public var handlesLauncherEscape: Bool { background }
+  public init(command: String, configuration: BenchConfiguration) {
+    background = configuration.background
+    launchBehavior =
+      background ? .stayInLauncher : (command == "stress" ? .showStressPanel : .hideLauncher)
   }
 }
 

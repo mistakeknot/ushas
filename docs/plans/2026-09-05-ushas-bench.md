@@ -58,3 +58,23 @@ most one matched native/Temporal trace pair; missing scope ends it.
 
 No game migration, sleep/wake gate, adaptive backend rewrite, frame generation,
 notarization, public publication, accounts, telemetry or leaderboard.
+
+## Background execution follow-up
+
+The user requested operation with Chrome or other windows in front after the
+windowed campaign correctly rejected occluded output. Add a Background run
+option, enabled by default in the app; retain the visible lab when disabled.
+Reuse the existing image-target renderer and schedule runner, with no image
+readback during scored benchmark/stress work. Keep dimensions, scenes, normal
+pipelining, completion boundaries and exact frame proofs unchanged.
+
+Use a distinct `claude-lab-offscreen-v1` profile and retain execution target in
+configuration and reports. Never combine background and windowed arms. The
+launcher keeps progress and live controls available, handles foreground Escape,
+and does not steal focus at start or finish. CPU/GPU activity from other apps
+can affect throughput; window coverage alone must not invalidate an image target.
+
+Acceptance adds a full benchmark with Chrome in front and the launcher covered
+or minimized, followed by the complete 24-arm background qualification and
+600-second background stress run. Preserve the failed windowed campaign as
+separate evidence. Export and inspect the same independent quality captures.

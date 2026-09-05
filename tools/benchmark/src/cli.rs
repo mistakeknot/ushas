@@ -1,6 +1,6 @@
 use crate::config::{Action, Mode, RunConfig, SceneKind};
 
-pub const HELP:&str = "Ushas Bench — Claude render lab\n\nushas-bench benchmark|compare|stress|capture --out NEW_DIRECTORY [options]\n\n--mode native|temporal|spatial|bilinear  --scale 1|2/3|1/2\n--width 2560 --height 1440 --frames 1200 --seed 21434\n--scene materials|geometry|lighting (default all)\n--duration 600  --claudes N --lights N --particles N --fill N (stress)\n--rounds 1|4 (compare; four balanced rounds qualify a comparison)\n\nStandard benchmark: three fixed sequences, 1440p, target120FPS.\nResults measure completed rendering, not GPU-only time or displayed FPS.\nCustom dimensions/timelines are labelled custom. Stress has no benchmark score.\n";
+pub const HELP:&str = "Ushas Bench — Claude render lab\n\nushas-bench benchmark|compare|stress|capture --out NEW_DIRECTORY [options]\n\n--mode native|temporal|spatial|bilinear  --scale 1|2/3|1/2\n--width 2560 --height 1440 --frames 1200 --seed 21434\n--scene materials|geometry|lighting (default all)\n--duration 600  --claudes N --lights N --particles N --fill N (stress)\n--rounds 1|4 (compare; four balanced rounds qualify a comparison)\n--background (offscreen rendering without a live preview)\n\nStandard benchmark: three fixed sequences, 1440p, target120FPS.\nBackground runs use the separate claude-lab-offscreen-v1 profile; omit window --preset options.\nResults measure completed rendering, not GPU-only time or displayed FPS.\nCustom dimensions/timelines are labelled custom. Stress has no benchmark score.\n";
 
 #[derive(Debug)]
 pub enum Command {
@@ -37,6 +37,10 @@ pub fn parse(args: impl IntoIterator<Item = String>) -> Result<Command, String> 
         }
         if !seen.insert(flag.clone()) {
             return Err(format!("repeated option: {flag}"));
+        }
+        if flag == "--background" {
+            config.background = true;
+            continue;
         }
         let value = args
             .next()
@@ -81,6 +85,9 @@ pub fn parse(args: impl IntoIterator<Item = String>) -> Result<Command, String> 
             "--preset" if value == "standard-v1" || value == crate::config::PROFILE_VERSION => {}
             _ => return Err(format!("unknown option or preset: {flag} {value}")),
         }
+    }
+    if config.background && seen.contains("--preset") {
+        return Err("an explicit window preset cannot be combined with --background; omit --preset to select the offscreen profile".into());
     }
     if compare && (seen.contains("--mode") || seen.contains("--scale")) {
         return Err("compare chooses six fixed arms; omit --mode and --scale".into());
@@ -180,5 +187,50 @@ mod tests {
     fn help_and_version_need_no_renderer_or_output() {
         assert!(matches!(p(&["--help"]).unwrap(), Command::Help));
         assert!(matches!(p(&["--version"]).unwrap(), Command::Version));
+    }
+    #[test]
+    fn background_is_valueless_for_every_action_and_preserves_other_arguments() {
+        for command in ["benchmark", "compare", "stress", "capture"] {
+            for args in [
+                vec![command, "--background", "--out", "/tmp/background run"],
+                vec![command, "--out", "/tmp/background run", "--background"],
+            ] {
+                let config = match p(&args).unwrap() {
+                    Command::Run(config) | Command::Compare { config, .. } => config,
+                    _ => panic!("expected a run"),
+                };
+                assert!(config.background);
+                assert_eq!(config.out.to_str(), Some("/tmp/background run"));
+            }
+        }
+    }
+    #[test]
+    fn background_rejects_repetition_values_and_explicit_window_presets() {
+        assert!(p(&[
+            "benchmark",
+            "--out",
+            "/tmp/a",
+            "--background",
+            "--background"
+        ])
+        .unwrap_err()
+        .contains("repeated option: --background"));
+        assert!(p(&["benchmark", "--out", "/tmp/a", "--background", "false"]).is_err());
+        for preset in ["standard-v1", crate::config::PROFILE_VERSION] {
+            for options in [
+                vec!["--background", "--preset", preset],
+                vec!["--preset", preset, "--background"],
+            ] {
+                let mut args = vec!["benchmark", "--out", "/tmp/a"];
+                args.extend(options);
+                assert!(p(&args).unwrap_err().contains("window preset"));
+            }
+            let Command::Run(window) =
+                p(&["benchmark", "--out", "/tmp/a", "--preset", preset]).unwrap()
+            else {
+                panic!()
+            };
+            assert!(!window.background);
+        }
     }
 }

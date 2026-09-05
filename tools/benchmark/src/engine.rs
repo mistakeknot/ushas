@@ -175,19 +175,39 @@ struct IdleSleepActivity {
     process: objc2::rc::Retained<objc2_foundation::NSProcessInfo>,
     token:
         objc2::rc::Retained<objc2::runtime::ProtocolObject<dyn objc2::runtime::NSObjectProtocol>>,
+    options: objc2_foundation::NSActivityOptions,
 }
 
 #[cfg(target_os = "macos")]
 impl IdleSleepActivity {
-    fn begin() -> Self {
+    fn begin(offscreen: bool) -> Self {
         use objc2_foundation::{NSActivityOptions, NSProcessInfo, NSString};
         let process = NSProcessInfo::processInfo();
+        let options = if offscreen {
+            NSActivityOptions::UserInitiated | NSActivityOptions::IdleSystemSleepDisabled
+        } else {
+            NSActivityOptions::IdleDisplaySleepDisabled | NSActivityOptions::IdleSystemSleepDisabled
+        };
         let token = process.beginActivityWithOptions_reason(
-            NSActivityOptions::IdleDisplaySleepDisabled
-                | NSActivityOptions::IdleSystemSleepDisabled,
+            options,
             &NSString::from_str("Ushas Bench active render workload"),
         );
-        Self { process, token }
+        Self {
+            process,
+            token,
+            options,
+        }
+    }
+
+    fn metadata(&self) -> Value {
+        use objc2_foundation::NSActivityOptions;
+        let holds_display = self
+            .options
+            .contains(NSActivityOptions::IdleDisplaySleepDisabled);
+        json!({"requested":true,"mechanism":"NSProcessInfo scoped activity",
+            "options":if holds_display { vec!["IdleDisplaySleepDisabled","IdleSystemSleepDisabled"] } else { vec!["UserInitiated","IdleSystemSleepDisabled"] },
+            "raw_option_bits":self.options.bits(),
+            "scope":"engine lifetime; no persistent OS setting changes; explicit user sleep or lock is not a supported-run guarantee"})
     }
 }
 
@@ -200,9 +220,38 @@ impl Drop for IdleSleepActivity {
     }
 }
 
+fn uses_image_target(config: &RunConfig) -> bool {
+    config.background || config.action == Action::Capture
+}
+
+fn target_image(config: &RunConfig) -> Option<Image> {
+    if !uses_image_target(config) {
+        return None;
+    }
+    let mut image = Image::new_target_texture(
+        config.width,
+        config.height,
+        TextureFormat::Rgba8UnormSrgb,
+        None,
+    );
+    if config.action == Action::Capture {
+        image.texture_descriptor.usage |= TextureUsages::COPY_SRC;
+    }
+    Some(image)
+}
+
+fn requests_capture(config: &RunConfig, tick: u32) -> bool {
+    config.action == Action::Capture && capture::capture_ticks(config.frames).contains(&tick)
+}
+
 pub fn run(config: RunConfig) -> EngineResult {
+    let offscreen = uses_image_target(&config);
     #[cfg(target_os = "macos")]
-    let _idle_sleep_activity = IdleSleepActivity::begin();
+    let idle_sleep_activity = IdleSleepActivity::begin(offscreen);
+    #[cfg(target_os = "macos")]
+    let idle_sleep_prevention = idle_sleep_activity.metadata();
+    #[cfg(not(target_os = "macos"))]
+    let idle_sleep_prevention = json!({"requested":false,"mechanism":"unavailable"});
     let shared = Shared::default();
     let captures = CaptureResults::default();
     let origin = Instant::now();
@@ -247,8 +296,8 @@ pub fn run(config: RunConfig) -> EngineResult {
             .with_scale_factor_override(1.0),
         present_mode: PresentMode::Immediate,
         resizable: false,
-        focused: true,
-        visible: config.action != Action::Capture,
+        focused: !offscreen,
+        visible: !offscreen,
         ..default()
     };
     let mut defaults = DefaultPlugins.set(WindowPlugin {
@@ -256,27 +305,17 @@ pub fn run(config: RunConfig) -> EngineResult {
         exit_condition: bevy::window::ExitCondition::DontExit,
         ..default()
     });
-    if config.action == Action::Capture {
+    if offscreen {
         defaults = defaults.disable::<WinitPlugin>();
     }
     app.add_plugins(defaults);
-    if config.action == Action::Capture {
+    if offscreen {
         app.add_plugins(ScheduleRunnerPlugin::run_loop(Duration::ZERO));
     } else {
         app.insert_resource(WinitSettings::continuous());
     }
-    let image = if config.action == Action::Capture {
-        let mut image = Image::new_target_texture(
-            config.width,
-            config.height,
-            TextureFormat::Rgba8UnormSrgb,
-            None,
-        );
-        image.texture_descriptor.usage |= TextureUsages::COPY_SRC;
-        Some(app.world_mut().resource_mut::<Assets<Image>>().add(image))
-    } else {
-        None
-    };
+    let image = target_image(&config)
+        .map(|image| app.world_mut().resource_mut::<Assets<Image>>().add(image));
     let target = image
         .as_ref()
         .map_or_else(RenderTarget::default, |i| i.clone().into());
@@ -403,16 +442,26 @@ pub fn run(config: RunConfig) -> EngineResult {
             value
         })
         .collect();
-    result.environment = json!({"scope":"normal-pipelined completed-render throughput; includes CPU/render scheduling, surface acquisition and callback dispatch; not GPU busy time, frame pacing or panel delivery",
+    let scope = if config.action == Action::Capture {
+        "separate deterministic offscreen image replay with screenshot readbacks; scoreless quality evidence"
+    } else if offscreen {
+        "normal-pipelined completed offscreen-render throughput; includes CPU/render scheduling and callback dispatch; no surface acquisition, preview or measured readbacks; not GPU busy time, frame pacing or panel delivery"
+    } else {
+        "normal-pipelined completed-render throughput; includes CPU/render scheduling, surface acquisition and callback dispatch; not GPU busy time, frame pacing or panel delivery"
+    };
+    result.environment = json!({"scope":scope,
+        "render_target":if offscreen {"offscreen_image"} else {"window"},
+        "runner":if offscreen {"schedule_loop"} else {"winit"},
+        "live_preview":!offscreen,"measured_readbacks":config.action==Action::Capture,
         "pipelined_rendering":true,"measurement_per_frame_gpu_callbacks":false,"per_frame_gpu_waits":false,"legacy_metalfx_gpu_timing_disabled":true,
-        "completion_boundary":"after RenderSystems::PostCleanup; prior wgpu submissions, not final native Present buffer",
-        "present_mode_requested":"Immediate","present_mode_resolved":null,
-        "present_mode_resolved_unavailable_reason":"Bevy 0.19 surface configuration is private; the window field retains the request rather than a resolved runtime policy.",
-        "presentation_note":"Completed-render throughput of this native window path may include drawable acquisition and presentation backpressure; it is not uncapped hardware capacity.",
+        "completion_boundary":if offscreen {"after RenderSystems::PostCleanup; prior wgpu submissions to the owned image target"} else {"after RenderSystems::PostCleanup; prior wgpu submissions, not final native Present buffer"},
+        "present_mode_requested":if offscreen {None}else{Some("Immediate")},"present_mode_resolved":null,
+        "present_mode_resolved_unavailable_reason":if offscreen {"not applicable: no native surface"} else {"Bevy 0.19 surface configuration is private; the window field retains the request rather than a resolved runtime policy."},
+        "presentation_note":if offscreen {"No native presentation or live preview; the image target is independent of other window visibility."} else {"Completed-render throughput of this native window path may include drawable acquisition and presentation backpressure; it is not uncapped hardware capacity."},
         "output_physical_pixels":[config.width,config.height],
         "stress_retention":{"maximum_samples":8192,"evicted_completed_samples":evicted_stress_samples,"retained_completed_cohort_details":8},
         "adapter":data.adapter,"platform":platform(),"cohorts":cohort_records,"readiness":data.readiness,
-        "idle_sleep_prevention":{"requested":cfg!(target_os="macos"),"mechanism":"NSProcessInfo scoped activity","options":["IdleDisplaySleepDisabled","IdleSystemSleepDisabled"],"scope":"engine lifetime; no persistent OS setting changes; does not prevent explicit user sleep or lock"},
+        "idle_sleep_prevention":idle_sleep_prevention,
         "capture_scope":"separate deterministic image-target replay; no capture in scored intervals"});
     result.captures = captures.0.lock().expect("capture results poisoned").clone();
     for capture in &mut result.captures {
@@ -851,9 +900,7 @@ fn drive(
                 reset.request();
             }
         }
-        if settings.config.action == Action::Capture
-            && capture::capture_ticks(settings.config.frames).contains(&controller.next_tick)
-        {
+        if requests_capture(&settings.config, controller.next_tick) {
             let ticket = CaptureTicket {
                 scene: scene.kind.as_str().into(),
                 epoch: controller.epoch,
@@ -1412,6 +1459,61 @@ fn platform() -> Value {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn background_workloads_have_exact_image_targets_without_readback_usage() {
+        for action in [Action::Benchmark, Action::Stress] {
+            let config = RunConfig {
+                action,
+                background: true,
+                ..default()
+            };
+            let image = target_image(&config).expect("background workload owns an image target");
+            assert_eq!([image.width(), image.height()], [2560, 1440]);
+            assert_eq!(
+                image.texture_descriptor.format,
+                TextureFormat::Rgba8UnormSrgb
+            );
+            assert!(image
+                .texture_descriptor
+                .usage
+                .contains(TextureUsages::RENDER_ATTACHMENT));
+            assert!(!image
+                .texture_descriptor
+                .usage
+                .contains(TextureUsages::COPY_SRC));
+            for tick in 0..config.frames {
+                assert!(
+                    !requests_capture(&config, tick),
+                    "background throughput must not request screenshots"
+                );
+            }
+        }
+        assert!(
+            target_image(&RunConfig::default()).is_none(),
+            "window preset keeps its original target"
+        );
+    }
+
+    #[test]
+    fn quality_replay_keeps_separate_checkpoint_readbacks_for_both_profiles() {
+        for background in [false, true] {
+            let config = RunConfig {
+                action: Action::Capture,
+                background,
+                ..default()
+            };
+            let image = target_image(&config).expect("quality replay always uses an image");
+            assert!(image
+                .texture_descriptor
+                .usage
+                .contains(TextureUsages::COPY_SRC));
+            let actual: Vec<_> = (0..config.frames)
+                .filter(|tick| requests_capture(&config, *tick))
+                .collect();
+            assert_eq!(actual, capture::capture_ticks(config.frames));
+        }
+    }
 
     fn controller(outcome: Arc<Mutex<Option<MainOutcome>>>, shared: Shared) -> Controller {
         Controller {

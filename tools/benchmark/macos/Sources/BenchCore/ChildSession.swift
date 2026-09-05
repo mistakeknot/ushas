@@ -21,6 +21,7 @@ public final class ChildSession {
   private var completion: ChildEvent?
   private var eventFailure: String?
   private var expectedReport: URL?
+  private var expectedBackground = false
   private var status: Int32?
   private var stdoutEnded = false
   private var stderrEnded = false
@@ -53,6 +54,7 @@ public final class ChildSession {
     runID = UUID()
     expectedReport = output.appendingPathComponent("result.json").standardizedFileURL
       .resolvingSymlinksInPath()
+    expectedBackground = arguments.contains("--background")
     Darwin.signal(SIGPIPE, SIG_IGN)
     let child = Process()
     let stdout = Pipe()
@@ -227,6 +229,9 @@ public final class ChildSession {
     }
     if status != 0 {
       failure = failure ?? "The renderer exited with status \(status). Its log is preserved."
+    }
+    if let loaded, loaded.report.config?.background != expectedBackground {
+      failure = failure ?? "The renderer result used a different execution target than requested."
     }
     if let loaded, !loaded.accepted { failure = failure ?? loaded.problem ?? loaded.report.failure }
     process?.terminationHandler = nil

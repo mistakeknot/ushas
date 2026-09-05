@@ -157,6 +157,9 @@ fn args(config: &RunConfig) -> Vec<String> {
     if let Some(scene) = config.scene {
         a.extend(["--scene".into(), scene.as_str().into()]);
     }
+    if config.background {
+        a.push("--background".into());
+    }
     a
 }
 
@@ -314,6 +317,7 @@ fn compatible(child: &Value, config: &RunConfig, parent: &Value) -> bool {
         && child["binary_sha256"] == parent["binary_sha256"]
         && child["profile_version"] == parent["profile_version"]
         && child["config"]["action"] == config.action.as_str()
+        && child["config"]["background"].as_bool() == Some(config.background)
         && child["config"]["load"] == json!(config.load)
         && child["config"]["width"] == config.width
         && child["config"]["height"] == config.height
@@ -538,6 +542,25 @@ mod tests {
         assert!(!a.contains(&"--duration".into()));
     }
     #[test]
+    fn benchmark_and_capture_children_keep_the_parent_execution_target() {
+        for action in [Action::Benchmark, Action::Capture] {
+            for background in [false, true] {
+                let c = RunConfig {
+                    action,
+                    background,
+                    out: "/tmp/a background comparison".into(),
+                    ..Default::default()
+                };
+                let crate::cli::Command::Run(parsed) = crate::cli::parse(args(&c)).unwrap() else {
+                    panic!("comparison children must be renderer runs");
+                };
+                assert_eq!(parsed.action, action);
+                assert_eq!(parsed.background, background);
+                assert_eq!(parsed.out, c.out);
+            }
+        }
+    }
+    #[test]
     fn incompatible_binary_or_profile_cannot_join_comparison() {
         let c = RunConfig::default();
         let parent = json!({"source_revision":"abc","binary_sha256":"hash","profile_version":"claude-lab-standard-v1"});
@@ -579,6 +602,16 @@ mod tests {
         let mut changed = v;
         changed["config"]["action"] = json!("stress");
         assert!(!compatible(&changed, &c, &parent));
+    }
+    #[test]
+    fn execution_target_cannot_change_inside_a_comparison() {
+        let (c, parent, mut child) = compatible_fixture();
+        child["config"]["background"] = json!(false);
+        assert!(compatible(&child, &c, &parent));
+        for background in [json!(true), json!("false"), Value::Null] {
+            child["config"]["background"] = background;
+            assert!(!compatible(&child, &c, &parent));
+        }
     }
     #[test]
     fn incomplete_rounds_have_no_numeric_paired_result_and_custom_is_not_qualified() {

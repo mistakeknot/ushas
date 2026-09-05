@@ -51,6 +51,24 @@ public struct ReportConfiguration: Decodable, Sendable {
   public let seed: Int
   public let scene: String?
   public let load: Load
+  public let background: Bool
+  enum CodingKeys: String, CodingKey {
+    case width, mode, scale, height, frames, seed, scene, load, background
+  }
+  public init(from decoder: Decoder) throws {
+    let values = try decoder.container(keyedBy: CodingKeys.self)
+    width = try values.decode(Int.self, forKey: .width)
+    mode = try values.decodeIfPresent(String.self, forKey: .mode)
+    scale = try values.decodeIfPresent(Double.self, forKey: .scale)
+    height = try values.decode(Int.self, forKey: .height)
+    frames = try values.decode(Int.self, forKey: .frames)
+    seed = try values.decode(Int.self, forKey: .seed)
+    scene = try values.decodeIfPresent(String.self, forKey: .scene)
+    load = try values.decode(Load.self, forKey: .load)
+    // Missing is the legacy windowed default; present null/mistyped values are invalid.
+    background =
+      values.contains(.background) ? try values.decode(Bool.self, forKey: .background) : false
+  }
   public var legal: Bool {
     guard let mode, RenderMode(rawValue: mode) != nil, let scale, scale.isFinite,
       [1.0, 2.0 / 3.0, 0.5].contains(where: { abs($0 - scale) < 1e-6 }),
@@ -107,10 +125,15 @@ public struct BenchReport: Decodable, Sendable {
   }
   public var compatible: Bool {
     schemaVersion == 1 && ["benchmark", "compare", "stress", "capture"].contains(kind)
-      && ["claude-lab-standard-v1", "custom"].contains(profileVersion)
+      && ["claude-lab-standard-v1", "claude-lab-offscreen-v1", "custom"].contains(profileVersion)
+  }
+  public var executionLabel: String { config?.background == true ? "Background" : "Windowed" }
+  private var standardProfileMatchesTarget: Bool {
+    profileVersion
+      == (config?.background == true ? "claude-lab-offscreen-v1" : "claude-lab-standard-v1")
   }
   public var standard: Bool {
-    profileVersion == "claude-lab-standard-v1" && config?.standard == true && config?.legal == true
+    standardProfileMatchesTarget && config?.standard == true && config?.legal == true
   }
   public var failure: String? {
     if !compatible { return "This report uses an unsupported benchmark profile." }
@@ -123,7 +146,7 @@ public struct BenchReport: Decodable, Sendable {
       return "The report is missing required configuration or validation metadata."
     }
     if let error = errors.first { return error }
-    if profileVersion == "claude-lab-standard-v1" && !config.standard {
+    if profileVersion != "custom" && (!standardProfileMatchesTarget || !config.standard) {
       return "The standard profile has incompatible run settings."
     }
     if kind == "benchmark" {
@@ -205,6 +228,7 @@ public struct LoadedReport: Sendable, Identifiable {
           || child.sourceRevision != report.sourceRevision
           || child.binarySHA256 != report.binarySHA256
           || child.profileVersion != report.profileVersion
+          || child.config?.background != report.config?.background
           || child.config?.width != report.config?.width
           || child.config?.height != report.config?.height
           || child.config?.seed != report.config?.seed

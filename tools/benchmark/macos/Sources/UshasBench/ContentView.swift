@@ -94,6 +94,12 @@ struct ContentView: View {
         }
         Spacer()
         if model.activeCommand == "stress" {
+          if let fps = model.liveFPS {
+            Text(String(format: "%.1f render FPS", fps)).font(
+              .system(size: 12, design: .monospaced)
+            )
+            .foregroundStyle(Color.labCoral)
+          }
           Button("Live controls") { model.showStressControls() }.buttonStyle(LabButtonStyle())
         }
         Button("Stop") { model.stop() }.buttonStyle(LabButtonStyle())
@@ -143,7 +149,12 @@ struct ContentView: View {
           VStack(alignment: .leading, spacing: 17) {
             Eyebrow(text: "Render configuration")
             modeControls
-            Text("Standard profile · 120 Hz simulation timeline. Requests uncapped presentation.").font(
+            Text(
+              model.configuration.background
+                ? "Standard profile · 120 Hz simulation timeline."
+                : "Standard profile · 120 Hz simulation timeline. Requests uncapped presentation."
+            )
+            .font(
               .system(size: 11)
             ).foregroundStyle(Color.labMuted).fixedSize(horizontal: false, vertical: true)
             Button {
@@ -155,8 +166,12 @@ struct ContentView: View {
                 Image(systemName: "arrow.up.right")
               }
             }.buttonStyle(LabButtonStyle(prominent: true)).disabled(model.running)
-            Text("The lab opens in its own window. Results return here.").font(.system(size: 10))
-              .foregroundStyle(Color.labMuted)
+            Text(
+              model.configuration.background
+                ? "Results appear here when the background run finishes."
+                : "The lab opens in its own window. Results return here."
+            ).font(.system(size: 10))
+              .foregroundStyle(Color.labMuted).fixedSize(horizontal: false, vertical: true)
           }
         }.frame(width: 294)
       }
@@ -196,6 +211,18 @@ struct ContentView: View {
           : "Output stays at 2560 × 1440. Input scale changes reconstruction cost."
       ).font(.system(size: 11)).foregroundStyle(Color.labMuted).fixedSize(
         horizontal: false, vertical: true)
+      backgroundControls
+    }.disabled(model.running)
+  }
+  private var backgroundControls: some View {
+    VStack(alignment: .leading, spacing: 8) {
+      Toggle("Background run", isOn: $model.configuration.background).toggleStyle(.switch)
+        .font(.custom("AvenirNext-Medium", size: 12))
+      Text(
+        "Render the full scene without a live preview. You can use other apps; their CPU/GPU activity can affect results."
+      )
+      .font(.system(size: 11)).foregroundStyle(Color.labMuted).fixedSize(
+        horizontal: false, vertical: true)
     }.disabled(model.running)
   }
   private var comparePage: some View {
@@ -232,23 +259,27 @@ struct ContentView: View {
         }
       }
       LabCard {
-        HStack(alignment: .center, spacing: 25) {
-          VStack(alignment: .leading, spacing: 10) {
-            Picker("Comparison", selection: $model.configuration.rounds) {
-              Text("Quick · 6 measurements").tag(1)
-              Text("Qualification · 24 measurements").tag(4)
-            }.pickerStyle(.menu).frame(width: 310)
-            Text(
-              model.configuration.rounds == 1
-                ? "A first look at each mode. Use qualification before drawing a performance conclusion."
-                : "Four balanced rounds with paired uncertainty and an 8% practical-benefit threshold."
-            ).font(.system(size: 12)).foregroundStyle(Color.labMuted).frame(
-              maxWidth: 420, alignment: .leading)
-          }
-          Spacer()
-          Button("Run comparison") { model.launch("compare") }.buttonStyle(
-            LabButtonStyle(prominent: true))
-        }.disabled(model.running)
+        VStack(alignment: .leading, spacing: 18) {
+          HStack(alignment: .center, spacing: 25) {
+            VStack(alignment: .leading, spacing: 10) {
+              Picker("Comparison", selection: $model.configuration.rounds) {
+                Text("Quick · 6 measurements").tag(1)
+                Text("Qualification · 24 measurements").tag(4)
+              }.pickerStyle(.menu).frame(width: 310)
+              Text(
+                model.configuration.rounds == 1
+                  ? "A first look at each mode. Use qualification before drawing a performance conclusion."
+                  : "Four balanced rounds with paired uncertainty and an 8% practical-benefit threshold."
+              ).font(.system(size: 12)).foregroundStyle(Color.labMuted).frame(
+                maxWidth: 420, alignment: .leading)
+            }
+            Spacer()
+            Button("Run comparison") { model.launch("compare") }.buttonStyle(
+              LabButtonStyle(prominent: true))
+          }.disabled(model.running)
+          Divider().overlay(Color.white.opacity(0.06))
+          backgroundControls
+        }
       }
       Text(
         "Image replays run separately from scored measurements. Comparing images never starts another render."
@@ -273,14 +304,16 @@ struct ContentView: View {
         }.frame(height: 255).background(Color.labSurface, in: RoundedRectangle(cornerRadius: 16))
           .clipped()
         Text(
-          "Custom stress runs have no benchmark score. The floating controls stay available over the lab."
+          model.configuration.background
+            ? "Custom stress runs have no benchmark score. Adjust the load here while the background run continues."
+            : "Custom stress runs have no benchmark score. The floating controls stay available over the lab."
         ).font(.system(size: 11)).foregroundStyle(Color.labMuted)
       }.frame(maxWidth: .infinity, alignment: .leading)
       LabCard {
         VStack(alignment: .leading, spacing: 17) {
           modeControls
           StressSliders(model: model)
-          Button(model.running ? "Show live controls" : "Start 10-minute stress") {
+          Button(model.running ? "Show floating controls" : "Start 10-minute stress") {
             if model.running { model.showStressControls() } else { model.launch("stress") }
           }.buttonStyle(LabButtonStyle(prominent: true)).disabled(
             model.running && model.activeCommand != "stress")

@@ -30,6 +30,10 @@ import SwiftUI
         Button("Run benchmark") { model.launch("benchmark") }.keyboardShortcut("r").disabled(
           model.running)
         Button("Stop current run") { model.stop() }.keyboardShortcut(".").disabled(!model.running)
+        // A menu key equivalent is local to this active application, never a
+        // global Escape listener affecting other apps.
+        Button("Stop background run") { model.stop() }.keyboardShortcut(.escape, modifiers: [])
+          .disabled(!model.canStopWithEscape)
         Button("Show live stress controls") { model.showStressControls() }.disabled(
           !model.running || model.activeCommand != "stress")
       }
