@@ -4231,6 +4231,14 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2",
+ "ushas-claude-model",
+]
+
+[[package]]
+name = "ushas-claude-model"
+version = "0.1.0"
+dependencies = [
+ "bevy",
 ]
 
 [[package]]

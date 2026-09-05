@@ -134,6 +134,7 @@ jobs:
         run: |
           cargo fmt --manifest-path tools/smoke/Cargo.toml -- --check
           cargo test --locked --manifest-path tools/smoke/Cargo.toml
+          cargo test --locked --manifest-path tools/smoke/Cargo.toml -p ushas-claude-model
           cargo clippy --locked --manifest-path tools/smoke/Cargo.toml --all-targets -- -D warnings
       - name: Check native observer contracts without creating a Metal device
         run: |
@@ -162,6 +163,27 @@ jobs:
           python3 -m unittest discover -s tools/consumer-smoke -p 'test_*.py' -v
           rustc --test tools/consumer-smoke/readiness.rs -o "$RUNNER_TEMP/consumer-readiness-tests"
           "$RUNNER_TEMP/consumer-readiness-tests"
+
+  benchmark-contracts:
+    name: Ushas Bench CPU and native app contracts
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ env.RUST_TOOLCHAIN }}
+          components: clippy, rustfmt
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: tools/benchmark -> target
+          key: ushas-bench
+      - name: Check benchmark contracts without creating a renderer
+        run: |
+          cargo fmt --manifest-path tools/benchmark/Cargo.toml -- --check
+          cargo test --locked --manifest-path tools/benchmark/Cargo.toml
+          cargo clippy --locked --manifest-path tools/benchmark/Cargo.toml --all-targets -- -D warnings
+      - name: Compile the launcher and test its protocol and process controls
+        run: swift test --package-path tools/benchmark/macos
 
   fmt:
     name: rustfmt

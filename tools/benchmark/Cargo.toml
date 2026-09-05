@@ -8,6 +8,7 @@ publish = false
 [workspace]
 
 [dependencies]
+ushas-claude-model = { path = "../claude-model" }
 bevy_metalfx = { path = "../..", default-features = false, features = ["temporal"] }
 bevy = { version = "=0.19.0", default-features = false, features = [
     "bevy_asset", "bevy_color", "bevy_core_pipeline", "bevy_log",

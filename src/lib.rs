@@ -141,6 +141,16 @@ pub use present::{display_awake, PresentSink, PresentStats};
 #[derive(bevy::prelude::Resource, Clone)]
 pub struct GpuTimingDiag(pub std::sync::Arc<GpuTimingSink>);
 
+/// Disable the legacy dedicated-command-buffer GPU timing diagnostic.
+///
+/// Insert this resource before adding [`MetalFxPlugin`]. It suppresses both
+/// active-frame timing handlers and the Disabled timing-control submission,
+/// including when the plugin receives an explicit timing sink. This is useful
+/// for external completion-throughput benchmarks. Default behavior is unchanged.
+/// Adding this marker after plugin setup does not change instrumentation.
+#[derive(bevy::prelude::Resource, Clone, Copy, Default)]
+pub struct MetalFxGpuTimingDisabled;
+
 /// Check whether MetalFX is available on this system at runtime.
 ///
 /// Returns `false` on non-macOS platforms or when the MetalFX framework
@@ -474,11 +484,53 @@ impl MetalFxPlugin {
     fn install_gpu_timing(&self, app: &mut bevy::app::App) {
         use bevy::render::RenderApp;
 
+        if app.world().contains_resource::<MetalFxGpuTimingDisabled>() {
+            app.world_mut().remove_resource::<GpuTimingDiag>();
+            if let Some(render_app) = app.get_sub_app_mut(RenderApp) {
+                render_app.world_mut().remove_resource::<GpuTimingDiag>();
+            }
+            return;
+        }
         let timing = GpuTimingDiag(self.gpu_timing_sink.clone().unwrap_or_default());
         app.insert_resource(timing.clone());
         if let Some(render_app) = app.get_sub_app_mut(RenderApp) {
             render_app.insert_resource(timing);
         }
+    }
+}
+
+#[cfg(all(test, target_os = "macos"))]
+mod gpu_timing_configuration_tests {
+    use super::*;
+    use bevy::app::{App, SubApp};
+    use bevy::render::RenderApp;
+
+    #[test]
+    fn default_timing_reuses_one_sink_in_both_worlds() {
+        let mut app = App::new();
+        app.insert_sub_app(RenderApp, SubApp::new());
+        MetalFxPlugin::default().install_gpu_timing(&mut app);
+        let main = &app.world().resource::<GpuTimingDiag>().0;
+        let render = &app.sub_app(RenderApp).world().resource::<GpuTimingDiag>().0;
+        assert!(std::sync::Arc::ptr_eq(main, render));
+    }
+
+    #[test]
+    fn explicit_opt_out_removes_even_a_preexisting_or_host_supplied_sink() {
+        let mut app = App::new();
+        app.insert_sub_app(RenderApp, SubApp::new());
+        let plugin = MetalFxPlugin {
+            gpu_timing_sink: Some(GpuTimingSink::new()),
+            ..Default::default()
+        };
+        plugin.install_gpu_timing(&mut app);
+        app.insert_resource(MetalFxGpuTimingDisabled);
+        plugin.install_gpu_timing(&mut app);
+        assert!(!app.world().contains_resource::<GpuTimingDiag>());
+        assert!(!app
+            .sub_app(RenderApp)
+            .world()
+            .contains_resource::<GpuTimingDiag>());
     }
 }
 
@@ -609,7 +661,9 @@ impl bevy::app::Plugin for MetalFxPlugin {
             // benchmark and wants the control arm instrumented. Everyone else
             // gets the historical behaviour, submitting nothing extra.
             #[cfg(target_os = "macos")]
-            if self.gpu_timing_sink.is_some() {
+            if self.gpu_timing_sink.is_some()
+                && !app.world().contains_resource::<MetalFxGpuTimingDisabled>()
+            {
                 use bevy::core_pipeline::schedule::Core3d;
                 use bevy::core_pipeline::upscaling::upscaling;
                 use bevy::render::RenderApp;

@@ -1,0 +1,184 @@
+use crate::config::{Action, Mode, RunConfig, SceneKind};
+
+pub const HELP:&str = "Ushas Bench — Claude render lab\n\nushas-bench benchmark|compare|stress|capture --out NEW_DIRECTORY [options]\n\n--mode native|temporal|spatial|bilinear  --scale 1|2/3|1/2\n--width 2560 --height 1440 --frames 1200 --seed 21434\n--scene materials|geometry|lighting (default all)\n--duration 600  --claudes N --lights N --particles N --fill N (stress)\n--rounds 1|4 (compare; four balanced rounds qualify a comparison)\n\nStandard benchmark: three fixed sequences, 1440p, target120FPS.\nResults measure completed rendering, not GPU-only time or displayed FPS.\nCustom dimensions/timelines are labelled custom. Stress has no benchmark score.\n";
+
+#[derive(Debug)]
+pub enum Command {
+    Help,
+    Version,
+    Run(RunConfig),
+    Compare { config: RunConfig, rounds: u32 },
+}
+
+pub fn parse(args: impl IntoIterator<Item = String>) -> Result<Command, String> {
+    let mut args = args.into_iter();
+    let Some(kind) = args.next() else {
+        return Ok(Command::Help);
+    };
+    if kind == "--help" || kind == "help" {
+        return Ok(Command::Help);
+    }
+    if kind == "--version" {
+        return Ok(Command::Version);
+    }
+    let mut config = RunConfig::default();
+    let compare = kind == "compare";
+    config.action = match kind.as_str() {
+        "benchmark" | "compare" => Action::Benchmark,
+        "stress" => Action::Stress,
+        "capture" => Action::Capture,
+        _ => return Err(format!("unknown command: {kind}")),
+    };
+    let mut rounds = 1;
+    let mut seen = std::collections::BTreeSet::new();
+    while let Some(flag) = args.next() {
+        if flag == "--help" {
+            return Ok(Command::Help);
+        }
+        if !seen.insert(flag.clone()) {
+            return Err(format!("repeated option: {flag}"));
+        }
+        let value = args
+            .next()
+            .ok_or_else(|| format!("missing value for {flag}"))?;
+        match flag.as_str() {
+            "--out" => config.out = value.into(),
+            "--mode" => {
+                config.mode = match value.as_str() {
+                    "native" => Mode::Native,
+                    "temporal" => Mode::Temporal,
+                    "spatial" => Mode::Spatial,
+                    "bilinear" => Mode::Bilinear,
+                    _ => return Err(format!("unknown mode: {value}")),
+                }
+            }
+            "--scale" => {
+                config.scale = match value.as_str() {
+                    "1" | "1.0" => 1.,
+                    "2/3" => 2. / 3.,
+                    "1/2" | "0.5" => 0.5,
+                    _ => return Err("scale must be1,2/3 or1/2".into()),
+                }
+            }
+            "--width" => config.width = number(&value, &flag)?,
+            "--height" => config.height = number(&value, &flag)?,
+            "--frames" => config.frames = number(&value, &flag)?,
+            "--seed" => config.seed = number(&value, &flag)?,
+            "--duration" => config.duration = number(&value, &flag)?,
+            "--rounds" => rounds = number(&value, &flag)?,
+            "--claudes" => config.load.claudes = Some(number(&value, &flag)?),
+            "--lights" => config.load.lights = Some(number(&value, &flag)?),
+            "--particles" => config.load.particles = Some(number(&value, &flag)?),
+            "--fill" => config.load.fill = number(&value, &flag)?,
+            "--scene" => {
+                config.scene = Some(match value.as_str() {
+                    "materials" => SceneKind::Materials,
+                    "geometry" => SceneKind::Geometry,
+                    "lighting" => SceneKind::Lighting,
+                    _ => return Err(format!("unknown scene: {value}")),
+                })
+            }
+            "--preset" if value == "standard-v1" || value == crate::config::PROFILE_VERSION => {}
+            _ => return Err(format!("unknown option or preset: {flag} {value}")),
+        }
+    }
+    if compare && (seen.contains("--mode") || seen.contains("--scale")) {
+        return Err("compare chooses six fixed arms; omit --mode and --scale".into());
+    }
+    if !compare && seen.contains("--rounds") {
+        return Err("--rounds is a compare option".into());
+    }
+    if config.action != Action::Stress && seen.contains("--duration") {
+        return Err("--duration is a stress option".into());
+    }
+    if ![1, 4].contains(&rounds) {
+        return Err("comparison rounds must be1 or4".into());
+    }
+    config.validate()?;
+    Ok(if compare {
+        Command::Compare { config, rounds }
+    } else {
+        Command::Run(config)
+    })
+}
+
+fn number<T: std::str::FromStr>(value: &str, flag: &str) -> Result<T, String> {
+    value
+        .parse()
+        .map_err(|_| format!("invalid number for {flag}: {value}"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    fn p(args: &[&str]) -> Result<Command, String> {
+        parse(args.iter().map(|s| s.to_string()))
+    }
+    #[test]
+    fn application_argv_preserves_mode_ratio_and_spaced_path() {
+        let Command::Run(c) = p(&[
+            "benchmark",
+            "--out",
+            "/tmp/a run",
+            "--mode",
+            "temporal",
+            "--scale",
+            "2/3",
+        ])
+        .unwrap() else {
+            panic!()
+        };
+        assert_eq!(c.mode, Mode::Temporal);
+        assert_eq!(c.scale, 2. / 3.);
+        assert_eq!(c.out.to_str(), Some("/tmp/a run"));
+        assert!(c.standard());
+    }
+    #[test]
+    fn comparison_round_count_is_explicit_and_bounded() {
+        let Command::Compare { rounds, .. } =
+            p(&["compare", "--out", "/tmp/compare", "--rounds", "4"]).unwrap()
+        else {
+            panic!()
+        };
+        assert_eq!(rounds, 4);
+        assert!(p(&["compare", "--out", "/tmp/compare", "--rounds", "100"]).is_err());
+    }
+    #[test]
+    fn bad_or_repeated_options_cannot_override_a_profile_silently() {
+        assert!(p(&["benchmark", "--out", "/tmp/a", "--mode", "typo"]).is_err());
+        assert!(p(&[
+            "benchmark",
+            "--out",
+            "/tmp/a",
+            "--width",
+            "1280",
+            "--width",
+            "2560"
+        ])
+        .is_err());
+        assert!(p(&["benchmark", "--out", "/tmp/a", "--duration", "5"]).is_err());
+        assert!(p(&["stress", "--out"]).is_err());
+    }
+    #[test]
+    fn stress_loads_remain_scoreless() {
+        let Command::Run(c) = p(&[
+            "stress",
+            "--out",
+            "/tmp/a",
+            "--fill",
+            "8000",
+            "--claudes",
+            "256",
+        ])
+        .unwrap() else {
+            panic!()
+        };
+        assert!(!c.standard());
+        assert_eq!(c.action, Action::Stress);
+    }
+    #[test]
+    fn help_and_version_need_no_renderer_or_output() {
+        assert!(matches!(p(&["--help"]).unwrap(), Command::Help));
+        assert!(matches!(p(&["--version"]).unwrap(), Command::Version));
+    }
+}

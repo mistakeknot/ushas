@@ -107,15 +107,19 @@ mod tests {
     #[test]
     fn quality_clock_overrides_real_time_and_animates_without_motion_flag() {
         let (mut app, entity, _) = fixture();
-        app.world_mut().insert_resource(crate::quality::PoseClock(0.75));
+        app.world_mut()
+            .insert_resource(crate::quality::PoseClock(0.75));
         app.update();
         let expected = app.world().get::<Motion>(entity).unwrap().pose(0.75, true);
         assert_eq!(*app.world().get::<Transform>(entity).unwrap(), expected);
-        app.world_mut().resource_mut::<Time<Real>>()
+        app.world_mut()
+            .resource_mut::<Time<Real>>()
             .advance_by(Duration::from_secs(50));
         app.update();
         assert_eq!(*app.world().get::<Transform>(entity).unwrap(), expected);
-        app.world_mut().resource_mut::<crate::quality::PoseClock>().0 = 1.0;
+        app.world_mut()
+            .resource_mut::<crate::quality::PoseClock>()
+            .0 = 1.0;
         app.update();
         assert_ne!(*app.world().get::<Transform>(entity).unwrap(), expected);
     }
