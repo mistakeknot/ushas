@@ -3,6 +3,7 @@
 #[derive(Debug, PartialEq)]
 pub struct Config {
     pub mode: String,
+    pub offscreen: bool,
     pub hdr: bool,
     pub native_aa: bool,
     pub lifecycle: Option<String>,
@@ -28,6 +29,7 @@ impl Config {
     pub fn parse(args: impl IntoIterator<Item = String>) -> Result<Self, String> {
         let mut c = Self {
             mode: "disabled".into(),
+            offscreen: false,
             hdr: false,
             native_aa: false,
             lifecycle: None,
@@ -51,6 +53,10 @@ impl Config {
         let mut args = args.into_iter();
         while let Some(flag) = args.next() {
             match flag.as_str() {
+                "--offscreen" => {
+                    c.offscreen = true;
+                    continue;
+                }
                 "--hdr" => {
                     c.hdr = true;
                     continue;
@@ -106,6 +112,9 @@ impl Config {
         if !["disabled", "spatial", "temporal", "interpolate"].contains(&c.mode.as_str()) {
             return Err("mode must be disabled, spatial, temporal, or interpolate".into());
         }
+        if c.offscreen && (c.lifecycle.is_some() || c.adaptive || c.mode == "interpolate") {
+            return Err("offscreen supports fixed-scale disabled/spatial/temporal rendering only; lifecycle, adaptive and interpolation require the window fixture".into());
+        }
         if c.native_aa && (c.mode != "disabled" || c.scale != 1.0) {
             return Err("native-aa is the disabled native-scale MSAA4 control".into());
         }
@@ -150,6 +159,7 @@ mod tests {
         assert_eq!((c.width, c.height), (1280, 720));
         assert!(c.seconds > 0.0 && c.seconds <= 10.0);
         assert!(!c.adaptive);
+        assert!(!c.offscreen);
     }
 
     #[test]
@@ -178,6 +188,32 @@ mod tests {
         assert_eq!(c.target_fps, Some(120.0));
         assert_eq!(c.minimum_scale, 0.5);
         assert!(c.adaptive && c.moving);
+    }
+
+    #[test]
+    fn offscreen_accepts_fixed_render_and_timing_checks() {
+        assert!(parse(&[
+            "--offscreen",
+            "--mode",
+            "temporal",
+            "--scale",
+            "0.5",
+            "--moving",
+            "--experimental-timing",
+        ])
+        .is_ok());
+        assert!(parse(&["--offscreen", "--native-aa"]).is_ok());
+    }
+
+    #[test]
+    fn offscreen_rejects_window_lifecycle_and_presentation_modes() {
+        for args in [
+            vec!["--offscreen", "--lifecycle", "resize"],
+            vec!["--offscreen", "--adaptive"],
+            vec!["--offscreen", "--mode", "interpolate"],
+        ] {
+            assert!(parse(&args).is_err(), "accepted {args:?}");
+        }
     }
 
     #[test]

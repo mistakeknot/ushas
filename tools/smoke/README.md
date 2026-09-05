@@ -91,3 +91,17 @@ Available exercises are `resize`, `camera-cut`, `late-camera`, `multiple-views`,
 and `inactive-cut-resume`. Camera inactivity is a render-pause test, not an
 operating-system sleep/resume test. `--hdr` enables Bevy's HDR main texture;
 `--native-aa` selects the native-scale Disabled MSAA4 image-quality control.
+
+`--offscreen` renders fixed-scale Disabled, Spatial, or Temporal into an
+RGBA8 sRGB image with an unpaced application loop. It creates no native window
+or drawable, and captures that same image target, including native-resolution
+UI. This isolates image rendering from display availability and drawable waits;
+it does not measure presentation. Compare offscreen arms only with other
+offscreen arms because the target format and scheduling differ from the window
+fixture. Adaptive control, lifecycle exercises, and interpolation require the
+window fixture and are rejected with `--offscreen`.
+
+```sh
+python3 tools/smoke/run.py -- --offscreen --mode temporal --scale 0.5 \
+  --experimental-timing --out /tmp/ushas-offscreen-001.json
+```

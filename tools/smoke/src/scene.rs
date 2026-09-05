@@ -47,6 +47,7 @@ fn setup(
     mut materials: ResMut<Assets<StandardMaterial>>,
     mut load_materials: ResMut<Assets<LoadMaterial>>,
     config: Res<crate::RunConfig>,
+    capture_target: Res<crate::offscreen::CaptureTarget>,
     lifecycle: Option<Res<crate::lifecycle::LifecycleRun>>,
 ) {
     commands.spawn((
@@ -68,7 +69,11 @@ fn setup(
         .as_ref()
         .is_some_and(|l| l.exercise() == crate::lifecycle::LifecycleExercise::LateCamera)
     {
-        spawn_camera(&mut commands);
+        let camera = spawn_camera(&mut commands);
+        if let Some(target) = capture_target.image_render_target() {
+            // Bevy's default UI-camera fallback only considers windows.
+            commands.entity(camera).insert((target, IsDefaultUiCamera));
+        }
     }
     commands.spawn((
         DirectionalLight {

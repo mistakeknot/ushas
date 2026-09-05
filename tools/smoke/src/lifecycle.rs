@@ -79,6 +79,7 @@ pub struct LifecycleRun {
     outcome: Option<bool>,
     error: Option<String>,
     initial_size: Option<[u32; 2]>,
+    expected_size: Option<[u32; 2]>,
     initial_scale: Option<f32>,
     epoch_before_change: Option<u64>,
     primary: Option<Entity>,
@@ -107,6 +108,7 @@ impl LifecycleRun {
             outcome: None,
             error: None,
             initial_size: None,
+            expected_size: None,
             initial_scale: None,
             epoch_before_change: None,
             primary: None,
@@ -133,11 +135,22 @@ impl LifecycleRun {
     pub fn passed(&self) -> bool {
         self.outcome == Some(true)
     }
+    fn ready_view(
+        &self,
+        view: &ViewEvidence,
+        mode: MetalFxMode,
+        window: [u32; 2],
+        scale: f32,
+    ) -> bool {
+        self.expected_size.is_some_and(|expected| {
+            window == expected && ready_view(view, mode, expected, scale, self.phase_frame)
+        })
+    }
     pub fn report(&self) -> Value {
         json!({"exercise":format!("{:?}",self.exercise),"valid":self.outcome,"error":self.error,
             "scope":"real lifecycle mutations, render-path observations and captured pixels; not GPU completion or panel delivery",
             "phase":self.phase.name(),"wall_elapsed_s":self.started.elapsed().as_secs_f64(),
-            "initial_size":self.initial_size,"initial_scale":self.initial_scale,
+            "initial_size":self.initial_size,"expected_size":self.expected_size,"initial_scale":self.initial_scale,
             "events":self.events,"observations":self.observations,"captures":self.captures,
             "dropped_observations":self.dropped_observations})
     }
@@ -232,6 +245,14 @@ fn rejected_views(views: &[ViewEvidence], since: u64) -> bool {
                 && v.state == MetalFxEffectState::Unavailable
                 && v.reason == Some(MetalFxEffectReason::MultipleViewsUnsupported)
         })
+}
+
+fn inactive_view_settled(views: &[ViewEvidence], since: u64, current_frame: u64) -> bool {
+    current_frame.saturating_sub(since) >= 6
+        && views.len() == 1
+        && !views[0].active
+        && ((views[0].fresh && views[0].state == MetalFxEffectState::NoRender)
+            || (!views[0].fresh && views[0].frame.is_none_or(|f| f < since)))
 }
 
 #[derive(Default)]
@@ -352,6 +373,7 @@ fn exercise(
     };
     let size = [window.physical_width(), window.physical_height()];
     run.initial_size.get_or_insert(size);
+    run.expected_size.get_or_insert(size);
     let snapshot = context.snapshot();
     let reset_pending = history.as_ref().is_some_and(|r| r.is_requested());
     let mut views: Vec<_> = cameras
@@ -462,13 +484,7 @@ fn exercise(
             );
             return;
         }
-        let inactive_observed = views.len() == 1
-            && !views[0].active
-            && views[0].fresh
-            && views[0].frame.is_some_and(|f| f >= run.phase_frame)
-            && views[0].state == MetalFxEffectState::NoRender;
-        if inactive_observed
-            && frame.0.saturating_sub(run.phase_frame) >= 6
+        if inactive_view_settled(&views, run.phase_frame, frame.0)
             && now.duration_since(run.phase_started) >= Duration::from_millis(300)
         {
             if let Some(primary) = run.primary {
@@ -492,7 +508,7 @@ fn exercise(
     } else {
         active.len() == 1
             && run.primary.is_some_and(|e| e.to_bits() == active[0].entity)
-            && ready_view(active[0], mode.get(), size, scale.0, run.phase_frame)
+            && run.ready_view(active[0], mode.get(), size, scale.0)
             && (run.phase == Phase::Initial || epoch_ready)
             && !(needs_reset && run.phase != Phase::Initial && reset_pending)
     };
@@ -502,7 +518,8 @@ fn exercise(
     }
     let unsupported_phase =
         run.exercise == LifecycleExercise::MultipleViews && run.phase == Phase::Changed;
-    if !unsupported_phase && !require_capture(&mut run, &mut commands, size) {
+    let expected_size = run.expected_size.unwrap();
+    if !unsupported_phase && !require_capture(&mut run, &mut commands, expected_size) {
         return;
     }
     if run.phase == Phase::Initial {
@@ -511,6 +528,7 @@ fn exercise(
         match run.exercise {
             LifecycleExercise::Resize => {
                 let changed = [(size[0] * 3 / 4).max(64), (size[1] * 3 / 4).max(64)];
+                run.expected_size = Some(changed);
                 window
                     .resolution
                     .set_physical_resolution(changed[0], changed[1]);
@@ -566,6 +584,7 @@ fn exercise(
         match run.exercise {
             LifecycleExercise::Resize => {
                 let original = run.initial_size.unwrap();
+                run.expected_size = Some(original);
                 window
                     .resolution
                     .set_physical_resolution(original[0], original[1]);
@@ -727,7 +746,7 @@ mod tests {
             ],
             50
         ));
-        assert!(!rejected_views(&[rejected.clone()], 50));
+        assert!(!rejected_views(std::slice::from_ref(&rejected), 50));
         assert!(!rejected_views(&[rejected.clone(), view()], 50));
         assert!(!rejected_views(
             &[
@@ -759,5 +778,44 @@ mod tests {
         assert_eq!(stable.count, 2);
         stable.observe(false, &[view()]);
         assert_eq!(stable.count, 0);
+    }
+
+    #[test]
+    fn inactive_phase_accepts_stale_prior_render_but_not_new_render_evidence() {
+        let prior = ViewEvidence {
+            active: false,
+            fresh: false,
+            ..view()
+        };
+        assert!(inactive_view_settled(std::slice::from_ref(&prior), 51, 57));
+        assert!(!inactive_view_settled(
+            &[ViewEvidence {
+                fresh: true,
+                ..prior.clone()
+            }],
+            51,
+            57
+        ));
+        assert!(!inactive_view_settled(
+            &[ViewEvidence {
+                frame: Some(52),
+                ..prior
+            }],
+            51,
+            58
+        ));
+    }
+
+    #[test]
+    fn ignored_resize_cannot_pass_at_the_original_window_dimensions() {
+        let mut run = LifecycleRun::new(LifecycleExercise::Resize);
+        run.expected_size = Some([960, 540]);
+        assert!(!run.ready_view(&view(), MetalFxMode::Temporal, [1280, 720], 0.5));
+        let resized = ViewEvidence {
+            content: [480, 270],
+            output: [960, 540],
+            ..view()
+        };
+        assert!(run.ready_view(&resized, MetalFxMode::Temporal, [960, 540], 0.5));
     }
 }

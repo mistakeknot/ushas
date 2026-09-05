@@ -3,14 +3,15 @@ mod config;
 mod gate;
 mod lifecycle;
 mod metrics;
+mod offscreen;
 mod scene;
 
-use bevy::app::AppExit;
+use bevy::app::{AppExit, ScheduleRunnerPlugin};
 use bevy::prelude::*;
 use bevy::render::renderer::RenderAdapterInfo;
-use bevy::render::view::screenshot::{Screenshot, ScreenshotCaptured};
+use bevy::render::view::screenshot::ScreenshotCaptured;
 use bevy::window::{PresentMode, WindowResolution};
-use bevy::winit::WinitSettings;
+use bevy::winit::{WinitPlugin, WinitSettings};
 use bevy_metalfx::{
     MetalFxEffectState, MetalFxEffectStatus, MetalFxObservationFrame, MetalFxPlugin,
     MetalFxRenderScale,
@@ -72,6 +73,7 @@ fn main() -> AppExit {
             --width 1280 --height 720 --warmup 4 --seconds 6 --out result.json\n\
             [--screenshot result.png] [--pixel-iterations 1000] [--cpu-ms 20] [--moving]\n\
             [--adaptive --target-fps 60 --minimum-scale 0.5]\n\
+            [--offscreen: fixed-scale image rendering; no lifecycle/adaptive/interpolation/presentation]\n\
             Runs unpaced; target-fps defines the analysis/controller budget, not a frame cap."
         );
         return AppExit::Success;
@@ -103,14 +105,14 @@ fn main() -> AppExit {
         #[cfg(target_os = "macos")]
         gpu_timing_sink: Some(bevy_metalfx::GpuTimingSink::new()),
         #[cfg(target_os = "macos")]
-        dual_present: Some(
+        dual_present: (!config.offscreen).then(|| {
             bevy_metalfx::present::MetalFxDualPresent::new(
                 bevy_metalfx::PresentSink::new(),
                 config.presentation != "default",
             )
             .with_single_present(config.presentation == "single")
-            .with_refresh_interval(1.0 / config.refresh_hz),
-        ),
+            .with_refresh_interval(1.0 / config.refresh_hz)
+        }),
     };
     let window = Window {
         title: format!("Ushas smoke — {} {:.3}", config.mode, config.scale),
@@ -120,9 +122,12 @@ fn main() -> AppExit {
         // An occluded Metal surface can stop view rendering entirely. This
         // bounded fixture must remain visible while it warms and measures.
         window_level: bevy::window::WindowLevel::AlwaysOnTop,
+        visible: !config.offscreen,
         ..default()
     };
     let experimental_timing = config.experimental_timing;
+    let offscreen = config.offscreen;
+    let size = (config.width, config.height);
     let mut renderer = bevy::render::RenderPlugin::default();
     #[cfg(target_os = "macos")]
     if experimental_timing {
@@ -145,12 +150,34 @@ fn main() -> AppExit {
     }
     app.insert_resource(RunConfig(config))
         .insert_resource(RunState::default())
-        .insert_resource(WinitSettings::continuous())
-        .add_plugins(DefaultPlugins.set(renderer).set(WindowPlugin {
-            primary_window: Some(window),
-            ..default()
-        }))
-        .add_plugins((plugin, scene::ScenePlugin))
+        .init_resource::<offscreen::CaptureTarget>();
+    let mut defaults = DefaultPlugins.set(renderer).set(WindowPlugin {
+        // With Winit disabled this is metadata only: the scale-override
+        // systems still use its physical dimensions, but no native window or
+        // swapchain is created. The scene camera targets the image below.
+        primary_window: Some(window),
+        exit_condition: if offscreen {
+            bevy::window::ExitCondition::DontExit
+        } else {
+            bevy::window::ExitCondition::OnAllClosed
+        },
+        ..default()
+    });
+    if offscreen {
+        defaults = defaults.disable::<WinitPlugin>();
+    }
+    app.add_plugins(defaults);
+    if offscreen {
+        let image = app
+            .world_mut()
+            .resource_mut::<Assets<Image>>()
+            .add(offscreen::render_image(size.0, size.1));
+        app.insert_resource(offscreen::CaptureTarget::Image(image))
+            .add_plugins(ScheduleRunnerPlugin::run_loop(Duration::ZERO));
+    } else {
+        app.insert_resource(WinitSettings::continuous());
+    }
+    app.add_plugins((plugin, scene::ScenePlugin))
         .add_systems(Last, observe_run);
     #[cfg(target_os = "macos")]
     if experimental_timing {
@@ -208,6 +235,7 @@ fn observe_run(
     mut commands: Commands,
     config: Res<RunConfig>,
     mut run: ResMut<RunState>,
+    capture_target: Res<offscreen::CaptureTarget>,
     frame: Res<MetalFxObservationFrame>,
     status: Res<MetalFxEffectStatus>,
     scale: Res<MetalFxRenderScale>,
@@ -257,7 +285,7 @@ fn observe_run(
         if !run.warmup_capture_requested {
             run.warmup_capture_requested = true;
             commands
-                .spawn((Screenshot::primary_window(), CapturePurpose::Warmup))
+                .spawn((capture_target.screenshot(), CapturePurpose::Warmup))
                 .observe(capture_image);
         } else if run.warmup_screenshot.as_ref().is_some_and(|s| {
             s["nonuniform"] == true
@@ -302,7 +330,7 @@ fn observe_run(
     if (measured_done || timed_out) && !run.screenshot_requested {
         run.screenshot_requested = true;
         commands
-            .spawn((Screenshot::primary_window(), CapturePurpose::Final))
+            .spawn((capture_target.screenshot(), CapturePurpose::Final))
             .observe(capture_image);
     }
     if (measured_done && run.screenshot.is_some())
@@ -326,6 +354,7 @@ fn observe_run(
             "final_scale":scale.0,"width":config.0.width,"height":config.0.height,
             "pixel_iterations":config.0.pixel_iterations,"cpu_delay_ms":config.0.cpu_ms,
             "moving":config.0.moving,"hdr":config.0.hdr,"native_aa":config.0.native_aa,"adaptive_requested":config.0.adaptive,
+            "offscreen":config.0.offscreen,"render_target":if config.0.offscreen {"image"} else {"window"},
             "target_fps":config.0.target_fps.unwrap_or(60.0),"minimum_scale":config.0.minimum_scale,
             "warmup_s":config.0.warmup,"measurement_s":config.0.seconds,"wall_elapsed_s":elapsed,
             "adapter":adapter.as_ref().map(|a|json!({"name":a.name,"backend":format!("{:?}",a.backend),"driver":a.driver,"driver_info":a.driver_info})),
@@ -334,9 +363,13 @@ fn observe_run(
             "frame_loop":metrics::summarize(&run.frame_ms,config.0.target_fps.unwrap_or(60.0)),
             "adaptive_status":format!("{:?}", *adaptive_status),"camera":camera.map(|(e,c)|json!({"entity":e.to_bits(),"active":c.is_active,"target_size":c.physical_target_size().map(|s|s.to_array())})),
             "rendered_observations":{"unique_frames":run.rendered.len(),"first_frame":run.rendered.keys().next(),"last_frame":run.rendered.keys().next_back(),"timestamps_s":run.rendered},
-            "warmup_screenshot":run.warmup_screenshot,"environment":runtime_environment(),
+            "warmup_screenshot":run.warmup_screenshot,"environment":runtime_environment(config.0.offscreen),
             "retained_effects":status.snapshots(frame.0).iter().map(|s|format!("{s:?}")).collect::<Vec<_>>(),
             "effect_counts":run.counts,"screenshot":run.screenshot,"frames":run.frames});
+        if config.0.offscreen {
+            report["presentation"] = json!({"available":false,
+                "scope":"offscreen image rendering only; no swapchain, drawable, or panel delivery"});
+        }
         #[cfg(target_os = "macos")]
         if let Some(stats) = gpu.and_then(|g| g.0.stats()) {
             report["metalfx_command_buffer_diagnostic"] = json!({"scope":"dedicated command-buffer elapsed INCLUDING upstream waits; NOT frame GPU time or isolated pass cost",
@@ -346,8 +379,16 @@ fn observe_run(
         #[cfg(target_os = "macos")]
         {
             report["display_awake_at_finish"] = json!(bevy_metalfx::display_awake());
-            report["presentation_requested"] = json!(config.0.presentation);
-            report["presentation_assumed_refresh_hz"] = json!(config.0.refresh_hz);
+            report["presentation_requested"] = if config.0.offscreen {
+                json!("unavailable_offscreen")
+            } else {
+                json!(config.0.presentation)
+            };
+            report["presentation_assumed_refresh_hz"] = if config.0.offscreen {
+                Value::Null
+            } else {
+                json!(config.0.refresh_hz)
+            };
             if let Some(present) = &present {
                 let (encoded, dropped, displayed, callbacks, committed) = present.sink.counts();
                 let stats = present.sink.stats();
@@ -398,7 +439,7 @@ fn observe_run(
     }
 }
 
-fn runtime_environment() -> Value {
+fn runtime_environment(offscreen: bool) -> Value {
     let command = |program: &str, args: &[&str]| {
         std::process::Command::new(program)
             .args(args)
@@ -416,6 +457,6 @@ fn runtime_environment() -> Value {
         "rustc":env!("USHAS_RUSTC"),"os":command("/usr/bin/sw_vers", &[]),
         "metal_debug_layer":std::env::var("MTL_DEBUG_LAYER").ok(),
         "features":"frame-interpolation (includes temporal)",
-        "surface_mode":"AutoNoVsync / AlwaysOnTop / continuous event loop",
+        "surface_mode":if offscreen {"offscreen image / no Winit or swapchain / unpaced ScheduleRunner"} else {"AutoNoVsync / AlwaysOnTop / continuous event loop"},
         "arguments":std::env::args().skip(1).collect::<Vec<_>>()})
 }
