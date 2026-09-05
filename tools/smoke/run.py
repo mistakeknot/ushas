@@ -19,6 +19,8 @@ LIFECYCLES = {
     "late-camera": ("LateCamera", {"changed", "restored"}),
     "multiple-views": ("MultipleViews", {"initial", "restored"}),
     "inactive-cut-resume": ("InactiveCutResume", {"initial", "restored"}),
+    "creation-failure": ("CreationFailure", {"initial", "changed", "restored"}),
+    "creation-slow": ("CreationSlow", {"initial", "changed", "restored"}),
 }
 
 

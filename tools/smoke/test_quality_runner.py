@@ -1,6 +1,7 @@
 import copy
 import importlib.util
 import json
+import math
 from pathlib import Path
 import subprocess
 import sys
@@ -59,6 +60,64 @@ class QualityContract(unittest.TestCase):
 
     def validate(self, report=None):
         return q.validate(self.report if report is None else report,self.output,'Temporal',.5,[64,64],False,1)
+
+    def moving_report(self):
+        captures=tuple((tick,'moving-'+name) for tick,name in q.CAPTURES[:6])+tuple(
+            (128+i,f'moving-cut{i}') for i in range(17))
+        report=copy.deepcopy(self.report)
+        report.update(protocol='claude-60hz-moving-cut-v2',expected_capture_count=23)
+        def camera(tick):
+            if tick<128:
+                eye=[.75*math.sin(max(0,tick-32)/60*.8),2.4,8.];target=[0.,.4,0.]
+            else:
+                eye=[-1.4+.75*math.sin((tick-128)/60*.8),2.1,7.5];target=[.2,.5,0.]
+            def normalized(v):
+                length=math.sqrt(sum(n*n for n in v));return [n/length for n in v]
+            back=normalized([a-b for a,b in zip(eye,target)])
+            right=normalized([back[2],0.,-back[0]])
+            up=[back[1]*right[2],back[2]*right[0]-back[0]*right[2],-back[1]*right[0]]
+            return right+[0.]+up+[0.]+back+[0.]+eye+[1.]
+        for proof in report['scripted_render_frames']:
+            tick=proof['tick'];shot=2000+tick if tick in dict(captures) else None
+            proof.update(simulation_seconds=max(0,tick-32)/60,shot_entity=shot,
+                extracted_shot_entity=shot,world_from_view=camera(tick),expected_world_from_view=camera(tick))
+        template=report['captures'][0]
+        report['captures']=[]
+        for tick,name in captures:
+            proof=report['scripted_render_frames'][tick];f=proof['render_frame']
+            capture=copy.deepcopy(template);path=self.directory/(name+'.png')
+            path.write_bytes(Path(template['path']).read_bytes())
+            capture.update(tick=tick,name=name,path=str(path),shot_entity=proof['shot_entity'],
+                request_frame=f,readback_arrived_main_frame=f+1,render_proof=copy.deepcopy(proof))
+            fence=capture['completion_proof']
+            fence.update(frame_id=f,admitted_ms=float(tick),callback_observed_ms=tick+.5)
+            fence['effect']['frame_id']=f
+            report['captures'].append(capture)
+        return report
+
+    def test_moving_reset_validates_all_seventeen_post_cut_readbacks(self):
+        report=self.moving_report()
+        self.assertEqual(q.validate(report,self.output,'Temporal',.5,[64,64],False,1,True),[])
+        self.assertTrue(self.validate(report))
+        self.assertTrue(q.validate(self.report,self.output,'Temporal',.5,[64,64],False,1,True))
+        for mutation in [lambda r:r['captures'].pop(10),
+                         lambda r:r['captures'].__setitem__(10,r['captures'][9]),
+                         lambda r:r['captures'][10].update(name='cut4'),
+                         lambda r:r['scripted_render_frames'][129].update(reset_before_encode=True)]:
+            damaged=copy.deepcopy(report);mutation(damaged)
+            self.assertTrue(q.validate(damaged,self.output,'Temporal',.5,[64,64],False,1,True))
+
+    def test_moving_reset_rejects_held_clock_and_self_certified_frozen_camera(self):
+        for kind in ('clock','camera'):
+            report=self.moving_report()
+            for proof in report['scripted_render_frames'][129:]:
+                if kind=='clock':proof['simulation_seconds']=95/60
+                else:
+                    proof['world_from_view']=report['scripted_render_frames'][128]['world_from_view']
+                    proof['expected_world_from_view']=proof['world_from_view']
+            for capture in report['captures']:
+                capture['render_proof']=copy.deepcopy(report['scripted_render_frames'][capture['tick']])
+            self.assertTrue(q.validate(report,self.output,'Temporal',.5,[64,64],False,1,True),kind)
 
     def test_real_f32_nonbinary_scales_remain_valid(self):
         import struct,math
@@ -166,6 +225,27 @@ class QualityContract(unittest.TestCase):
         original=manifest.read_bytes()
         child=subprocess.run(command,capture_output=True,text=True)
         self.assertNotEqual(child.returncode,0);self.assertEqual(manifest.read_bytes(),original)
+
+    def test_moving_reset_cli_routes_a_distinct_twenty_three_capture_protocol(self):
+        binary=Path(self.temp.name)/'moving-fake'
+        binary.write_text('#!/bin/sh\nexit 0\n');binary.chmod(0o700)
+        output=Path(self.temp.name)/'moving-result.json'
+        child=subprocess.run([sys.executable,str(Path(q.__file__)), '--moving-reset',
+            '--binary',str(binary),'--out',str(output),'--mode','temporal','--scale','1'],
+            capture_output=True,text=True)
+        self.assertNotEqual(child.returncode,0)
+        manifest=Path(str(output)+'.quality-manifest.json')
+        self.assertTrue(manifest.is_file(),child.stderr)
+        receipt=json.loads(manifest.read_text())
+        self.assertEqual(receipt['protocol'],'claude-60hz-moving-cut-v2')
+        self.assertIn('--quality-moving-reset',receipt['command'])
+        self.assertNotIn('--quality-sequence',receipt['command'])
+        self.assertFalse(receipt['valid'])
+        self.assertEqual(receipt['child_exit'],0)
+        expected={f'moving-cut{i}' for i in range(17)} | {
+            'moving-settled','moving-motion32','moving-motion62','moving-motion63',
+            'moving-motion64','moving-before-cut'}
+        self.assertEqual(set(receipt['captures']),expected)
 
 
 if __name__=='__main__':unittest.main()

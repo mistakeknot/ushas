@@ -8,7 +8,7 @@ publish = false
 [workspace]
 
 [dependencies]
-bevy_metalfx = { path = "../..", features = ["frame-interpolation"] }
+bevy_metalfx = { path = "../..", features = ["frame-interpolation", "diagnostic-fault-injection"] }
 bevy = { version = "0.19", default-features = false, features = [
     "bevy_asset", "bevy_color", "bevy_core_pipeline", "bevy_log",
     "bevy_pbr", "bevy_render", "bevy_window", "bevy_winit",

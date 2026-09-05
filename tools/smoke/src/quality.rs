@@ -17,6 +17,75 @@ const CAPTURES: [(u32, &str); 12] = [
     (136, "cut8"),
     (144, "cut16"),
 ];
+const MOVING_CAPTURES: [(u32, &str); 23] = [
+    (31, "moving-settled"),
+    (63, "moving-motion32"),
+    (93, "moving-motion62"),
+    (94, "moving-motion63"),
+    (95, "moving-motion64"),
+    (127, "moving-before-cut"),
+    (128, "moving-cut0"),
+    (129, "moving-cut1"),
+    (130, "moving-cut2"),
+    (131, "moving-cut3"),
+    (132, "moving-cut4"),
+    (133, "moving-cut5"),
+    (134, "moving-cut6"),
+    (135, "moving-cut7"),
+    (136, "moving-cut8"),
+    (137, "moving-cut9"),
+    (138, "moving-cut10"),
+    (139, "moving-cut11"),
+    (140, "moving-cut12"),
+    (141, "moving-cut13"),
+    (142, "moving-cut14"),
+    (143, "moving-cut15"),
+    (144, "moving-cut16"),
+];
+
+#[derive(Clone, Copy)]
+enum Protocol {
+    Held,
+    MovingReset,
+}
+impl Protocol {
+    fn id(self) -> &'static str {
+        match self {
+            Self::Held => "claude-60hz-sampled-v1",
+            Self::MovingReset => "claude-60hz-moving-cut-v2",
+        }
+    }
+    fn captures(self) -> &'static [(u32, &'static str)] {
+        match self {
+            Self::Held => &CAPTURES,
+            Self::MovingReset => &MOVING_CAPTURES,
+        }
+    }
+    fn pose_seconds(self, tick: u32) -> f32 {
+        match self {
+            Self::Held => pose_seconds(tick),
+            Self::MovingReset => tick.clamp(32, LAST_TICK).saturating_sub(32) as f32 / 60.0,
+        }
+    }
+    fn post_cut_camera_x(self, tick: u32) -> f32 {
+        match self {
+            Self::Held => -1.4,
+            Self::MovingReset => {
+                -1.4 + 0.75 * (tick.saturating_sub(CUT_TICK) as f32 / 60.0 * 0.8).sin()
+            }
+        }
+    }
+    fn scope(self) -> &'static str {
+        match self {
+            Self::Held => {
+                "145 serial render frames at deterministic 1/60 simulation steps; ticks 0..31 held, 32..127 animated/panning, 128..144 held after a camera hard cut. Twelve sampled readbacks, not continuous video, GPU cost, normal app FPS, or presentation."
+            }
+            Self::MovingReset => {
+                "145 serial render frames at deterministic 1/60 simulation steps; ticks 0..31 held, 32..127 animated/panning, 128..144 continue animation and camera pan after a hard cut. Six pre-cut checkpoints and every cut0..16 readback (23 PNGs), not continuous real-time video, GPU cost, normal app FPS, or presentation."
+            }
+        }
+    }
+}
 
 fn pose_seconds(tick: u32) -> f32 {
     tick.clamp(32, 127).saturating_sub(32) as f32 / 60.0
@@ -103,6 +172,29 @@ mod contract_tests {
         assert!(CAPTURES.windows(2).all(|w| w[0].0 < w[1].0));
     }
     #[test]
+    fn moving_reset_keeps_all_sixteen_successive_post_cut_poses_and_captures() {
+        let moving = Protocol::MovingReset;
+        assert_eq!(moving.captures().len(), 23);
+        assert_eq!(moving.id(), "claude-60hz-moving-cut-v2");
+        for tick in 0..CUT_TICK {
+            assert_eq!(moving.pose_seconds(tick), pose_seconds(tick));
+        }
+        assert_eq!(moving.captures()[6], (CUT_TICK, "moving-cut0"));
+        for (index, &(tick, name)) in moving.captures()[6..].iter().enumerate() {
+            assert_eq!(tick, CUT_TICK + index as u32);
+            assert_eq!(name, format!("moving-cut{index}"));
+            assert!((moving.pose_seconds(tick) - (tick - 32) as f32 / 60.0).abs() < 1e-6);
+        }
+        assert!(moving.pose_seconds(LAST_TICK) > moving.pose_seconds(CUT_TICK));
+        assert!(moving.post_cut_camera_x(LAST_TICK) > moving.post_cut_camera_x(CUT_TICK));
+        assert_eq!(Protocol::Held.captures(), &CAPTURES);
+        assert_eq!(
+            Protocol::Held.pose_seconds(LAST_TICK),
+            pose_seconds(LAST_TICK)
+        );
+        assert_eq!(Protocol::Held.post_cut_camera_x(LAST_TICK), -1.4);
+    }
+    #[test]
     fn phase_is_independent_of_warmup_length_and_preserves_halton_order() {
         assert_eq!(jitter_offset(0)[0], 0.0);
         assert!((jitter_offset(0)[1] + 1.0 / 6.0).abs() < 1e-6);
@@ -172,6 +264,7 @@ pub struct PoseClock(pub f32);
 
 #[derive(Resource, Clone)]
 struct Settings {
+    protocol: Protocol,
     mode: MetalFxMode,
     scale: f32,
     size: [u32; 2],
@@ -256,6 +349,11 @@ impl Plugin for QualityPlugin {
             panic!("quality needs an image target");
         };
         let settings = Settings {
+            protocol: if c.quality_moving_reset {
+                Protocol::MovingReset
+            } else {
+                Protocol::Held
+            },
             mode: crate::gate::mode(&c.mode),
             scale: c.scale,
             size: [c.width, c.height],
@@ -289,9 +387,10 @@ impl Plugin for QualityPlugin {
     }
 }
 
-fn camera_pose(tick: u32) -> Transform {
+fn camera_pose(tick: u32, protocol: Protocol) -> Transform {
     if tick >= CUT_TICK {
-        Transform::from_xyz(-1.4, 2.1, 7.5).looking_at(Vec3::new(0.2, 0.5, 0.0), Vec3::Y)
+        Transform::from_xyz(protocol.post_cut_camera_x(tick), 2.1, 7.5)
+            .looking_at(Vec3::new(0.2, 0.5, 0.0), Vec3::Y)
     } else {
         let x = 0.75 * (pose_seconds(tick) * 0.8).sin();
         Transform::from_xyz(x, 2.4, 8.0).looking_at(Vec3::new(0.0, 0.4, 0.0), Vec3::Y)
@@ -328,7 +427,7 @@ fn drive(
     }
     let done = run.next_tick == Some(LAST_TICK + 1)
         && records.len() == LAST_TICK as usize + 1
-        && run.images.len() == CAPTURES.len();
+        && run.images.len() == settings.protocol.captures().len();
     if done || !run.errors.is_empty() {
         finish(&mut run, &settings, &records, &completion, &mut exit);
         return;
@@ -350,7 +449,7 @@ fn drive(
         run.readiness
             .observe(ready, observation.map(|o| o.frame_id));
         if run.readiness.count < 20 || run.started.elapsed() < settings.warmup {
-            *transform = camera_pose(0);
+            *transform = camera_pose(0, settings.protocol);
             return;
         }
         run.next_tick = Some(0);
@@ -359,14 +458,16 @@ fn drive(
     if tick > LAST_TICK {
         return;
     }
-    clock.0 = pose_seconds(tick);
-    *transform = camera_pose(tick);
+    clock.0 = settings.protocol.pose_seconds(tick);
+    *transform = camera_pose(tick, settings.protocol);
     if settings.mode == MetalFxMode::Temporal && (tick == 0 || tick == CUT_TICK) {
         if let Some(reset) = &mut reset {
             reset.request();
         }
     }
-    let shot = CAPTURES
+    let shot = settings
+        .protocol
+        .captures()
         .iter()
         .find(|(at, _)| *at == tick)
         .map(|(_, name)| {
@@ -456,7 +557,7 @@ fn record_render(
         .and_then(|p| Some((p["tick"].as_u64()? as u32, p["render_frame"].as_u64()?)));
     let mut record = json!({"tick":r.tick,"request_frame":r.main_frame,"extraction_frame":request.extraction_frame,
         "render_frame":frame.0,"shot_entity":r.shot.map(Entity::to_bits), "extracted_shot_entity":request.extracted_shot.map(Entity::to_bits),
-        "simulation_seconds":pose_seconds(r.tick),"jitter_index":r.tick % 32,"msaa_samples":request.msaa,
+        "simulation_seconds":settings.protocol.pose_seconds(r.tick),"jitter_index":r.tick % 32,"msaa_samples":request.msaa,
         "reset_ordinal":if settings.mode == MetalFxMode::Temporal { if r.tick >= CUT_TICK { 2 } else { 1 } } else { 0 },
         "reset_before_encode":request.reset_before,"reset_after_encode":reset.as_ref().is_some_and(|r| r.is_requested()),
         "valid":false,"error":"missing or ambiguous extracted view"});
@@ -470,7 +571,7 @@ fn record_render(
         } else {
             jitter.is_none()
         };
-        let expected_camera = camera_pose(r.tick).to_matrix();
+        let expected_camera = camera_pose(r.tick, settings.protocol).to_matrix();
         let camera_pose_matches = view
             .world_from_view
             .to_matrix()
@@ -592,7 +693,7 @@ fn finish(
     let completed = completion.snapshot();
     let frames = completed["frames"].as_array();
     let mut captures = vec![];
-    for (tick, name) in CAPTURES {
+    for &(tick, name) in settings.protocol.captures() {
         let record = records.iter().find(|p| p["tick"] == tick);
         let image = record
             .and_then(|p| p["shot_entity"].as_u64())
@@ -619,11 +720,11 @@ fn finish(
         && records.len() == LAST_TICK as usize + 1
         && records.iter().all(|p| p["valid"] == true)
         && captures.iter().all(|c| c["valid"] == true);
-    let report = json!({"kind":"quality_sequence","protocol":"claude-60hz-sampled-v1","valid":valid,
-        "scope":"145 serial render frames at deterministic 1/60 simulation steps; ticks 0..31 held, 32..127 animated/panning, 128..144 held after a camera hard cut. Twelve sampled readbacks, not continuous video, GPU cost, normal app FPS, or presentation.",
+    let report = json!({"kind":"quality_sequence","protocol":settings.protocol.id(),"valid":valid,
+        "scope":settings.protocol.scope(),
         "mode":format!("{:?}",settings.mode),"scale":settings.scale,"output_size":settings.size,"hdr":settings.hdr,
         "msaa_samples":settings.msaa,"scene_version":crate::claude::MODEL_VERSION,"offscreen":true,
-        "expected_capture_count":CAPTURES.len(),"scripted_render_frames":records,"captures":captures,"errors":run.errors,
+        "expected_capture_count":settings.protocol.captures().len(),"scripted_render_frames":records,"captures":captures,"errors":run.errors,
         "history_proof_scope":"reset_before/after proves the requested reset was acknowledged by CPU command encoding; matching completion fence and screenshot entity separately prove submitted work completion and readback, not visual history quality",
         "wall_seconds":run.started.elapsed().as_secs_f64()});
     let write = serde_json::to_writer_pretty(&mut run.output, &report)

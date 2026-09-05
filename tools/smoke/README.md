@@ -125,7 +125,15 @@ python3 tools/smoke/run.py -- --mode temporal --scale 0.5 --adaptive \
 ```
 
 Available exercises are `resize`, `camera-cut`, `late-camera`, `multiple-views`,
-and `inactive-cut-resume`. Camera inactivity is a render-pause test, not an
+`inactive-cut-resume`, `creation-failure`, and `creation-slow`. The two creation
+exercises require Temporal mode. They use the smoke harness's explicitly enabled
+`diagnostic-fault-injection` feature to return no scaler or hold an attempt
+pending for at least ten seconds. They require opaque fallback captures, an
+unconsumed history reset, and real Temporal output after releasing the fault.
+These are simulated creation outcomes; they do not reproduce a driver crash.
+The library feature is off by default.
+
+Camera inactivity is a render-pause test, not an
 operating-system sleep/resume test. `--hdr` enables Bevy's HDR main texture;
 `--native-aa` selects the native-scale Disabled MSAA4 image-quality control.
 
@@ -196,13 +204,23 @@ samples support matched inspection of rays, facial lines, rails, disocclusion,
 and the native-resolution UI. They are twelve sampled frames, not continuous
 video or a proof of quality at a real-time presentation cadence.
 
+Add `--moving-reset` to the quality runner for the distinct
+`claude-60hz-moving-cut-v2` protocol. It passes `--quality-moving-reset` to the
+renderer, preserves the first 128 poses, and continues both model animation and
+camera motion after the cut. It captures all seventeen `moving-cut0` through
+`moving-cut16` states plus the six earlier checkpoints: 23 PNGs and the same 145
+render proofs. Every filename starts with `moving-`. Compare native MSAA4,
+native Temporal, and half-scale Temporal under this same protocol; do not mix
+it with the held-camera captures. This short sequence still does not establish
+real-time presentation quality.
+
 Every scripted frame must have current effect status and the expected camera,
 MSAA, dimensions, HDR format and jitter. Each screenshot entity is frozen at
 extraction, joined to its render-frame proof and later `ScreenshotCaptured`
 readback, and paired with the same frame's final queue-completion fence. Request
 frame, render frame and readback arrival are separate fields. Reset acknowledgement
 proves CPU reset-command encoding; the image must still be inspected for visual
-recovery. The runner independently decodes all twelve PNGs, requires opaque
+recovery. The runner independently decodes every expected PNG, requires opaque
 scene pixels and complete identity/hash evidence, and rejects partial sequences.
 
 This mode has a 75-second internal deadline, five-second bounded queue drains,

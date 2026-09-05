@@ -181,7 +181,52 @@ PYTHONDONTWRITEBYTECODE=1 python3 \
   /Users/sma/projects/docs/ushas/evidence/claude-quality-acceptance-02/audit.py
 ```
 
-## Limits and possible next experiment
+## Prospective moving-after-cut experiment
+
+The separately implemented `claude-60hz-moving-cut-v2` protocol is not measured
+yet. Declare the following rules before its hardware runs. Use native Disabled
+MSAA4, native-resolution Temporal with MSAA off, and half-resolution Temporal
+with MSAA off, all at 1280×720 SDR on the same newly frozen binary. Retain every
+run and the exact source, executable and runner hashes; the earlier executable
+does not implement this protocol.
+
+The first 128 logical ticks match v1. At tick 128 the camera hard-cuts and Temporal
+requests its reset; the model clock continues at `(tick - 32) / 60` seconds.
+After the cut, the camera pans from x=-1.4 by
+`0.75 * sin((tick - 128) / 60 * 0.8)`, retaining the cut viewpoint's other position
+coordinates and look-at target. The same 145 full-frame proofs are required.
+There are 23 readbacks: six pre-cut checkpoints and every `moving-cut0` through
+`moving-cut16`. All names have the `moving-` prefix. The original twelve-image
+held v1 protocol is unchanged.
+
+Before image review, require normal exit and all 145 matching
+frame/view/effect/reset proofs, all 23 opaque PNGs and matching completion fences,
+and independently validated camera/model trajectories. Missing an interior
+post-cut capture or supplying a held pose fails validation. Across the three
+arms, compare actual camera matrices, pose clocks and Temporal jitter by logical
+tick. The wrapper's `--moving-reset` flag selects this distinct expected protocol;
+held v1 evidence cannot pass as moving v2.
+
+Both reviewers must independently inspect **all seventeen post-cut states** and
+the six pre-cut checkpoints for each arm. Apply the same feature regions and
+readability grades declared above. Any obvious old-pose overlay, double contour,
+missing or merged reference-visible facial mark, missing rail segment, or
+corrupted/unreadable UI in any post-cut image fails moving-reset acceptance.
+Each `moving-cut8` through `moving-cut16` must additionally meet the settled
+readability rule while camera and models continue moving; a single unacceptable
+state fails this recovery gate. Record early degradation and the first acceptable
+sample without assuming that later states stay acceptable. Judge immediate
+`moving-cut0` aliasing separately against native MSAA4 and native Temporal: later
+readability cannot turn an immediate-quality failure into a pass. Preserve any
+reviewer disagreement as unresolved.
+
+Passing these rules would accept only this short, fully sampled moving-reset
+sequence at the declared resolution and settings. It would not establish
+continuous real-time video, adaptive transitions, presentation or a general
+camera-cut quality guarantee. Hardware execution and independent visual review
+are still required; the CPU protocol tests establish neither.
+
+## Limits
 
 The captures are sampled states from a serial, unpaced 1/60 simulation. There is
 no continuous video, real-time pacing, input latency, panel delivery, GPU-cost or
@@ -189,11 +234,6 @@ adaptive-quality acceptance here. Sixteen logical post-cut steps must not be
 reported as a measured wall-clock recovery time. Existing timing results remain
 separate, including their pacing and workload limits.
 
-Do not expand the renderer before examining this control. If quality during
-ongoing post-cut motion would change the product decision, the next bounded
-experiment should retain the first 128 ticks, continue the model pose clock and
-camera motion for sixteen steps after the cut, and capture each of those steps
-for native MSAA4, native Temporal and Temporal half. It needs a distinct protocol
-identifier, frame/pose/reset proofs and fail-closed validator tests. That proposed
-extension is not implemented or measured by this document, and even its complete
-short image sequence would not prove continuous real-time presentation quality.
+The v2 extension has a distinct protocol identifier, trajectories, filenames and
+validator, so its eventual results must remain separate from the completed held
+sequence above. No v2 hardware outcome is implied by the earlier acceptance.

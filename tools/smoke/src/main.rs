@@ -77,8 +77,11 @@ fn main() -> AppExit {
             [--screenshot result.png] [--pixel-iterations 1000] [--cpu-ms 20] [--moving]\n\
             [--subject claude|shapes (default claude)]\n\
             [--adaptive --target-fps 60 --minimum-scale 0.5]\n\
+            [--lifecycle resize|camera-cut|late-camera|multiple-views|inactive-cut-resume]\n\
+            [--lifecycle creation-failure|creation-slow: synthetic creation faults, temporal only]\n\
             [--offscreen: fixed-scale image rendering; no lifecycle/adaptive/interpolation/presentation]\n\
             [--quality-sequence: offscreen deterministic twelve-image Claude sequence]\n\
+            [--quality-moving-reset: offscreen Claude sequence with all sixteen moving post-cut steps]\n\
             [--completion: offscreen serial completed-render cadence, one frame in flight]\n\
             Runs unpaced; target-fps defines the analysis/controller budget, not a frame cap."
         );

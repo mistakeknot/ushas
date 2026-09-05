@@ -14,6 +14,28 @@ import time
 CAPTURES = ((31, 'settled'), (63, 'motion32'), (93, 'motion62'), (94, 'motion63'),
             (95, 'motion64'), (127, 'before-cut'), (128, 'cut0'), (129, 'cut1'),
             (130, 'cut2'), (132, 'cut4'), (136, 'cut8'), (144, 'cut16'))
+MOVING_CAPTURES = tuple((tick, 'moving-' + name) for tick, name in CAPTURES[:6]) + tuple(
+    (128 + index, f'moving-cut{index}') for index in range(17))
+
+
+def expected_camera_matrix(tick, moving_reset):
+    """Independent look-at basis for the moving protocol's world-from-view proof."""
+    if tick < 128:
+        eye = [.75 * math.sin(max(0, tick - 32) / 60 * .8), 2.4, 8.]
+        target = [0., .4, 0.]
+    else:
+        pan = .75 * math.sin((tick - 128) / 60 * .8) if moving_reset else 0.
+        eye = [-1.4 + pan, 2.1, 7.5]
+        target = [.2, .5, 0.]
+    def normalize(vector):
+        length = math.sqrt(sum(v * v for v in vector))
+        return [v / length for v in vector]
+    def cross(a, b):
+        return [a[1]*b[2]-a[2]*b[1], a[2]*b[0]-a[0]*b[2], a[0]*b[1]-a[1]*b[0]]
+    back = normalize([a - b for a, b in zip(eye, target)])
+    right = normalize(cross([0., 1., 0.], back))
+    up = cross(back, right)
+    return right + [0.] + up + [0.] + back + [0.] + eye + [1.]
 
 
 def digest(path):
@@ -23,9 +45,11 @@ def digest(path):
         return hashlib.file_digest(stream, 'sha256').hexdigest()
 
 
-def validate(report, output, mode, scale, size, hdr, msaa):
+def validate(report, output, mode, scale, size, hdr, msaa, moving_reset=False):
     from PIL import Image
     scale = struct.unpack("f", struct.pack("f", scale))[0]
+    captures_expected = MOVING_CAPTURES if moving_reset else CAPTURES
+    protocol = 'claude-60hz-moving-cut-v2' if moving_reset else 'claude-60hz-sampled-v1'
     errors = []
     def require(condition, reason):
         if not condition:
@@ -38,15 +62,15 @@ def validate(report, output, mode, scale, size, hdr, msaa):
         return number(value) and abs(value - expected) <= 0.00001
     if not isinstance(report, dict):
         return ['report must be an object']
-    require(report.get('kind') == 'quality_sequence' and report.get('protocol') == 'claude-60hz-sampled-v1', 'wrong quality protocol')
+    require(report.get('kind') == 'quality_sequence' and report.get('protocol') == protocol, 'wrong quality protocol')
     require(report.get('valid') is True and report.get('errors') == [] and report.get('offscreen') is True, 'run is not valid offscreen evidence')
     require(report.get('mode') == mode and close(report.get('scale'), scale) and report.get('output_size') == size and report.get('hdr') is hdr and type(report.get('msaa_samples')) is int and report.get('msaa_samples') == msaa, 'arm mismatch')
     require(report.get('scene_version') == 'claude-toy-v1', 'unknown scene version')
-    require(type(report.get('expected_capture_count')) is int and report.get('expected_capture_count') == 12, 'capture count mismatch')
+    require(type(report.get('expected_capture_count')) is int and report.get('expected_capture_count') == len(captures_expected), 'capture count mismatch')
     frames = report.get('scripted_render_frames')
     captures = report.get('captures')
-    if not isinstance(frames, list) or len(frames) != 145 or not isinstance(captures, list) or len(captures) != 12:
-        return errors + ['expected exactly 145 scripted frames and twelve captures']
+    if not isinstance(frames, list) or len(frames) != 145 or not isinstance(captures, list) or len(captures) != len(captures_expected):
+        return errors + [f'expected exactly 145 scripted frames and {len(captures_expected)} captures']
     content = [max(1, math.floor(v * scale + 0.5)) for v in size]
     state = 'Disabled' if mode == 'Disabled' else 'OutputWritten'
     by_tick = {}
@@ -68,9 +92,13 @@ def validate(report, output, mode, scale, size, hdr, msaa):
         require(proof.get('valid') is True and proof.get('target_matches') is True and proof.get('camera_pose_matches') is True and proof.get('format_matches') is True, f'unproved frame {tick}')
         require(type(proof.get('msaa_samples')) is int and proof.get('msaa_samples') == msaa, f'MSAA mismatch {tick}')
         require((proof.get('main_texture_format') == 'Rgba16Float') is hdr, f'HDR format mismatch {tick}')
-        require(close(proof.get('simulation_seconds'), max(0,min(tick,127)-32)/60) and type(proof.get('jitter_index')) is int and proof.get('jitter_index') == tick%32, f'pose clock mismatch {tick}')
+        pose_tick = tick if moving_reset else min(tick,127)
+        require(close(proof.get('simulation_seconds'), max(0,pose_tick-32)/60) and type(proof.get('jitter_index')) is int and proof.get('jitter_index') == tick%32, f'pose clock mismatch {tick}')
         matrix=proof.get('world_from_view'); expected_matrix=proof.get('expected_world_from_view')
         require(isinstance(matrix,list) and len(matrix)==16 and isinstance(expected_matrix,list) and len(expected_matrix)==16 and all(number(v) and close(v,e) for v,e in zip(matrix,expected_matrix)), f'camera matrix mismatch {tick}')
+        if moving_reset:
+            camera = expected_camera_matrix(tick, True)
+            require(isinstance(matrix,list) and len(matrix)==16 and all(close(v,e) for v,e in zip(matrix,camera)), f'moving camera trajectory mismatch {tick}')
         if mode == 'Temporal':
             def radical(n,base):
                 total=0.; denominator=1.
@@ -86,7 +114,7 @@ def validate(report, output, mode, scale, size, hdr, msaa):
         effect=proof.get('effect',{})
         require(isinstance(effect,dict) and integer(effect.get('frame_id')) and effect.get('frame_id')==f and integer(effect.get('view_id')) and effect.get('view_id')==expected_scope['view_id'] and effect.get('requested_mode')==mode and effect.get('effective_mode')==mode and close(effect.get('scale'),scale) and effect.get('content_size')==content and effect.get('output_size')==size and effect.get('state')==state, f'effect mismatch {tick}')
         shot=proof.get('shot_entity')
-        if tick in dict(CAPTURES):
+        if tick in dict(captures_expected):
             require(integer(shot) and shot not in shot_ids and type(proof.get('extracted_shot_entity')) is int and proof.get('extracted_shot_entity')==shot, f'screenshot extraction mismatch {tick}')
             if integer(shot): shot_ids.add(shot)
         else:
@@ -94,7 +122,7 @@ def validate(report, output, mode, scale, size, hdr, msaa):
         by_tick[tick]=proof
     directory=Path(str(output)+'.quality')
     last_callback = -1.0
-    for capture,(tick,name) in zip(captures,CAPTURES):
+    for capture,(tick,name) in zip(captures,captures_expected):
         if not isinstance(capture,dict):
             errors.append(f'invalid capture {name}');continue
         path=directory/(name+'.png'); proof=by_tick.get(tick,{})
@@ -160,6 +188,7 @@ def main(argv=None):
     parser.add_argument('--height',type=int,default=720)
     parser.add_argument('--hdr',action='store_true')
     parser.add_argument('--native-aa',action='store_true')
+    parser.add_argument('--moving-reset',action='store_true',help='continue model/camera motion after the cut and retain every cut0..16 image')
     parser.add_argument('--timeout',type=float,default=90)
     args=parser.parse_args(argv)
     if not math.isfinite(args.scale) or not .1<=args.scale<=1 or not 1<=args.width<=8192 or not 1<=args.height<=8192 or not math.isfinite(args.timeout) or not 1<=args.timeout<=120:
@@ -174,13 +203,16 @@ def main(argv=None):
         parser.error('output artifacts must not already exist')
     binary_hash=digest(binary)
     if not binary_hash or not os.access(binary,os.X_OK):parser.error('binary must be an executable regular file')
-    command=[str(binary),'--quality-sequence','--offscreen','--subject','claude','--mode',args.mode,'--scale',str(args.scale),
+    protocol = 'claude-60hz-moving-cut-v2' if args.moving_reset else 'claude-60hz-sampled-v1'
+    captures_expected = MOVING_CAPTURES if args.moving_reset else CAPTURES
+    quality_flag = '--quality-moving-reset' if args.moving_reset else '--quality-sequence'
+    command=[str(binary),quality_flag,'--offscreen','--subject','claude','--mode',args.mode,'--scale',str(args.scale),
              '--width',str(args.width),'--height',str(args.height),'--warmup','4','--out',str(output)]
     if args.hdr:command.append('--hdr')
     if args.native_aa:command.append('--native-aa')
     # Inherit Metal validation settings; all descendants share a cleanup group.
     if os.uname().sysname=='Darwin':command=['/usr/bin/caffeinate','-di',*command]
-    receipt={'kind':'quality_sequence_run','command':command,'binary':str(binary),'binary_sha256':binary_hash,
+    receipt={'kind':'quality_sequence_run','protocol':protocol,'command':command,'binary':str(binary),'binary_sha256':binary_hash,
              'runner_sha256':digest(Path(__file__).resolve()),'valid':False,'child_exit':None}
     code=1;errors=[];validated=False
     try:
@@ -192,14 +224,14 @@ def main(argv=None):
         try:
             code=bounded(command,log,args.timeout);receipt['child_exit']=code
             report=json.loads(output.read_text())
-            errors=validate(report,output,args.mode.title(),args.scale,[args.width,args.height],args.hdr,4 if args.native_aa else 1)
+            errors=validate(report,output,args.mode.title(),args.scale,[args.width,args.height],args.hdr,4 if args.native_aa else 1,args.moving_reset)
             validated=True
         except Exception as error:  # Retain unexpected validator failures as invalid evidence.
             errors.append(f'failed run or invalid report: {error}')
         finally:
             receipt['binary_sha256_after']=digest(binary)
             receipt['report_sha256']=digest(output)
-            receipt['captures']={name:{'path':str(paths[1]/(name+'.png')),'sha256':digest(paths[1]/(name+'.png')) if not paths[1].is_symlink() else None} for _,name in CAPTURES}
+            receipt['captures']={name:{'path':str(paths[1]/(name+'.png')),'sha256':digest(paths[1]/(name+'.png')) if not paths[1].is_symlink() else None} for _,name in captures_expected}
             if receipt['binary_sha256_after']!=binary_hash:errors.append('binary changed during run')
             log.flush();receipt['log_sha256']=digest(paths[2])
             if not receipt['report_sha256'] or not receipt['log_sha256'] or not all(c['sha256'] for c in receipt['captures'].values()):errors.append('retained evidence hash inventory incomplete')

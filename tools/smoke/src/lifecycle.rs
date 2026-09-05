@@ -4,9 +4,9 @@ use bevy::prelude::*;
 use bevy::render::view::screenshot::{Screenshot, ScreenshotCaptured};
 use bevy::window::PrimaryWindow;
 use bevy_metalfx::{
-    MetalFxAdaptiveContext, MetalFxEffectReason, MetalFxEffectState, MetalFxEffectStatus,
-    MetalFxHistoryReset, MetalFxMode, MetalFxModeResource, MetalFxObservationFrame,
-    MetalFxRenderScale,
+    diagnostic_fault::ScalerFaultSnapshot, MetalFxAdaptiveContext, MetalFxDiagnosticFault,
+    MetalFxEffectReason, MetalFxEffectState, MetalFxEffectStatus, MetalFxHistoryReset, MetalFxMode,
+    MetalFxModeResource, MetalFxObservationFrame, MetalFxRenderScale, ScalerCreationFault,
 };
 use serde_json::{json, Value};
 use std::time::{Duration, Instant};
@@ -22,6 +22,8 @@ pub enum LifecycleExercise {
     LateCamera,
     MultipleViews,
     InactiveCutResume,
+    CreationFailure,
+    CreationSlow,
 }
 
 impl LifecycleExercise {
@@ -32,7 +34,17 @@ impl LifecycleExercise {
             "late-camera" => Ok(Self::LateCamera),
             "multiple-views" => Ok(Self::MultipleViews),
             "inactive-cut-resume" => Ok(Self::InactiveCutResume),
-            _ => Err("lifecycle must be resize, camera-cut, late-camera, multiple-views, or inactive-cut-resume".into()),
+            "creation-failure" => Ok(Self::CreationFailure),
+            "creation-slow" => Ok(Self::CreationSlow),
+            _ => Err("lifecycle must be resize, camera-cut, late-camera, multiple-views, inactive-cut-resume, creation-failure, or creation-slow".into()),
+        }
+    }
+
+    fn creation_fault(self) -> Option<ScalerCreationFault> {
+        match self {
+            Self::CreationFailure => Some(ScalerCreationFault::ReturnNone),
+            Self::CreationSlow => Some(ScalerCreationFault::HoldPending),
+            _ => None,
         }
     }
 }
@@ -89,11 +101,13 @@ pub struct LifecycleRun {
     capture_pending: bool,
     phase_capture: Option<bool>,
     reset_was_pending: bool,
+    fault_generation: Option<u64>,
+    creation_reason_seen: bool,
     events: Vec<Value>,
     observations: Vec<Value>,
     captures: Vec<Value>,
     dropped_observations: usize,
-    last_logged: Option<(Phase, Vec<ViewEvidence>, bool)>,
+    last_logged: Option<(Phase, Vec<ViewEvidence>, bool, ScalerFaultSnapshot)>,
 }
 
 impl LifecycleRun {
@@ -118,6 +132,8 @@ impl LifecycleRun {
             capture_pending: false,
             phase_capture: None,
             reset_was_pending: false,
+            fault_generation: None,
+            creation_reason_seen: false,
             events: vec![],
             observations: vec![],
             captures: vec![],
@@ -151,6 +167,8 @@ impl LifecycleRun {
             "scope":"real lifecycle mutations, render-path observations and captured pixels; not GPU completion or panel delivery",
             "phase":self.phase.name(),"wall_elapsed_s":self.started.elapsed().as_secs_f64(),
             "initial_size":self.initial_size,"expected_size":self.expected_size,"initial_scale":self.initial_scale,
+            "fault_generation":self.fault_generation,"creation_reason_seen":self.creation_reason_seen,
+            "creation_fault_scope":self.exercise.creation_fault().map(|_|"simulated creation completion only; not a reproduced driver failure or OS sleep; changed-phase pixels exercise the real bilinear fallback"),
             "events":self.events,"observations":self.observations,"captures":self.captures,
             "dropped_observations":self.dropped_observations})
     }
@@ -179,6 +197,8 @@ impl LifecycleRun {
         );
     }
 
+    // Keep the observed frame, geometry, reset and diagnostic generation together.
+    #[allow(clippy::too_many_arguments)]
     fn record(
         &mut self,
         now: Instant,
@@ -187,8 +207,9 @@ impl LifecycleRun {
         reset_pending: bool,
         epoch: u64,
         scale: f32,
+        fault: ScalerFaultSnapshot,
     ) {
-        let key = (self.phase, views.to_vec(), reset_pending);
+        let key = (self.phase, views.to_vec(), reset_pending, fault);
         if self.last_logged.as_ref() == Some(&key) {
             return;
         }
@@ -199,6 +220,7 @@ impl LifecycleRun {
         }
         self.observations.push(json!({"app_frame":frame,"elapsed_s":now.duration_since(self.started).as_secs_f64(),
             "phase":self.phase.name(),"reset_pending":reset_pending,"adaptive_epoch":epoch,"scale":scale,
+            "diagnostic_fault":{"generation":fault.generation,"mode":format!("{:?}",fault.fault),"scope":"main-world control snapshot; effect frame may lag extraction"},
             "views":views.iter().map(|v|json!({"entity":v.entity,"active":v.active,"fresh":v.fresh,
                 "frame":v.frame,"state":format!("{:?}",v.state),"reason":v.reason.map(|r|format!("{r:?}")),
                 "content_size":v.content,"output_size":v.output,"effective_mode":format!("{:?}",v.mode),"requested_scale":v.scale})).collect::<Vec<_>>()}));
@@ -310,8 +332,7 @@ fn capture_phase(
         let rgba = dynamic.to_rgba8();
         let mut proof = crate::metrics::image_proof(rgba.as_raw(), rgba.width(), rgba.height());
         dynamic.save(&path).map_err(|e| e.to_string())?;
-        let valid =
-            proof["nonuniform"] == true && [rgba.width(), rgba.height()] == purpose.expected_size;
+        let valid = capture_is_valid(&proof, [rgba.width(), rgba.height()], purpose.expected_size);
         proof["valid"] = json!(valid);
         proof["path"] = json!(path);
         proof["width"] = json!(rgba.width());
@@ -356,6 +377,7 @@ fn exercise(
     mode: Res<MetalFxModeResource>,
     context: Res<MetalFxAdaptiveContext>,
     mut history: Option<ResMut<MetalFxHistoryReset>>,
+    mut fault: ResMut<MetalFxDiagnosticFault>,
     mut windows: Query<&mut Window, With<PrimaryWindow>>,
     mut cameras: Query<(Entity, &mut Camera, &mut Transform), With<Camera3d>>,
 ) {
@@ -364,6 +386,7 @@ fn exercise(
     }
     let now = Instant::now();
     let Ok(mut window) = windows.single_mut() else {
+        fault.clear();
         run.finish(
             now,
             frame.0,
@@ -396,7 +419,16 @@ fn exercise(
         })
         .collect();
     views.sort_by_key(|v| v.entity);
-    run.record(now, frame.0, &views, reset_pending, snapshot.epoch, scale.0);
+    let fault_snapshot = fault.snapshot();
+    run.record(
+        now,
+        frame.0,
+        &views,
+        reset_pending,
+        snapshot.epoch,
+        scale.0,
+        fault_snapshot,
+    );
     if run.reset_was_pending && !reset_pending {
         run.event(
             now,
@@ -408,8 +440,12 @@ fn exercise(
     }
     let needs_reset = matches!(
         run.exercise,
-        LifecycleExercise::CameraCut | LifecycleExercise::InactiveCutResume
+        LifecycleExercise::CameraCut
+            | LifecycleExercise::InactiveCutResume
+            | LifecycleExercise::CreationFailure
+            | LifecycleExercise::CreationSlow
     );
+    let creation_fault = run.exercise.creation_fault();
     let failure = if now.duration_since(run.started) > DEADLINE {
         Some(format!(
             "lifecycle deadline exceeded in {}",
@@ -417,6 +453,41 @@ fn exercise(
         ))
     } else if mode.get() == MetalFxMode::Disabled {
         Some("lifecycle exercises require an active MetalFX mode".into())
+    } else if creation_fault.is_some() && mode.get() != MetalFxMode::Temporal {
+        Some("creation fault exercises require Temporal mode".into())
+    } else if creation_fault.is_some()
+        && run.phase == Phase::Initial
+        && fault_snapshot.fault != ScalerCreationFault::Off
+    {
+        Some("creation fault must be disabled during initial readiness".into())
+    } else if creation_fault.is_some()
+        && run.phase == Phase::Changed
+        && (Some(fault_snapshot.fault) != creation_fault
+            || Some(fault_snapshot.generation) != run.fault_generation)
+    {
+        Some("injected creation fault changed before fallback capture".into())
+    } else if creation_fault.is_some() && run.phase == Phase::Changed && !reset_pending {
+        Some("history reset was consumed before injected creation completed".into())
+    } else if creation_fault.is_some()
+        && run.phase == Phase::Changed
+        && views.iter().any(|view| {
+            view.fresh
+                && view.frame.is_some_and(|f| f >= run.phase_frame)
+                && matches!(
+                    view.state,
+                    MetalFxEffectState::Encoded | MetalFxEffectState::OutputWritten
+                )
+        })
+    {
+        Some("injected creation was incorrectly reported as active MetalFX".into())
+    } else if creation_fault.is_some()
+        && run.phase == Phase::Restored
+        && (fault_snapshot.fault != ScalerCreationFault::Off
+            || run
+                .fault_generation
+                .is_none_or(|old| fault_snapshot.generation <= old))
+    {
+        Some("creation recovery did not release the injected generation".into())
     } else if needs_reset
         && (!matches!(
             mode.get(),
@@ -438,6 +509,7 @@ fn exercise(
         None
     };
     if let Some(error) = failure {
+        fault.clear();
         restore(&mut run, &mut commands, &mut window, &mut cameras);
         run.finish(now, frame.0, Some(error));
         return;
@@ -505,6 +577,11 @@ fn exercise(
     }
     let ready = if run.exercise == LifecycleExercise::MultipleViews && run.phase == Phase::Changed {
         rejected_views(&views, run.phase_frame)
+    } else if creation_fault.is_some() && run.phase == Phase::Changed {
+        active.len() == 1
+            && run.primary.is_some_and(|e| e.to_bits() == active[0].entity)
+            && run.expected_size == Some(size)
+            && creation_fallback(active[0], size, scale.0, run.phase_frame)
     } else {
         active.len() == 1
             && run.primary.is_some_and(|e| e.to_bits() == active[0].entity)
@@ -513,7 +590,35 @@ fn exercise(
             && !(needs_reset && run.phase != Phase::Initial && reset_pending)
     };
     run.stable.observe(ready, &views);
+    if creation_fault.is_some() && run.phase == Phase::Changed && ready {
+        let expected_reason = if run.exercise == LifecycleExercise::CreationFailure {
+            MetalFxEffectReason::ScalerCreationFailed
+        } else {
+            MetalFxEffectReason::ScalerCreationSlow
+        };
+        if active[0].reason == Some(expected_reason) && !run.creation_reason_seen {
+            run.creation_reason_seen = true;
+            let phase_elapsed_s = now.duration_since(run.phase_started).as_secs_f64();
+            run.event(
+                now,
+                frame.0,
+                "injected_creation_reason_observed",
+                json!({
+                "reason":format!("{expected_reason:?}"),"observed_frame":active[0].frame,
+                "generation":fault_snapshot.generation,"reset_pending":reset_pending,
+                "phase_elapsed_s":phase_elapsed_s}),
+            );
+        }
+    }
     if run.stable.count < READY_FRAMES {
+        return;
+    }
+    if creation_fault.is_some()
+        && run.phase == Phase::Changed
+        && (!run.creation_reason_seen
+            || (run.exercise == LifecycleExercise::CreationSlow
+                && now.duration_since(run.phase_started) < Duration::from_secs(10)))
+    {
         return;
     }
     let unsupported_phase =
@@ -576,6 +681,20 @@ fn exercise(
                     json!({"view":extra.to_bits()}),
                 );
             }
+            LifecycleExercise::CreationFailure | LifecycleExercise::CreationSlow => {
+                let selected = creation_fault.expect("creation exercise has a fault");
+                fault.set(selected);
+                run.fault_generation = Some(fault.snapshot().generation);
+                history
+                    .as_mut()
+                    .expect("temporal history checked above")
+                    .request();
+                context.request_reset();
+                run.reset_was_pending = true;
+                run.event(now, frame.0, "creation_fault_injected", json!({
+                    "mode":format!("{selected:?}"),"generation":fault.snapshot().generation,
+                    "reset_pending":true,"scope":"simulated creation result; no driver fault induced"}));
+            }
             LifecycleExercise::LateCamera => unreachable!("late camera starts without a view"),
         }
         run.transition(Phase::Changed, now, frame.0);
@@ -621,6 +740,18 @@ fn exercise(
                     json!({"all_active_views_reported":"MultipleViewsUnsupported"}),
                 );
             }
+            LifecycleExercise::CreationFailure | LifecycleExercise::CreationSlow => {
+                fault.clear();
+                context.request_reset();
+                run.event(
+                    now,
+                    frame.0,
+                    "creation_fault_released",
+                    json!({
+                    "generation":fault.snapshot().generation,"reset_pending":reset_pending,
+                    "scope":"normal driver creation resumes; old pending generation discarded"}),
+                );
+            }
             _ => unreachable!("reset exercises finish after acknowledged recovery"),
         }
         run.transition(Phase::Restored, now, frame.0);
@@ -654,6 +785,30 @@ fn restore(
             camera.is_active = true;
         }
     }
+}
+
+fn creation_fallback(view: &ViewEvidence, output: [u32; 2], scale: f32, since: u64) -> bool {
+    view.active
+        && view.fresh
+        && view.frame.is_some_and(|f| f >= since)
+        && view.mode == MetalFxMode::Disabled
+        && view.output == output
+        && view.content == output.map(|d| (d as f32 * scale).round() as u32)
+        && (view.scale - scale).abs() <= 1e-4
+        && matches!(
+            (view.state, view.reason),
+            (
+                MetalFxEffectState::Failed,
+                Some(MetalFxEffectReason::ScalerCreationFailed)
+            ) | (
+                MetalFxEffectState::Pending,
+                Some(MetalFxEffectReason::ScalerPending | MetalFxEffectReason::ScalerCreationSlow)
+            )
+        )
+}
+
+fn capture_is_valid(proof: &Value, actual: [u32; 2], expected: [u32; 2]) -> bool {
+    proof["nonuniform"] == true && proof["opaque_fraction"] == 1.0 && actual == expected
 }
 
 #[cfg(test)]
@@ -817,5 +972,92 @@ mod tests {
             ..view()
         };
         assert!(run.ready_view(&resized, MetalFxMode::Temporal, [960, 540], 0.5));
+    }
+
+    #[test]
+    fn creation_fault_exercises_are_explicit_lifecycle_modes() {
+        assert!(LifecycleExercise::parse("creation-failure").is_ok());
+        assert!(LifecycleExercise::parse("creation-slow").is_ok());
+        assert!(LifecycleExercise::parse("driver-crash").is_err());
+    }
+
+    #[test]
+    fn partially_transparent_scene_is_not_a_valid_fallback_capture() {
+        let mut pixels: Vec<u8> = (0..10_000)
+            .flat_map(|i| [(i % 251) as u8, (i % 239) as u8, (i % 233) as u8, 255])
+            .collect();
+        let opaque = crate::metrics::image_proof(&pixels, 100, 100);
+        assert!(capture_is_valid(&opaque, [100, 100], [100, 100]));
+        pixels[3] = 254;
+        let partial = crate::metrics::image_proof(&pixels, 100, 100);
+        assert_eq!(partial["nonuniform"], true);
+        assert!(!capture_is_valid(&partial, [100, 100], [100, 100]));
+    }
+
+    #[test]
+    fn creation_fallback_requires_fresh_failure_or_pending_and_actual_dimensions() {
+        let failed = ViewEvidence {
+            state: MetalFxEffectState::Failed,
+            reason: Some(MetalFxEffectReason::ScalerCreationFailed),
+            mode: MetalFxMode::Disabled,
+            ..view()
+        };
+        assert!(creation_fallback(&failed, [1280, 720], 0.5, 50));
+        for reason in [
+            MetalFxEffectReason::ScalerPending,
+            MetalFxEffectReason::ScalerCreationSlow,
+        ] {
+            assert!(creation_fallback(
+                &ViewEvidence {
+                    state: MetalFxEffectState::Pending,
+                    reason: Some(reason),
+                    ..failed.clone()
+                },
+                [1280, 720],
+                0.5,
+                50
+            ));
+        }
+        for bad in [
+            view(),
+            ViewEvidence {
+                state: MetalFxEffectState::Encoded,
+                ..failed.clone()
+            },
+            ViewEvidence {
+                fresh: false,
+                ..failed.clone()
+            },
+            ViewEvidence {
+                frame: Some(49),
+                ..failed.clone()
+            },
+            ViewEvidence {
+                content: [1280, 720],
+                ..failed.clone()
+            },
+            ViewEvidence {
+                output: [960, 540],
+                ..failed.clone()
+            },
+            ViewEvidence {
+                mode: MetalFxMode::Temporal,
+                ..failed.clone()
+            },
+            ViewEvidence {
+                reason: Some(MetalFxEffectReason::MissingPrepass),
+                ..failed.clone()
+            },
+            ViewEvidence {
+                active: false,
+                ..failed.clone()
+            },
+            ViewEvidence {
+                scale: 0.75,
+                ..failed
+            },
+        ] {
+            assert!(!creation_fallback(&bad, [1280, 720], 0.5, 50));
+        }
     }
 }

@@ -7,6 +7,7 @@ pub struct Config {
     pub offscreen: bool,
     pub completion: bool,
     pub quality_sequence: bool,
+    pub quality_moving_reset: bool,
     pub hdr: bool,
     pub native_aa: bool,
     pub lifecycle: Option<String>,
@@ -36,6 +37,7 @@ impl Config {
             offscreen: false,
             completion: false,
             quality_sequence: false,
+            quality_moving_reset: false,
             hdr: false,
             native_aa: false,
             lifecycle: None,
@@ -65,6 +67,11 @@ impl Config {
                 }
                 "--quality-sequence" => {
                     c.quality_sequence = true;
+                    continue;
+                }
+                "--quality-moving-reset" => {
+                    c.quality_sequence = true;
+                    c.quality_moving_reset = true;
                     continue;
                 }
                 "--completion" => {
@@ -129,6 +136,13 @@ impl Config {
         }
         if !["claude", "shapes"].contains(&c.subject.as_str()) {
             return Err("subject must be claude or shapes".into());
+        }
+        if matches!(
+            c.lifecycle.as_deref(),
+            Some("creation-failure" | "creation-slow")
+        ) && c.mode != "temporal"
+        {
+            return Err("creation-failure and creation-slow require temporal mode".into());
         }
         if c.offscreen && (c.lifecycle.is_some() || c.adaptive || c.mode == "interpolate") {
             return Err("offscreen supports fixed-scale disabled/spatial/temporal rendering only; lifecycle, adaptive and interpolation require the window fixture".into());
@@ -224,6 +238,37 @@ mod tests {
         assert!(!c.adaptive);
         assert!(!c.offscreen);
         assert!(!c.completion);
+    }
+
+    #[test]
+    fn moving_reset_selects_quality_sequence_and_keeps_its_guards() {
+        let c = parse(&["--quality-moving-reset", "--offscreen", "--native-aa"]).unwrap();
+        assert!(c.quality_sequence);
+        assert!(c.quality_moving_reset);
+        assert!(parse(&["--quality-moving-reset"]).is_err());
+        assert!(parse(&[
+            "--quality-moving-reset",
+            "--offscreen",
+            "--native-aa",
+            "--moving"
+        ])
+        .is_err());
+        assert!(parse(&[
+            "--quality-moving-reset",
+            "--offscreen",
+            "--native-aa",
+            "--completion"
+        ])
+        .is_err());
+    }
+
+    #[test]
+    fn creation_fault_lifecycle_requires_temporal() {
+        for exercise in ["creation-failure", "creation-slow"] {
+            assert!(parse(&["--lifecycle", exercise]).is_err());
+            assert!(parse(&["--mode", "spatial", "--lifecycle", exercise]).is_err());
+            assert!(parse(&["--mode", "temporal", "--lifecycle", exercise]).is_ok());
+        }
     }
 
     #[test]
