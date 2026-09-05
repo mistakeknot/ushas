@@ -1,5 +1,7 @@
 // CPU-only tests: fake delegates and descriptor objects; never creates an MTLDevice.
 #import "ObservationProxy.h"
+#include <stdlib.h>
+#include <string.h>
 
 static NSUInteger Failures=0, Checks=0;
 #define CHECK(condition,message) do { Checks++; if (!(condition)) { Failures++; fprintf(stderr,"FAIL line %d: %s\n",__LINE__,message); } } while (0)
@@ -95,8 +97,18 @@ static BOOL SerializedLedgerBooleans(NSDictionary *record) {
     return YES;
 }
 
+// Keep a recognizable caller and a deliberately deeper-than-budget stack.
+__attribute__((noinline)) void ObservationDiagnosticsTestCaller(id proxy, NSUInteger depth) {
+    if (depth) ObservationDiagnosticsTestCaller(proxy,depth-1);
+    else [proxy unknownFactory];
+    __asm__ volatile("" ::: "memory");
+}
+
 int main(void) {
     @autoreleasepool {
+        const char *originalEnvironment=getenv("USHAS_OBSERVATION_CAPTURE_UNKNOWN_STACK");
+        char *savedEnvironment=originalEnvironment?strdup(originalEnvironment):NULL;
+        unsetenv("USHAS_OBSERVATION_CAPTURE_UNKNOWN_STACK");
         // Exact forwarding and source identity, without counters.
         FakeBuffer *buffer=[FakeBuffer new];NSMutableArray *counters=[NSMutableArray new];
         ObservationLedger *ledger=Ledger(buffer,ObservationModeCalls,32,counters);
@@ -201,7 +213,62 @@ int main(void) {
             CHECK([buffer.selectors.lastObject isEqual:selector],"unsupported operation forwards once");
             CHECK([result[@"selectors"] containsObject:selector],"forwardInvocation does not bypass selector inventory");
             CHECK(Error(result,@"unsupported_selector") && ![result[@"available"] boolValue],"unknown coverage fails closed");
+            NSDictionary *diagnostics=result[@"unknown_selector_diagnostics"];
+            CHECK(diagnostics && ![diagnostics[@"enabled"] boolValue],"caller diagnostics are disabled by default");
+            CHECK([diagnostics[@"total_unknown_selector_calls"] unsignedIntegerValue]==1 && [diagnostics[@"records"] count]==0,"disabled diagnostics count unknown calls without capturing stacks");
         }
+
+        // Opt-in is exact and latched at ledger creation; allowed calls never capture.
+        for (NSString *setting in @[@"0",@"true",@"1"]) {
+            setenv("USHAS_OBSERVATION_CAPTURE_UNKNOWN_STACK",setting.UTF8String,1);
+            buffer=[FakeBuffer new];counters=[NSMutableArray new];ledger=Ledger(buffer,ObservationModeCalls,32,counters);
+            unsetenv("USHAS_OBSERVATION_CAPTURE_UNKNOWN_STACK");
+            proxy=[ObservedCommandBuffer wrap:(id<MTLCommandBuffer>)buffer ledger:ledger];
+            (void)proxy.label;
+            ObservationDiagnosticsTestCaller((id)proxy,48);
+            [proxy computeCommandEncoder];
+            result=Finish(ledger,buffer);
+            NSDictionary *diagnostics=result[@"unknown_selector_diagnostics"];
+            BOOL enabled=[setting isEqual:@"1"];
+            CHECK(diagnostics && [diagnostics[@"enabled"] boolValue]==enabled,"only exact environment value 1 enables diagnostics, latched per ledger");
+            CHECK([diagnostics[@"total_unknown_selector_calls"] unsignedIntegerValue]==1,"allowed selectors do not count as unknown");
+            CHECK([diagnostics[@"records"] count]==(enabled?1:0),"allowed calls never capture and enabled unknown call records once");
+            CHECK(buffer.encoders.count==2 && Error(result,@"unsupported_selector") && ![result[@"available"] boolValue],"capture preserves exact forwarding and strict rejection");
+            CHECK(counters.count==0 && [result[@"requested_samples"] unsignedIntegerValue]==0,"diagnostics do not request GPU counters");
+            if (enabled) {
+                NSDictionary *record=[diagnostics[@"records"] firstObject];
+                CHECK([record[@"selector"] isEqual:@"unknownFactory"] && [record[@"selector_call_ordinal"] unsignedIntegerValue]==2,"diagnostic joins the exact selector ordinal in the ledger identity");
+                CHECK([record[@"target_runtime_class"] isEqual:@"FakeBuffer"] && [record[@"proxy_runtime_class"] isEqual:@"ObservedCommandBuffer"],"runtime identities name actual classes without forwarded class queries");
+                NSArray *frames=record[@"frames"];
+                CHECK(frames.count==32 && [record[@"frame_limit_reached"] boolValue],"deep stack capture is bounded and reports reaching the frame limit");
+                BOOL imageFound=NO,callerSymbolFound=NO;
+                for (NSDictionary *frame in frames) {
+                    CHECK([frame[@"program_counter"] hasPrefix:@"0x"],"stack PC is a lossless hexadecimal address");
+                    if ([frame[@"image_path"] isKindOfClass:NSString.class] && [frame[@"image_load_address"] hasPrefix:@"0x"] && [frame[@"image_offset"] hasPrefix:@"0x"]) imageFound=YES;
+                    if ([frame[@"symbol"] isKindOfClass:NSString.class] && [frame[@"symbol"] containsString:@"ObservationDiagnosticsTestCaller"]) callerSymbolFound=YES;
+                }
+                CHECK(imageFound,"captured stack has an image and load-address offset for offline symbolization");
+                CHECK(callerSymbolFound,"the captured stack identifies the actual CPU test caller");
+                NSData *json=[NSJSONSerialization dataWithJSONObject:result options:0 error:NULL];
+                NSDictionary *decoded=json?[NSJSONSerialization JSONObjectWithData:json options:0 error:NULL]:nil;
+                id decodedEnabled=decoded[@"unknown_selector_diagnostics"][@"enabled"];
+                CHECK(decodedEnabled && CFGetTypeID((__bridge CFTypeRef)decodedEnabled)==CFBooleanGetTypeID(),"diagnostic snapshot serializes with true JSON Booleans");
+            }
+        }
+
+        // Diagnostic storage and selector inventory have independent bounds.
+        setenv("USHAS_OBSERVATION_CAPTURE_UNKNOWN_STACK","1",1);
+        buffer=[FakeBuffer new];counters=[NSMutableArray new];ledger=Ledger(buffer,ObservationModeCalls,32,counters);
+        unsetenv("USHAS_OBSERVATION_CAPTURE_UNKNOWN_STACK");
+        proxy=[ObservedCommandBuffer wrap:(id<MTLCommandBuffer>)buffer ledger:ledger];
+        for (NSUInteger index=0;index<300;index++) [(id)proxy unknownFactory];
+        result=Finish(ledger,buffer);
+        NSDictionary *diagnostics=result[@"unknown_selector_diagnostics"];
+        CHECK(buffer.encoders.count==300,"diagnostic overflow never suppresses forwarding");
+        CHECK([diagnostics[@"records"] count]==4 && [diagnostics[@"maximum_records"] unsignedIntegerValue]==4,"unknown stack storage is bounded per ledger");
+        CHECK([diagnostics[@"total_unknown_selector_calls"] unsignedIntegerValue]==300 && [diagnostics[@"not_captured_calls"] unsignedIntegerValue]==296,"diagnostic overflow is accounted explicitly");
+        CHECK(Error(result,@"selector_limit") && Error(result,@"unsupported_selector") && [result[@"dropped_selector_records"] unsignedIntegerValue]==44,"diagnostic cap cannot hide the independent selector overflow");
+        CHECK([diagnostics[@"capture_failures"] unsignedIntegerValue]==0,"real CPU stack capture succeeded");
 
         buffer=[FakeBuffer new];counters=[NSMutableArray new];ledger=Ledger(buffer,ObservationModeCounters,1,counters);
         proxy=[ObservedCommandBuffer wrap:(id<MTLCommandBuffer>)buffer ledger:ledger];
@@ -234,6 +301,8 @@ int main(void) {
             CHECK(ObservationCommitIfNeeded((id<MTLCommandBuffer>)buffer)==shouldCommit,"owner commit decision follows actual status");
             CHECK(buffer.commits==(shouldCommit?1:0),"already committed buffers are never double-committed");
         }
+        if (savedEnvironment) { setenv("USHAS_OBSERVATION_CAPTURE_UNKNOWN_STACK",savedEnvironment,1);free(savedEnvironment); }
+        else unsetenv("USHAS_OBSERVATION_CAPTURE_UNKNOWN_STACK");
         printf("%lu checks, %lu failures\n",(unsigned long)Checks,(unsigned long)Failures);
         return Failures?1:0;
     }

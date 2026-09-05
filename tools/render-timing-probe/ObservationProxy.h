@@ -10,6 +10,12 @@ typedef NS_ENUM(NSUInteger, ObservationMode) {
 typedef id<MTLCounterSampleBuffer> _Nullable (^ObservationCounterFactory)(NSString *label, NSUInteger count, NSError * _Nullable * _Nullable error);
 
 // Internal to the isolated probe. No Ushas or general-purpose API is introduced.
+// USHAS_OBSERVATION_CAPTURE_UNKNOWN_STACK=1 is latched at ledger creation.
+// It captures at most four unknown-invocation stacks, each at most 32 frames,
+// before forwarding. This synchronous CPU diagnostic is attribution evidence,
+// not timing evidence. Unknown selectors still invalidate the observation.
+// Missing or overlong (>1024 UTF-8 bytes) image/symbol/class metadata is null.
+// Captured PCs, load addresses and offsets remain hexadecimal strings.
 @interface ObservationLedger : NSObject
 - (instancetype)initWithIdentity:(NSDictionary *)identity
                   expectedLabel:(NSString *)label

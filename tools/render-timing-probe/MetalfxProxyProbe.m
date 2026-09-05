@@ -5,6 +5,7 @@
 #import <ImageIO/ImageIO.h>
 #import <CommonCrypto/CommonDigest.h>
 #import <mach/mach_time.h>
+#import <objc/runtime.h>
 #include <fcntl.h>
 #include <math.h>
 #include <unistd.h>
@@ -22,7 +23,8 @@ static NSString *Digest(const void *bytes,NSUInteger length) {
     return text;
 }
 static NSDictionary *BufferState(id<MTLCommandBuffer> buffer) {
-    return @{@"status":@(buffer.status),@"label":buffer.label?:[NSNull null],@"error":buffer.error.description?:[NSNull null]};
+    return @{@"status":@(buffer.status),@"label":buffer.label?:[NSNull null],@"error":buffer.error.description?:[NSNull null],
+        @"runtime_class":NSStringFromClass(object_getClass(buffer))?:[NSNull null]};
 }
 static NSDictionary *Options(int argc,const char *argv[]) {
     if (argc!=7) return nil;
@@ -92,7 +94,9 @@ static NSDictionary *HeaderRecord(NSDictionary *options,NSString *deviceName,BOO
         @"temporal_history":@"one scaler; reset frame1 only; all frame inputs retained; zero jitter/motion; reversed depth0.5; exposure1",
         @"scope":@"supplied MetalFX command-buffer observation only; all-process encoder trace inventory still required",
         @"maximum_delivery_age_ms":@250,@"validated_for_governor":@NO,
-        @"metal_debug_layer":NSProcessInfo.processInfo.environment[@"MTL_DEBUG_LAYER"]?:[NSNull null]};
+        @"metal_debug_layer":NSProcessInfo.processInfo.environment[@"MTL_DEBUG_LAYER"]?:[NSNull null],
+        @"metal_shader_validation":NSProcessInfo.processInfo.environment[@"MTL_SHADER_VALIDATION"]?:[NSNull null],
+        @"unknown_stack_control":NSProcessInfo.processInfo.environment[@"USHAS_OBSERVATION_CAPTURE_UNKNOWN_STACK"]?:[NSNull null]};
 }
 
 static NSDictionary *FrameIdentity(NSDictionary *options,NSUInteger frameID,NSUInteger slot,NSUInteger generation,id temporal) {
@@ -178,7 +182,9 @@ static NSDictionary *CompletionRecord(ProxyFrame *frame,BOOL pngSaved,BOOL rawSa
     BOOL supported=temporal?[MTLFXTemporalScalerDescriptor supportsDevice:self.device]:[MTLFXSpatialScalerDescriptor supportsDevice:self.device];
     BOOL stageCounters=[self.device supportsCounterSampling:MTLCounterSamplingPointAtStageBoundary];
     for (id<MTLCounterSet> set in self.device.counterSets) if ([set.name isEqual:MTLCommonCounterSetTimestamp]) self.timestampSet=set;
-    [self emit:HeaderRecord(self.options,self.device.name,supported,stageCounters,self.timestampSet)];
+    NSMutableDictionary *header=[HeaderRecord(self.options,self.device.name,supported,stageCounters,self.timestampSet) mutableCopy];
+    header[@"device_runtime_class"]=NSStringFromClass(object_getClass(self.device))?:[NSNull null];
+    [self emit:header];
     if (!supported) { [self finish:2 reason:@"MetalFX scaler unsupported"];return NO; }
     if ([self.options[@"--observe"] isEqual:@"counters"] && (!stageCounters || !self.timestampSet)) {
         [self finish:2 reason:@"stage-boundary timestamps unavailable"];return NO;

@@ -1,6 +1,49 @@
 // Instance-local, opt-in instrumentation for the isolated MetalFX experiment.
 #import "ObservationProxy.h"
 #import <objc/runtime.h>
+#include <dlfcn.h>
+#include <execinfo.h>
+#include <stdint.h>
+#include <stdlib.h>
+#include <string.h>
+
+enum { ObservationMaximumUnknownStacks=4, ObservationMaximumStackFrames=32,
+       ObservationMaximumDiagnosticStringBytes=1024 };
+
+static NSString *ObservationAddress(uintptr_t address) {
+    return [NSString stringWithFormat:@"0x%llx",(unsigned long long)address];
+}
+
+static id ObservationDiagnosticString(const char *value) {
+    if (!value) return [NSNull null];
+    // Missing, overlong or invalid UTF-8 metadata stays explicitly unavailable.
+    size_t length=strnlen(value,ObservationMaximumDiagnosticStringBytes+1);
+    if (length>ObservationMaximumDiagnosticStringBytes) return [NSNull null];
+    return [[NSString alloc] initWithBytes:value length:length encoding:NSUTF8StringEncoding]?:[NSNull null];
+}
+
+static NSDictionary *ObservationUnknownStack(NSString *selector,NSUInteger selectorOrdinal,
+                                             NSUInteger captureOrdinal,id proxy,id target) {
+    void *addresses[ObservationMaximumStackFrames];
+    int count=backtrace(addresses,ObservationMaximumStackFrames);
+    NSMutableArray *frames=[NSMutableArray new];
+    for (int index=0;index<count;index++) {
+        uintptr_t pc=(uintptr_t)addresses[index];Dl_info info={0};
+        BOOL found=dladdr(addresses[index],&info)!=0;
+        uintptr_t base=(uintptr_t)info.dli_fbase,symbol=(uintptr_t)info.dli_saddr;
+        [frames addObject:@{@"program_counter":ObservationAddress(pc),
+            @"image_path":found?ObservationDiagnosticString(info.dli_fname):[NSNull null],
+            @"image_load_address":found && info.dli_fbase?ObservationAddress(base):[NSNull null],
+            @"image_offset":found && info.dli_fbase && pc>=base?ObservationAddress(pc-base):[NSNull null],
+            @"symbol":found?ObservationDiagnosticString(info.dli_sname):[NSNull null],
+            @"symbol_offset":found && info.dli_saddr && pc>=symbol?ObservationAddress(pc-symbol):[NSNull null]}];
+    }
+    return @{@"selector":ObservationDiagnosticString(selector.UTF8String),@"selector_call_ordinal":@(selectorOrdinal),@"capture_ordinal":@(captureOrdinal),
+        // Runtime queries avoid sending extra selectors through either delegate.
+        @"proxy_runtime_class":ObservationDiagnosticString(class_getName(object_getClass(proxy))),
+        @"target_runtime_class":ObservationDiagnosticString(class_getName(object_getClass(target))),
+        @"frames":[frames copy],@"frame_limit_reached":[NSNumber numberWithBool:count==ObservationMaximumStackFrames]};
+}
 
 @interface ObservedEncoder : NSObject
 @property(nonatomic) NSUInteger ordinal;
@@ -25,6 +68,11 @@
 @property(nonatomic,strong) NSMutableArray<ObservedEncoder *> *encoders;
 @property(nonatomic,strong) NSMutableArray<NSString *> *selectors;
 @property(nonatomic,strong) NSMutableOrderedSet<NSString *> *errors;
+@property(nonatomic) BOOL captureUnknownStacks;
+@property(nonatomic) NSUInteger totalUnknownSelectorCalls;
+@property(nonatomic) NSUInteger unknownStackAttempts;
+@property(nonatomic) NSUInteger unknownStackFailures;
+@property(nonatomic,strong) NSMutableArray<NSDictionary *> *unknownStacks;
 @property(nonatomic) NSUInteger totalEncoders;
 @property(nonatomic) NSUInteger totalSelectors;
 @property(nonatomic) NSUInteger requestedSamples;
@@ -33,7 +81,8 @@
 @property(nonatomic,copy) NSString *sealedLabel;
 @property(nonatomic,strong) NSNumber *sealedStatus;
 @property(nonatomic,strong) NSNumber *completedStatus;
-- (void)noteSelector:(NSString *)selector supported:(BOOL)supported;
+- (NSUInteger)noteSelector:(NSString *)selector supported:(BOOL)supported;
+- (void)captureUnknownSelector:(NSString *)selector ordinal:(NSUInteger)ordinal proxy:(id)proxy target:(id)target;
 - (ObservedEncoder *)beginEncoder:(NSString *)family selector:(NSString *)selector;
 - (id<MTLCounterSampleBuffer>)sampleFor:(ObservedEncoder *)record;
 - (void)finishEncoder:(ObservedEncoder *)record encoder:(id)encoder;
@@ -50,17 +99,40 @@
         _lock=[NSLock new];_identity=[[NSDictionary alloc] initWithDictionary:identity copyItems:YES];
         _expectedLabel=[label copy];_mode=mode;_maximumEncoders=MIN(maximum,32);_factory=[factory copy];
         _encoders=[NSMutableArray new];_selectors=[NSMutableArray new];_errors=[NSMutableOrderedSet new];
+        const char *capture=getenv("USHAS_OBSERVATION_CAPTURE_UNKNOWN_STACK");
+        _captureUnknownStacks=capture && strcmp(capture,"1")==0;_unknownStacks=[NSMutableArray new];
         if (maximum==0 || maximum>32) [_errors addObject:@"invalid_encoder_limit"];
     }
     return self;
 }
 - (void)unavailable:(NSString *)error { [self.lock lock];[self.errors addObject:error];[self.lock unlock]; }
-- (void)noteSelector:(NSString *)selector supported:(BOOL)supported {
+- (NSUInteger)noteSelector:(NSString *)selector supported:(BOOL)supported {
     [self.lock lock];
     self.totalSelectors++;
     if (self.selectors.count<256) [self.selectors addObject:selector]; else [self.errors addObject:@"selector_limit"];
-    if (!supported) [self.errors addObject:@"unsupported_selector"];
+    if (!supported) { self.totalUnknownSelectorCalls++;[self.errors addObject:@"unsupported_selector"]; }
+    NSUInteger ordinal=self.totalSelectors;
+    [self.lock unlock];return ordinal;
+}
+- (void)captureUnknownSelector:(NSString *)selector ordinal:(NSUInteger)ordinal proxy:(id)proxy target:(id)target {
+    [self.lock lock];
+    if (!self.captureUnknownStacks || self.unknownStackAttempts>=ObservationMaximumUnknownStacks) {
+        [self.lock unlock];return;
+    }
+    NSUInteger captureOrdinal=++self.unknownStackAttempts;
     [self.lock unlock];
+    // Reserve under the lock, but unwind/symbolize outside it. This deliberately
+    // perturbs CPU execution and is never a governor or overhead measurement.
+    @try {
+        NSDictionary *record=ObservationUnknownStack(selector,ordinal,captureOrdinal,proxy,target);
+        [self.lock lock];
+        @try {
+            if ([record[@"frames"] count]) [self.unknownStacks addObject:record];
+            else self.unknownStackFailures++;
+        } @finally { [self.lock unlock]; }
+    } @catch (NSException *exception) {
+        (void)exception;[self.lock lock];self.unknownStackFailures++;[self.lock unlock];
+    }
 }
 - (ObservedEncoder *)beginEncoder:(NSString *)family selector:(NSString *)selector {
     [self noteSelector:selector supported:YES];
@@ -159,6 +231,12 @@
         @"sealed":[NSNumber numberWithBool:self.sealed],@"completed":[NSNumber numberWithBool:self.completed],@"errors":[self.errors.array copy],
         @"selectors":[self.selectors copy],@"total_selector_calls":@(self.totalSelectors),
         @"dropped_selector_records":@(self.totalSelectors-self.selectors.count),@"total_encoder_factories":@(self.totalEncoders),
+        @"unknown_selector_diagnostics":@{@"enabled":[NSNumber numberWithBool:self.captureUnknownStacks],
+            @"capture_phase":@"before_forwarding_unknown_invocation",@"maximum_records":@(ObservationMaximumUnknownStacks),
+            @"maximum_stack_frames":@(ObservationMaximumStackFrames),@"maximum_string_bytes":@(ObservationMaximumDiagnosticStringBytes),
+            @"total_unknown_selector_calls":@(self.totalUnknownSelectorCalls),@"capture_attempts":@(self.unknownStackAttempts),
+            @"capture_failures":@(self.unknownStackFailures),
+            @"not_captured_calls":@(self.totalUnknownSelectorCalls-self.unknownStacks.count),@"records":[self.unknownStacks copy]},
         @"requested_samples":@(self.requestedSamples),@"encoders":[encoders copy]};
 }
 - (NSDictionary *)snapshot { [self.lock lock];NSDictionary *result=[self snapshotLocked];[self.lock unlock];return result; }
@@ -187,7 +265,9 @@
         @"retainedReferences",@"errorOptions",@"kernelStartTime",@"kernelEndTime",@"GPUStartTime",@"GPUEndTime",
         @"status",@"error",@"logs",@"addCompletedHandler:",@"addScheduledHandler:",@"pushDebugGroup:",@"popDebugGroup"]]; });
     NSString *selector=NSStringFromSelector(invocation.selector);
-    [self.ledger noteSelector:selector supported:[allowed containsObject:selector]];
+    BOOL supported=[allowed containsObject:selector];
+    NSUInteger ordinal=[self.ledger noteSelector:selector supported:supported];
+    if (!supported) [self.ledger captureUnknownSelector:selector ordinal:ordinal proxy:self target:self.target];
     [invocation invokeWithTarget:self.target];
 }
 - (id<MTLRenderCommandEncoder>)renderCommandEncoderWithDescriptor:(MTLRenderPassDescriptor *)descriptor {
