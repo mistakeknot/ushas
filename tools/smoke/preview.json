@@ -1,6 +1,6 @@
 {
-  "source_revision": "7db0818b6374f99475995b9939afdf9032aa18ce",
-  "source_dirty_at_build": "true",
+  "source_revision": "56a3b16c8c1c8f12a5320adc5082c6d20b6378c1",
+  "source_dirty_at_build": "false",
   "subject": "claude",
   "scene_version": "claude-toy-v1",
   "mode": "temporal",
@@ -16,25 +16,33 @@
   "render_target": "image",
   "valid": true,
   "effect_counts": {
-    "OutputWritten": 1183
+    "OutputWritten": 862
   },
   "environment": {
     "arguments": [
+      "--subject",
+      "claude",
       "--offscreen",
       "--mode",
       "temporal",
       "--scale",
       "0.5",
-      "--experimental-timing",
+      "--width",
+      "1280",
+      "--height",
+      "720",
+      "--pixel-iterations",
+      "0",
       "--warmup",
-      "2",
+      "4",
       "--seconds",
-      "2",
+      "6",
       "--out",
-      "/private/tmp/ushas-roadmap-evidence/claude-temporal-offscreen-01.json"
+      "/private/tmp/ushas-roadmap-evidence/claude-completion-campaign-01/002-r0-load0-temporal-half.json",
+      "--completion"
     ],
-    "binary_sha256": "f79d6b20cbc47206af148df447050676bb41a0d0183064aaa96bce8848db2a3d  /Users/sma/projects/ushas/tools/smoke/target/release/ushas-smoke",
-    "executable": "/Users/sma/projects/ushas/tools/smoke/target/release/ushas-smoke",
+    "binary_sha256": "5c773aba90f70229d03f1ac87045045f11a6f2e435bb9bc21f55e1b0266b4744  /private/tmp/ushas-completion-artifacts-01/ushas-smoke",
+    "executable": "/private/tmp/ushas-completion-artifacts-01/ushas-smoke",
     "features": "frame-interpolation (includes temporal)",
     "metal_debug_layer": null,
     "os": "ProductName:\t\tmacOS\nProductVersion:\t\t26.5.2\nBuildVersion:\t\t25F84",
@@ -51,10 +59,23 @@
     "path": "preview.png",
     "scene_luminance_max": 244,
     "scene_luminance_min": 0,
-    "scene_unique_colors": 7706,
+    "scene_unique_colors": 7787,
     "width": 1280
   },
-  "preview_sha256": "891c75ebd93410c48e3ea1219ce50b300f545e1ed4a2a5f6afc1e9dd8377fbef",
-  "scope": "Captured offscreen pixels, not presentation or a performance result. Exploratory scene build before the model commit; source base and dirty state retained.",
-  "source_capture": "/private/tmp/ushas-roadmap-evidence/claude-temporal-offscreen-01.json.png"
+  "source_report": "/private/tmp/ushas-roadmap-evidence/claude-completion-campaign-01/002-r0-load0-temporal-half.json",
+  "source_report_sha256": "2a67713355ac78525031aa7bf71713ac99f943f1cee097a1b26b8c92e0c94a2a",
+  "image_sha256": "2f6151c788e16040a5f8b9f83545c86a75328dc6e4979f60f329a7467e4aaf27",
+  "completion_requested": true,
+  "measurement_scope": "Serial offscreen completed-render capture; not production pipelined FPS or presentation",
+  "serial_completion_summary": {
+    "completed_frame_fences": 862,
+    "completed_render_fps": 143.67945313223927,
+    "drain_completed_ms": 3993.004417,
+    "drain_started_ms": 3993.000334,
+    "elapsed_seconds": 5.999466042,
+    "epoch": 2,
+    "phase": "Measure",
+    "qualified_render_frames": 862,
+    "valid": true
+  }
 }

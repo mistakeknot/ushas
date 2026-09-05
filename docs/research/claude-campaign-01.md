@@ -94,8 +94,10 @@ for the original unpaced mode. Their [compact provenance](completion-pilots-01.j
 includes the exact executable, report and capture hashes. All 12 raw reports,
 images and logs are archived with verified hashes at
 `/Users/sma/projects/docs/ushas/evidence/completion-pilots-01/`.
-Repeated completed-render comparisons and a current consumer trial remain
-separate gates.
+The subsequent [balanced completed-render campaign](claude-completion-campaign-01.md)
+passed all 60 runs. Its measurements belong to that serial mode; they do not
+change this campaign's failures or CPU-only interpretation. The current consumer
+trial remains a separate gate.
 
 ## Retained artifacts
 

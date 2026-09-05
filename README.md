@@ -84,6 +84,18 @@ status. A per-view status registry does not imply multi-view rendering support.
 Scaler cache identity includes the view, dimensions, format, and mode; readiness
 is checked again after a replacement.
 
+## Development: Runnable Claude Sample
+
+The [smoke sample](tools/smoke/README.md) renders a procedural 3D interpretation
+of [vgel's Claude character](tools/smoke/CHARACTER.md), with motion, thin geometry,
+camera controls and output-resolution UI. See the [actual render](tools/smoke/preview.png).
+Native and bilinear arms provide comparison controls.
+
+The first [balanced completed-render campaign](docs/research/claude-completion-campaign-01.md)
+passed all 60 runs and demonstrates workload-dependent fixed-scale benefit.
+Its serial offscreen rate includes CPU scheduling and polling; it is not
+production pipelined FPS or a GPU-cost signal for automatic adaptation.
+
 ## API Reference
 
 The Development APIs below require the source candidate, rather than the

@@ -1,0 +1,1285 @@
+{
+  "schema": 1,
+  "valid": true,
+  "scope": "Serial callback-observed completed-render intervals including CPU preparation, scheduling, instrumentation and polling; not normal pipelined FPS, GPU busy time, hardware latency, or presentation. No adaptive-governor input.",
+  "target_fps": 60.0,
+  "budget_ms": 16.666666666666668,
+  "interval_definition": "First callback minus first admission; then callback minus previous callback. Intervals partition the measured epoch duration, including CPU gaps.",
+  "quantile_method": "Nearest rank within each run: sorted[ceil(q*N)-1].",
+  "aggregation": "Each of four independent process runs has equal weight per arm/load. Cell p95/p99 fields average per-run quantiles; they are not pooled quantiles. No frame-level confidence interval or independence assumption is used.",
+  "campaign": "/private/tmp/ushas-roadmap-evidence/claude-completion-campaign-01/campaign.json",
+  "campaign_sha256": "32fa11732c03140d2e623c635914ce5cd15160222d757005710905f85c1f9230",
+  "helper_sha256": "8bb63eb3e2c30700abec5b19a4b68092625b923f2fd4a6be19787e00a77295f0",
+  "validator_sha256": "c94abc71eccd400d5ced1aaf9f5c987b449fd1f687a5a686d7199a8cdc76e080",
+  "binary_sha256": "5c773aba90f70229d03f1ac87045045f11a6f2e435bb9bc21f55e1b0266b4744",
+  "provenance": {
+    "adapter": {
+      "backend": "Metal",
+      "driver": "",
+      "driver_info": "",
+      "name": "Apple M5 Max"
+    },
+    "environment": {},
+    "runtime": {
+      "features": "frame-interpolation (includes temporal)",
+      "metal_debug_layer": null,
+      "os": "ProductName:\t\tmacOS\nProductVersion:\t\t26.5.2\nBuildVersion:\t\t25F84",
+      "rustc": "rustc 1.97.1 (8bab26f4f 2026-07-14)"
+    },
+    "scene_version": "claude-toy-v1",
+    "source_dirty_at_build": "false",
+    "source_revision": "56a3b16c8c1c8f12a5320adc5082c6d20b6378c1",
+    "subject": "claude"
+  },
+  "validation_errors": [],
+  "changed_evidence": [],
+  "runs": [
+    {
+      "id": "000-r0-load0-native-disabled-msaa4",
+      "arm": "native-disabled-msaa4",
+      "load": 0,
+      "repetition": 0,
+      "output": "/private/tmp/ushas-roadmap-evidence/claude-completion-campaign-01/000-r0-load0-native-disabled-msaa4.json",
+      "errors": [],
+      "intervals": {
+        "frame_intervals": 899,
+        "elapsed_seconds": 6.000659875,
+        "mean_interval_ms": 6.674816323692992,
+        "p95_interval_ms": 7.989375000000109,
+        "p99_interval_ms": 8.424458000000413,
+        "budget_miss_fraction": 0.0
+      }
+    },
+    {
+      "id": "001-r0-load0-temporal-native",
+      "arm": "temporal-native",
+      "load": 0,
+      "repetition": 0,
+      "output": "/private/tmp/ushas-roadmap-evidence/claude-completion-campaign-01/001-r0-load0-temporal-native.json",
+      "errors": [],
+      "intervals": {
+        "frame_intervals": 842,
+        "elapsed_seconds": 5.9991449580000005,
+        "mean_interval_ms": 7.12487524703088,
+        "p95_interval_ms": 8.802999999999884,
+        "p99_interval_ms": 9.885707999999795,
+        "budget_miss_fraction": 0.0
+      }
+    },
+    {
+      "id": "002-r0-load0-temporal-half",
+      "arm": "temporal-half",
+      "load": 0,
+      "repetition": 0,
+      "output": "/private/tmp/ushas-roadmap-evidence/claude-completion-campaign-01/002-r0-load0-temporal-half.json",
+      "errors": [],
+      "intervals": {
+        "frame_intervals": 862,
+        "elapsed_seconds": 5.999466042,
+        "mean_interval_ms": 6.959937403712297,
+        "p95_interval_ms": 8.581249999999272,
+        "p99_interval_ms": 9.49133299999994,
+        "budget_miss_fraction": 0.0
+      }
+    },
+    {
+      "id": "003-r0-load0-temporal-third",
+      "arm": "temporal-third",
+      "load": 0,
+      "repetition": 0,
+      "output": "/private/tmp/ushas-roadmap-evidence/claude-completion-campaign-01/003-r0-load0-temporal-third.json",
+      "errors": [],
+      "intervals": {
+        "frame_intervals": 888,
+        "elapsed_seconds": 6.005159958,
+        "mean_interval_ms": 6.76256752027027,
+        "p95_interval_ms": 8.590666999998575,
+        "p99_interval_ms": 9.364083000000392,
+        "budget_miss_fraction": 0.0
+      }
+    },
+    {
+      "id": "004-r0-load0-bilinear-half",
+      "arm": "bilinear-half",
+      "load": 0,
+      "repetition": 0,
+      "output": "/private/tmp/ushas-roadmap-evidence/claude-completion-campaign-01/004-r0-load0-bilinear-half.json",
+      "errors": [],
+      "intervals": {
+        "frame_intervals": 948,
+        "elapsed_seconds": 5.999310917000001,
+        "mean_interval_ms": 6.328387043248946,
+        "p95_interval_ms": 8.132790999999997,
+        "p99_interval_ms": 8.765083000000232,
+        "budget_miss_fraction": 0.0
+      }
+    },
+    {
+      "id": "005-r0-load8000-temporal-native",
+      "arm": "temporal-native",
+      "load": 8000,
+      "repetition": 0,
+      "output": "/private/tmp/ushas-roadmap-evidence/claude-completion-campaign-01/005-r0-load8000-temporal-native.json",
+      "errors": [],
+      "intervals": {
+        "frame_intervals": 199,
+        "elapsed_seconds": 6.007354792,
+        "mean_interval_ms": 30.187712522613065,
+        "p95_interval_ms": 33.49104099999931,
+        "p99_interval_ms": 35.274500000000444,
+        "budget_miss_fraction": 1.0
+      }
+    },
+    {
+      "id": "006-r0-load8000-temporal-half",
+      "arm": "temporal-half",
+      "load": 8000,
+      "repetition": 0,
+      "output": "/private/tmp/ushas-roadmap-evidence/claude-completion-campaign-01/006-r0-load8000-temporal-half.json",
+      "errors": [],
+      "intervals": {
+        "frame_intervals": 439,
+        "elapsed_seconds": 6.008858582999999,
+        "mean_interval_ms": 13.687604972665147,
+        "p95_interval_ms": 16.579915999999685,
+        "p99_interval_ms": 17.10020799999984,
+        "budget_miss_fraction": 0.0387243735763098
+      }
+    },
+    {
+      "id": "007-r0-load8000-temporal-third",
+      "arm": "temporal-third",
+      "load": 8000,
+      "repetition": 0,
+      "output": "/private/tmp/ushas-roadmap-evidence/claude-completion-campaign-01/007-r0-load8000-temporal-third.json",
+      "errors": [],
+      "intervals": {
+        "frame_intervals": 533,
+        "elapsed_seconds": 6.0008365,
+        "mean_interval_ms": 11.258605065666043,
+        "p95_interval_ms": 14.046417000001384,
+        "p99_interval_ms": 16.552416999999878,
+        "budget_miss_fraction": 0.0075046904315197
+      }
+    },
+    {
+      "id": "008-r0-load8000-bilinear-half",
+      "arm": "bilinear-half",
+      "load": 8000,
+      "repetition": 0,
+      "output": "/private/tmp/ushas-roadmap-evidence/claude-completion-campaign-01/008-r0-load8000-bilinear-half.json",
+      "errors": [],
+      "intervals": {
+        "frame_intervals": 451,
+        "elapsed_seconds": 6.000470584,
+        "mean_interval_ms": 13.304812824833704,
+        "p95_interval_ms": 16.919832999999926,
+        "p99_interval_ms": 21.08770800000093,
+        "budget_miss_fraction": 0.06430155210643015
+      }
+    },
+    {
+      "id": "009-r0-load8000-native-disabled-msaa4",
+      "arm": "native-disabled-msaa4",
+      "load": 8000,
+      "repetition": 0,
+      "output": "/private/tmp/ushas-roadmap-evidence/claude-completion-campaign-01/009-r0-load8000-native-disabled-msaa4.json",
+      "errors": [],
+      "intervals": {
+        "frame_intervals": 221,
+        "elapsed_seconds": 6.019319500000001,
+        "mean_interval_ms": 27.236739819004526,
+        "p95_interval_ms": 30.081167000000278,
+        "p99_interval_ms": 31.328833999999915,
+        "budget_miss_fraction": 1.0
+      }
+    },
+    {
+      "id": "010-r0-load20000-temporal-half",
+      "arm": "temporal-half",
+      "load": 20000,
+      "repetition": 0,
+      "output": "/private/tmp/ushas-roadmap-evidence/claude-completion-campaign-01/010-r0-load20000-temporal-half.json",
+      "errors": [],
+      "intervals": {
+        "frame_intervals": 223,
+        "elapsed_seconds": 6.005812,
+        "mean_interval_ms": 26.931892376681613,
+        "p95_interval_ms": 29.358667000000423,
+        "p99_interval_ms": 30.18199999999979,
+        "budget_miss_fraction": 1.0
+      }
+    },
+    {
+      "id": "011-r0-load20000-temporal-third",
+      "arm": "temporal-third",
+      "load": 20000,
+      "repetition": 0,
+      "output": "/private/tmp/ushas-roadmap-evidence/claude-completion-campaign-01/011-r0-load20000-temporal-third.json",
+      "errors": [],
+      "intervals": {
+        "frame_intervals": 358,
+        "elapsed_seconds": 6.012413958,
+        "mean_interval_ms": 16.794452396648044,
+        "p95_interval_ms": 20.273332999999184,
+        "p99_interval_ms": 22.679959000000053,
+        "budget_miss_fraction": 0.5698324022346368
+      }
+    },
+    {
+      "id": "012-r0-load20000-bilinear-half",
+      "arm": "bilinear-half",
+      "load": 20000,
+      "repetition": 0,
+      "output": "/private/tmp/ushas-roadmap-evidence/claude-completion-campaign-01/012-r0-load20000-bilinear-half.json",
+      "errors": [],
+      "intervals": {
+        "frame_intervals": 233,
+        "elapsed_seconds": 6.002136,
+        "mean_interval_ms": 25.76024034334764,
+        "p95_interval_ms": 28.00654200000008,
+        "p99_interval_ms": 29.875750000000153,
+        "budget_miss_fraction": 1.0
+      }
+    },
+    {
+      "id": "013-r0-load20000-native-disabled-msaa4",
+      "arm": "native-disabled-msaa4",
+      "load": 20000,
+      "repetition": 0,
+      "output": "/private/tmp/ushas-roadmap-evidence/claude-completion-campaign-01/013-r0-load20000-native-disabled-msaa4.json",
+      "errors": [],
+      "intervals": {
+        "frame_intervals": 90,
+        "elapsed_seconds": 6.031220291,
+        "mean_interval_ms": 67.0135587888889,
+        "p95_interval_ms": 71.68362499999967,
+        "p99_interval_ms": 74.56004100000064,
+        "budget_miss_fraction": 1.0
+      }
+    },
+    {
+      "id": "014-r0-load20000-temporal-native",
+      "arm": "temporal-native",
+      "load": 20000,
+      "repetition": 0,
+      "output": "/private/tmp/ushas-roadmap-evidence/claude-completion-campaign-01/014-r0-load20000-temporal-native.json",
+      "errors": [],
+      "intervals": {
+        "frame_intervals": 86,
+        "elapsed_seconds": 6.017520125,
+        "mean_interval_ms": 69.97116424418604,
+        "p95_interval_ms": 74.67795899999874,
+        "p99_interval_ms": 74.90408399999978,
+        "budget_miss_fraction": 1.0
+      }
+    },
+    {
+      "id": "015-r1-load20000-temporal-native",
+      "arm": "temporal-native",
+      "load": 20000,
+      "repetition": 1,
+      "output": "/private/tmp/ushas-roadmap-evidence/claude-completion-campaign-01/015-r1-load20000-temporal-native.json",
+      "errors": [],
+      "intervals": {
+        "frame_intervals": 86,
+        "elapsed_seconds": 6.044505125,
+        "mean_interval_ms": 70.28494331395349,
+        "p95_interval_ms": 74.91420800000014,
+        "p99_interval_ms": 76.39879099999962,
+        "budget_miss_fraction": 1.0
+      }
+    },
+    {
+      "id": "016-r1-load20000-native-disabled-msaa4",
+      "arm": "native-disabled-msaa4",
+      "load": 20000,
+      "repetition": 1,
+      "output": "/private/tmp/ushas-roadmap-evidence/claude-completion-campaign-01/016-r1-load20000-native-disabled-msaa4.json",
+      "errors": [],
+      "intervals": {
+        "frame_intervals": 83,
+        "elapsed_seconds": 6.019730291999999,
+        "mean_interval_ms": 72.5268709879518,
+        "p95_interval_ms": 79.49683300000015,
+        "p99_interval_ms": 82.03062500000033,
+        "budget_miss_fraction": 1.0
+      }
+    },
+    {
+      "id": "017-r1-load20000-bilinear-half",
+      "arm": "bilinear-half",
+      "load": 20000,
+      "repetition": 1,
+      "output": "/private/tmp/ushas-roadmap-evidence/claude-completion-campaign-01/017-r1-load20000-bilinear-half.json",
+      "errors": [],
+      "intervals": {
+        "frame_intervals": 225,
+        "elapsed_seconds": 5.999882166000001,
+        "mean_interval_ms": 26.666142960000006,
+        "p95_interval_ms": 29.475540999999794,
+        "p99_interval_ms": 31.049541999998837,
+        "budget_miss_fraction": 1.0
+      }
+    },
+    {
+      "id": "018-r1-load20000-temporal-third",
+      "arm": "temporal-third",
+      "load": 20000,
+      "repetition": 1,
+      "output": "/private/tmp/ushas-roadmap-evidence/claude-completion-campaign-01/018-r1-load20000-temporal-third.json",
+      "errors": [],
+      "intervals": {
+        "frame_intervals": 358,
+        "elapsed_seconds": 5.999817209,
+        "mean_interval_ms": 16.759265946927375,
+        "p95_interval_ms": 21.273541999999907,
+        "p99_interval_ms": 22.959083000000646,
+        "budget_miss_fraction": 0.5307262569832403
+      }
+    },
+    {
+      "id": "019-r1-load20000-temporal-half",
+      "arm": "temporal-half",
+      "load": 20000,
+      "repetition": 1,
+      "output": "/private/tmp/ushas-roadmap-evidence/claude-completion-campaign-01/019-r1-load20000-temporal-half.json",
+      "errors": [],
+      "intervals": {
+        "frame_intervals": 220,
+        "elapsed_seconds": 6.0162366249999994,
+        "mean_interval_ms": 27.346530113636362,
+        "p95_interval_ms": 30.007375000001048,
+        "p99_interval_ms": 30.69275000000016,
+        "budget_miss_fraction": 1.0
+      }
+    },
+    {
+      "id": "020-r1-load8000-native-disabled-msaa4",
+      "arm": "native-disabled-msaa4",
+      "load": 8000,
+      "repetition": 1,
+      "output": "/private/tmp/ushas-roadmap-evidence/claude-completion-campaign-01/020-r1-load8000-native-disabled-msaa4.json",
+      "errors": [],
+      "intervals": {
+        "frame_intervals": 193,
+        "elapsed_seconds": 6.009491291000001,
+        "mean_interval_ms": 31.137260575129535,
+        "p95_interval_ms": 34.25512500000059,
+        "p99_interval_ms": 36.55845800000043,
+        "budget_miss_fraction": 1.0
+      }
+    },
+    {
+      "id": "021-r1-load8000-bilinear-half",
+      "arm": "bilinear-half",
+      "load": 8000,
+      "repetition": 1,
+      "output": "/private/tmp/ushas-roadmap-evidence/claude-completion-campaign-01/021-r1-load8000-bilinear-half.json",
+      "errors": [],
+      "intervals": {
+        "frame_intervals": 463,
+        "elapsed_seconds": 6.006590542,
+        "mean_interval_ms": 12.973197714902808,
+        "p95_interval_ms": 15.999499999999898,
+        "p99_interval_ms": 16.985124999999243,
+        "budget_miss_fraction": 0.01511879049676026
+      }
+    },
+    {
+      "id": "022-r1-load8000-temporal-third",
+      "arm": "temporal-third",
+      "load": 8000,
+      "repetition": 1,
+      "output": "/private/tmp/ushas-roadmap-evidence/claude-completion-campaign-01/022-r1-load8000-temporal-third.json",
+      "errors": [],
+      "intervals": {
+        "frame_intervals": 545,
+        "elapsed_seconds": 6.004564624999999,
+        "mean_interval_ms": 11.0175497706422,
+        "p95_interval_ms": 13.894625000000815,
+        "p99_interval_ms": 16.135583000000224,
+        "budget_miss_fraction": 0.001834862385321101
+      }
+    },
+    {
+      "id": "023-r1-load8000-temporal-half",
+      "arm": "temporal-half",
+      "load": 8000,
+      "repetition": 1,
+      "output": "/private/tmp/ushas-roadmap-evidence/claude-completion-campaign-01/023-r1-load8000-temporal-half.json",
+      "errors": [],
+      "intervals": {
+        "frame_intervals": 454,
+        "elapsed_seconds": 6.007361958,
+        "mean_interval_ms": 13.232074797356827,
+        "p95_interval_ms": 16.303875000000517,
+        "p99_interval_ms": 17.100249999999505,
+        "budget_miss_fraction": 0.028634361233480177
+      }
+    },
+    {
+      "id": "024-r1-load8000-temporal-native",
+      "arm": "temporal-native",
+      "load": 8000,
+      "repetition": 1,
+      "output": "/private/tmp/ushas-roadmap-evidence/claude-completion-campaign-01/024-r1-load8000-temporal-native.json",
+      "errors": [],
+      "intervals": {
+        "frame_intervals": 178,
+        "elapsed_seconds": 6.0008976249999995,
+        "mean_interval_ms": 33.712908005617976,
+        "p95_interval_ms": 37.69525000000067,
+        "p99_interval_ms": 38.93812499999876,
+        "budget_miss_fraction": 1.0
+      }
+    },
+    {
+      "id": "025-r1-load0-bilinear-half",
+      "arm": "bilinear-half",
+      "load": 0,
+      "repetition": 1,
+      "output": "/private/tmp/ushas-roadmap-evidence/claude-completion-campaign-01/025-r1-load0-bilinear-half.json",
+      "errors": [],
+      "intervals": {
+        "frame_intervals": 908,
+        "elapsed_seconds": 6.003936040999999,
+        "mean_interval_ms": 6.612264362334801,
+        "p95_interval_ms": 7.764166999999361,
+        "p99_interval_ms": 8.095291999999972,
+        "budget_miss_fraction": 0.0
+      }
+    },
+    {
+      "id": "026-r1-load0-temporal-third",
+      "arm": "temporal-third",
+      "load": 0,
+      "repetition": 1,
+      "output": "/private/tmp/ushas-roadmap-evidence/claude-completion-campaign-01/026-r1-load0-temporal-third.json",
+      "errors": [],
+      "intervals": {
+        "frame_intervals": 880,
+        "elapsed_seconds": 6.002401291999999,
+        "mean_interval_ms": 6.820910559090908,
+        "p95_interval_ms": 7.981999999999971,
+        "p99_interval_ms": 8.832666000000245,
+        "budget_miss_fraction": 0.0
+      }
+    },
+    {
+      "id": "027-r1-load0-temporal-half",
+      "arm": "temporal-half",
+      "load": 0,
+      "repetition": 1,
+      "output": "/private/tmp/ushas-roadmap-evidence/claude-completion-campaign-01/027-r1-load0-temporal-half.json",
+      "errors": [],
+      "intervals": {
+        "frame_intervals": 889,
+        "elapsed_seconds": 6.000376125000001,
+        "mean_interval_ms": 6.749579443194602,
+        "p95_interval_ms": 8.032208000000537,
+        "p99_interval_ms": 8.936166000000412,
+        "budget_miss_fraction": 0.0
+      }
+    },
+    {
+      "id": "028-r1-load0-temporal-native",
+      "arm": "temporal-native",
+      "load": 0,
+      "repetition": 1,
+      "output": "/private/tmp/ushas-roadmap-evidence/claude-completion-campaign-01/028-r1-load0-temporal-native.json",
+      "errors": [],
+      "intervals": {
+        "frame_intervals": 870,
+        "elapsed_seconds": 6.006125291,
+        "mean_interval_ms": 6.903592288505747,
+        "p95_interval_ms": 8.346708999999464,
+        "p99_interval_ms": 9.317541999999776,
+        "budget_miss_fraction": 0.0
+      }
+    },
+    {
+      "id": "029-r1-load0-native-disabled-msaa4",
+      "arm": "native-disabled-msaa4",
+      "load": 0,
+      "repetition": 1,
+      "output": "/private/tmp/ushas-roadmap-evidence/claude-completion-campaign-01/029-r1-load0-native-disabled-msaa4.json",
+      "errors": [],
+      "intervals": {
+        "frame_intervals": 912,
+        "elapsed_seconds": 6.001516,
+        "mean_interval_ms": 6.580609649122807,
+        "p95_interval_ms": 7.939458000000741,
+        "p99_interval_ms": 8.350667000000612,
+        "budget_miss_fraction": 0.0
+      }
+    },
+    {
+      "id": "030-r2-load8000-temporal-half",
+      "arm": "temporal-half",
+      "load": 8000,
+      "repetition": 2,
+      "output": "/private/tmp/ushas-roadmap-evidence/claude-completion-campaign-01/030-r2-load8000-temporal-half.json",
+      "errors": [],
+      "intervals": {
+        "frame_intervals": 394,
+        "elapsed_seconds": 6.004779999999999,
+        "mean_interval_ms": 15.240558375634517,
+        "p95_interval_ms": 17.97320900000068,
+        "p99_interval_ms": 18.724999999999454,
+        "budget_miss_fraction": 0.26649746192893403
+      }
+    },
+    {
+      "id": "031-r2-load8000-temporal-third",
+      "arm": "temporal-third",
+      "load": 8000,
+      "repetition": 2,
+      "output": "/private/tmp/ushas-roadmap-evidence/claude-completion-campaign-01/031-r2-load8000-temporal-third.json",
+      "errors": [],
+      "intervals": {
+        "frame_intervals": 549,
+        "elapsed_seconds": 6.002871542000001,
+        "mean_interval_ms": 10.934192244080148,
+        "p95_interval_ms": 13.611750000000029,
+        "p99_interval_ms": 15.521834000000126,
+        "budget_miss_fraction": 0.0018214936247723133
+      }
+    },
+    {
+      "id": "032-r2-load8000-bilinear-half",
+      "arm": "bilinear-half",
+      "load": 8000,
+      "repetition": 2,
+      "output": "/private/tmp/ushas-roadmap-evidence/claude-completion-campaign-01/032-r2-load8000-bilinear-half.json",
+      "errors": [],
+      "intervals": {
+        "frame_intervals": 473,
+        "elapsed_seconds": 6.006007540999999,
+        "mean_interval_ms": 12.697690361522197,
+        "p95_interval_ms": 15.57300000000032,
+        "p99_interval_ms": 16.24262500000077,
+        "budget_miss_fraction": 0.0021141649048625794
+      }
+    },
+    {
+      "id": "033-r2-load8000-native-disabled-msaa4",
+      "arm": "native-disabled-msaa4",
+      "load": 8000,
+      "repetition": 2,
+      "output": "/private/tmp/ushas-roadmap-evidence/claude-completion-campaign-01/033-r2-load8000-native-disabled-msaa4.json",
+      "errors": [],
+      "intervals": {
+        "frame_intervals": 172,
+        "elapsed_seconds": 6.015009708,
+        "mean_interval_ms": 34.970986674418604,
+        "p95_interval_ms": 37.886749999999665,
+        "p99_interval_ms": 40.01704199999949,
+        "budget_miss_fraction": 1.0
+      }
+    },
+    {
+      "id": "034-r2-load8000-temporal-native",
+      "arm": "temporal-native",
+      "load": 8000,
+      "repetition": 2,
+      "output": "/private/tmp/ushas-roadmap-evidence/claude-completion-campaign-01/034-r2-load8000-temporal-native.json",
+      "errors": [],
+      "intervals": {
+        "frame_intervals": 166,
+        "elapsed_seconds": 6.022613541000001,
+        "mean_interval_ms": 36.280804463855425,
+        "p95_interval_ms": 39.94991700000082,
+        "p99_interval_ms": 40.45733300000029,
+        "budget_miss_fraction": 1.0
+      }
+    },
+    {
+      "id": "035-r2-load20000-temporal-third",
+      "arm": "temporal-third",
+      "load": 20000,
+      "repetition": 2,
+      "output": "/private/tmp/ushas-roadmap-evidence/claude-completion-campaign-01/035-r2-load20000-temporal-third.json",
+      "errors": [],
+      "intervals": {
+        "frame_intervals": 350,
+        "elapsed_seconds": 6.011254208,
+        "mean_interval_ms": 17.175012022857143,
+        "p95_interval_ms": 21.932458000000224,
+        "p99_interval_ms": 24.44720799999959,
+        "budget_miss_fraction": 0.5685714285714286
+      }
+    },
+    {
+      "id": "036-r2-load20000-bilinear-half",
+      "arm": "bilinear-half",
+      "load": 20000,
+      "repetition": 2,
+      "output": "/private/tmp/ushas-roadmap-evidence/claude-completion-campaign-01/036-r2-load20000-bilinear-half.json",
+      "errors": [],
+      "intervals": {
+        "frame_intervals": 216,
+        "elapsed_seconds": 6.022266208,
+        "mean_interval_ms": 27.880862074074074,
+        "p95_interval_ms": 30.554167000000234,
+        "p99_interval_ms": 32.48858300000029,
+        "budget_miss_fraction": 1.0
+      }
+    },
+    {
+      "id": "037-r2-load20000-native-disabled-msaa4",
+      "arm": "native-disabled-msaa4",
+      "load": 20000,
+      "repetition": 2,
+      "output": "/private/tmp/ushas-roadmap-evidence/claude-completion-campaign-01/037-r2-load20000-native-disabled-msaa4.json",
+      "errors": [],
+      "intervals": {
+        "frame_intervals": 77,
+        "elapsed_seconds": 6.010394000000002,
+        "mean_interval_ms": 78.05706493506494,
+        "p95_interval_ms": 84.18737499999952,
+        "p99_interval_ms": 85.40708300000006,
+        "budget_miss_fraction": 1.0
+      }
+    },
+    {
+      "id": "038-r2-load20000-temporal-native",
+      "arm": "temporal-native",
+      "load": 20000,
+      "repetition": 2,
+      "output": "/private/tmp/ushas-roadmap-evidence/claude-completion-campaign-01/038-r2-load20000-temporal-native.json",
+      "errors": [],
+      "intervals": {
+        "frame_intervals": 74,
+        "elapsed_seconds": 6.021863500000001,
+        "mean_interval_ms": 81.3765337837838,
+        "p95_interval_ms": 85.24262500000077,
+        "p99_interval_ms": 85.72762499999953,
+        "budget_miss_fraction": 1.0
+      }
+    },
+    {
+      "id": "039-r2-load20000-temporal-half",
+      "arm": "temporal-half",
+      "load": 20000,
+      "repetition": 2,
+      "output": "/private/tmp/ushas-roadmap-evidence/claude-completion-campaign-01/039-r2-load20000-temporal-half.json",
+      "errors": [],
+      "intervals": {
+        "frame_intervals": 210,
+        "elapsed_seconds": 6.021062333,
+        "mean_interval_ms": 28.671725395238095,
+        "p95_interval_ms": 31.314292000000023,
+        "p99_interval_ms": 32.35875000000033,
+        "budget_miss_fraction": 1.0
+      }
+    },
+    {
+      "id": "040-r2-load0-temporal-native",
+      "arm": "temporal-native",
+      "load": 0,
+      "repetition": 2,
+      "output": "/private/tmp/ushas-roadmap-evidence/claude-completion-campaign-01/040-r2-load0-temporal-native.json",
+      "errors": [],
+      "intervals": {
+        "frame_intervals": 871,
+        "elapsed_seconds": 5.999882833,
+        "mean_interval_ms": 6.888499234213548,
+        "p95_interval_ms": 8.54870800000026,
+        "p99_interval_ms": 9.244582999999693,
+        "budget_miss_fraction": 0.0
+      }
+    },
+    {
+      "id": "041-r2-load0-temporal-half",
+      "arm": "temporal-half",
+      "load": 0,
+      "repetition": 2,
+      "output": "/private/tmp/ushas-roadmap-evidence/claude-completion-campaign-01/041-r2-load0-temporal-half.json",
+      "errors": [],
+      "intervals": {
+        "frame_intervals": 884,
+        "elapsed_seconds": 5.999026042000001,
+        "mean_interval_ms": 6.786228554298643,
+        "p95_interval_ms": 7.952874999999949,
+        "p99_interval_ms": 9.015041999999994,
+        "budget_miss_fraction": 0.0
+      }
+    },
+    {
+      "id": "042-r2-load0-temporal-third",
+      "arm": "temporal-third",
+      "load": 0,
+      "repetition": 2,
+      "output": "/private/tmp/ushas-roadmap-evidence/claude-completion-campaign-01/042-r2-load0-temporal-third.json",
+      "errors": [],
+      "intervals": {
+        "frame_intervals": 836,
+        "elapsed_seconds": 6.006308167,
+        "mean_interval_ms": 7.184579147129186,
+        "p95_interval_ms": 8.545874999999796,
+        "p99_interval_ms": 9.234707999999955,
+        "budget_miss_fraction": 0.0
+      }
+    },
+    {
+      "id": "043-r2-load0-bilinear-half",
+      "arm": "bilinear-half",
+      "load": 0,
+      "repetition": 2,
+      "output": "/private/tmp/ushas-roadmap-evidence/claude-completion-campaign-01/043-r2-load0-bilinear-half.json",
+      "errors": [],
+      "intervals": {
+        "frame_intervals": 946,
+        "elapsed_seconds": 6.005383959,
+        "mean_interval_ms": 6.348186003171248,
+        "p95_interval_ms": 7.685583999999835,
+        "p99_interval_ms": 7.999416999999994,
+        "budget_miss_fraction": 0.0
+      }
+    },
+    {
+      "id": "044-r2-load0-native-disabled-msaa4",
+      "arm": "native-disabled-msaa4",
+      "load": 0,
+      "repetition": 2,
+      "output": "/private/tmp/ushas-roadmap-evidence/claude-completion-campaign-01/044-r2-load0-native-disabled-msaa4.json",
+      "errors": [],
+      "intervals": {
+        "frame_intervals": 935,
+        "elapsed_seconds": 6.004138459,
+        "mean_interval_ms": 6.421538458823529,
+        "p95_interval_ms": 7.749332999999751,
+        "p99_interval_ms": 8.148333000001003,
+        "budget_miss_fraction": 0.0
+      }
+    },
+    {
+      "id": "045-r3-load0-native-disabled-msaa4",
+      "arm": "native-disabled-msaa4",
+      "load": 0,
+      "repetition": 3,
+      "output": "/private/tmp/ushas-roadmap-evidence/claude-completion-campaign-01/045-r3-load0-native-disabled-msaa4.json",
+      "errors": [],
+      "intervals": {
+        "frame_intervals": 920,
+        "elapsed_seconds": 5.999116375,
+        "mean_interval_ms": 6.52077866847826,
+        "p95_interval_ms": 7.707542000000103,
+        "p99_interval_ms": 8.112333000000035,
+        "budget_miss_fraction": 0.0
+      }
+    },
+    {
+      "id": "046-r3-load0-bilinear-half",
+      "arm": "bilinear-half",
+      "load": 0,
+      "repetition": 3,
+      "output": "/private/tmp/ushas-roadmap-evidence/claude-completion-campaign-01/046-r3-load0-bilinear-half.json",
+      "errors": [],
+      "intervals": {
+        "frame_intervals": 912,
+        "elapsed_seconds": 6.002708875000001,
+        "mean_interval_ms": 6.581917626096492,
+        "p95_interval_ms": 7.7367079999985435,
+        "p99_interval_ms": 8.028708000000734,
+        "budget_miss_fraction": 0.0
+      }
+    },
+    {
+      "id": "047-r3-load0-temporal-third",
+      "arm": "temporal-third",
+      "load": 0,
+      "repetition": 3,
+      "output": "/private/tmp/ushas-roadmap-evidence/claude-completion-campaign-01/047-r3-load0-temporal-third.json",
+      "errors": [],
+      "intervals": {
+        "frame_intervals": 885,
+        "elapsed_seconds": 5.9995561660000005,
+        "mean_interval_ms": 6.77915950960452,
+        "p95_interval_ms": 7.897416999999223,
+        "p99_interval_ms": 8.96849999999904,
+        "budget_miss_fraction": 0.0
+      }
+    },
+    {
+      "id": "048-r3-load0-temporal-half",
+      "arm": "temporal-half",
+      "load": 0,
+      "repetition": 3,
+      "output": "/private/tmp/ushas-roadmap-evidence/claude-completion-campaign-01/048-r3-load0-temporal-half.json",
+      "errors": [],
+      "intervals": {
+        "frame_intervals": 875,
+        "elapsed_seconds": 6.001149958999998,
+        "mean_interval_ms": 6.858457095999999,
+        "p95_interval_ms": 7.815375000000131,
+        "p99_interval_ms": 8.668125000000146,
+        "budget_miss_fraction": 0.0
+      }
+    },
+    {
+      "id": "049-r3-load0-temporal-native",
+      "arm": "temporal-native",
+      "load": 0,
+      "repetition": 3,
+      "output": "/private/tmp/ushas-roadmap-evidence/claude-completion-campaign-01/049-r3-load0-temporal-native.json",
+      "errors": [],
+      "intervals": {
+        "frame_intervals": 874,
+        "elapsed_seconds": 6.000685625,
+        "mean_interval_ms": 6.8657730263157895,
+        "p95_interval_ms": 8.533500000000458,
+        "p99_interval_ms": 9.066125000000284,
+        "budget_miss_fraction": 0.0
+      }
+    },
+    {
+      "id": "050-r3-load20000-temporal-half",
+      "arm": "temporal-half",
+      "load": 20000,
+      "repetition": 3,
+      "output": "/private/tmp/ushas-roadmap-evidence/claude-completion-campaign-01/050-r3-load20000-temporal-half.json",
+      "errors": [],
+      "intervals": {
+        "frame_intervals": 225,
+        "elapsed_seconds": 6.0155759579999994,
+        "mean_interval_ms": 26.735893146666665,
+        "p95_interval_ms": 28.942291000000296,
+        "p99_interval_ms": 29.649708000000828,
+        "budget_miss_fraction": 1.0
+      }
+    },
+    {
+      "id": "051-r3-load20000-temporal-native",
+      "arm": "temporal-native",
+      "load": 20000,
+      "repetition": 3,
+      "output": "/private/tmp/ushas-roadmap-evidence/claude-completion-campaign-01/051-r3-load20000-temporal-native.json",
+      "errors": [],
+      "intervals": {
+        "frame_intervals": 84,
+        "elapsed_seconds": 6.015698584,
+        "mean_interval_ms": 71.61545933333333,
+        "p95_interval_ms": 75.77583400000003,
+        "p99_interval_ms": 77.44558300000062,
+        "budget_miss_fraction": 1.0
+      }
+    },
+    {
+      "id": "052-r3-load20000-native-disabled-msaa4",
+      "arm": "native-disabled-msaa4",
+      "load": 20000,
+      "repetition": 3,
+      "output": "/private/tmp/ushas-roadmap-evidence/claude-completion-campaign-01/052-r3-load20000-native-disabled-msaa4.json",
+      "errors": [],
+      "intervals": {
+        "frame_intervals": 97,
+        "elapsed_seconds": 6.0027536249999995,
+        "mean_interval_ms": 61.88405798969072,
+        "p95_interval_ms": 66.77604100000099,
+        "p99_interval_ms": 68.4262920000001,
+        "budget_miss_fraction": 1.0
+      }
+    },
+    {
+      "id": "053-r3-load20000-bilinear-half",
+      "arm": "bilinear-half",
+      "load": 20000,
+      "repetition": 3,
+      "output": "/private/tmp/ushas-roadmap-evidence/claude-completion-campaign-01/053-r3-load20000-bilinear-half.json",
+      "errors": [],
+      "intervals": {
+        "frame_intervals": 237,
+        "elapsed_seconds": 6.016387041,
+        "mean_interval_ms": 25.385599329113923,
+        "p95_interval_ms": 27.585957999999664,
+        "p99_interval_ms": 29.487750000000233,
+        "budget_miss_fraction": 1.0
+      }
+    },
+    {
+      "id": "054-r3-load20000-temporal-third",
+      "arm": "temporal-third",
+      "load": 20000,
+      "repetition": 3,
+      "output": "/private/tmp/ushas-roadmap-evidence/claude-completion-campaign-01/054-r3-load20000-temporal-third.json",
+      "errors": [],
+      "intervals": {
+        "frame_intervals": 358,
+        "elapsed_seconds": 6.0086911249999995,
+        "mean_interval_ms": 16.784053421787707,
+        "p95_interval_ms": 19.4375,
+        "p99_interval_ms": 22.420875000000706,
+        "budget_miss_fraction": 0.5810055865921788
+      }
+    },
+    {
+      "id": "055-r3-load8000-temporal-native",
+      "arm": "temporal-native",
+      "load": 8000,
+      "repetition": 3,
+      "output": "/private/tmp/ushas-roadmap-evidence/claude-completion-campaign-01/055-r3-load8000-temporal-native.json",
+      "errors": [],
+      "intervals": {
+        "frame_intervals": 196,
+        "elapsed_seconds": 6.019860999999999,
+        "mean_interval_ms": 30.71357653061224,
+        "p95_interval_ms": 33.58874999999989,
+        "p99_interval_ms": 34.28679199999988,
+        "budget_miss_fraction": 1.0
+      }
+    },
+    {
+      "id": "056-r3-load8000-native-disabled-msaa4",
+      "arm": "native-disabled-msaa4",
+      "load": 8000,
+      "repetition": 3,
+      "output": "/private/tmp/ushas-roadmap-evidence/claude-completion-campaign-01/056-r3-load8000-native-disabled-msaa4.json",
+      "errors": [],
+      "intervals": {
+        "frame_intervals": 210,
+        "elapsed_seconds": 6.005561292,
+        "mean_interval_ms": 28.597910914285716,
+        "p95_interval_ms": 31.653333000000202,
+        "p99_interval_ms": 32.40229200000067,
+        "budget_miss_fraction": 1.0
+      }
+    },
+    {
+      "id": "057-r3-load8000-bilinear-half",
+      "arm": "bilinear-half",
+      "load": 8000,
+      "repetition": 3,
+      "output": "/private/tmp/ushas-roadmap-evidence/claude-completion-campaign-01/057-r3-load8000-bilinear-half.json",
+      "errors": [],
+      "intervals": {
+        "frame_intervals": 477,
+        "elapsed_seconds": 6.0056192919999996,
+        "mean_interval_ms": 12.590396838574422,
+        "p95_interval_ms": 15.411042000000634,
+        "p99_interval_ms": 16.244708999999602,
+        "budget_miss_fraction": 0.0041928721174004195
+      }
+    },
+    {
+      "id": "058-r3-load8000-temporal-third",
+      "arm": "temporal-third",
+      "load": 8000,
+      "repetition": 3,
+      "output": "/private/tmp/ushas-roadmap-evidence/claude-completion-campaign-01/058-r3-load8000-temporal-third.json",
+      "errors": [],
+      "intervals": {
+        "frame_intervals": 523,
+        "elapsed_seconds": 6.013940792,
+        "mean_interval_ms": 11.498930768642447,
+        "p95_interval_ms": 14.642791000000216,
+        "p99_interval_ms": 17.355458,
+        "budget_miss_fraction": 0.0248565965583174
+      }
+    },
+    {
+      "id": "059-r3-load8000-temporal-half",
+      "arm": "temporal-half",
+      "load": 8000,
+      "repetition": 3,
+      "output": "/private/tmp/ushas-roadmap-evidence/claude-completion-campaign-01/059-r3-load8000-temporal-half.json",
+      "errors": [],
+      "intervals": {
+        "frame_intervals": 454,
+        "elapsed_seconds": 6.007514167,
+        "mean_interval_ms": 13.232410059471366,
+        "p95_interval_ms": 16.09429199999977,
+        "p99_interval_ms": 16.958082999999533,
+        "budget_miss_fraction": 0.022026431718061675
+      }
+    }
+  ],
+  "cells": [
+    {
+      "load": 0,
+      "arm": "native-disabled-msaa4",
+      "valid": true,
+      "required_runs": 4,
+      "valid_runs": 4,
+      "run_ids": [
+        "000-r0-load0-native-disabled-msaa4",
+        "029-r1-load0-native-disabled-msaa4",
+        "044-r2-load0-native-disabled-msaa4",
+        "045-r3-load0-native-disabled-msaa4"
+      ],
+      "summary": {
+        "mean_interval_ms": 6.549435775029397,
+        "mean_of_run_p95_interval_ms": 7.846427000000176,
+        "mean_of_run_p99_interval_ms": 8.258947750000516,
+        "mean_of_run_budget_miss_fractions": 0.0
+      }
+    },
+    {
+      "load": 0,
+      "arm": "temporal-native",
+      "valid": true,
+      "required_runs": 4,
+      "valid_runs": 4,
+      "run_ids": [
+        "001-r0-load0-temporal-native",
+        "028-r1-load0-temporal-native",
+        "040-r2-load0-temporal-native",
+        "049-r3-load0-temporal-native"
+      ],
+      "summary": {
+        "mean_interval_ms": 6.945684949016491,
+        "mean_of_run_p95_interval_ms": 8.557979250000017,
+        "mean_of_run_p99_interval_ms": 9.378489499999887,
+        "mean_of_run_budget_miss_fractions": 0.0
+      }
+    },
+    {
+      "load": 0,
+      "arm": "temporal-half",
+      "valid": true,
+      "required_runs": 4,
+      "valid_runs": 4,
+      "run_ids": [
+        "002-r0-load0-temporal-half",
+        "027-r1-load0-temporal-half",
+        "041-r2-load0-temporal-half",
+        "048-r3-load0-temporal-half"
+      ],
+      "summary": {
+        "mean_interval_ms": 6.838550624301385,
+        "mean_of_run_p95_interval_ms": 8.095426999999972,
+        "mean_of_run_p99_interval_ms": 9.027666500000123,
+        "mean_of_run_budget_miss_fractions": 0.0
+      }
+    },
+    {
+      "load": 0,
+      "arm": "temporal-third",
+      "valid": true,
+      "required_runs": 4,
+      "valid_runs": 4,
+      "run_ids": [
+        "003-r0-load0-temporal-third",
+        "026-r1-load0-temporal-third",
+        "042-r2-load0-temporal-third",
+        "047-r3-load0-temporal-third"
+      ],
+      "summary": {
+        "mean_interval_ms": 6.886804184023721,
+        "mean_of_run_p95_interval_ms": 8.253989749999391,
+        "mean_of_run_p99_interval_ms": 9.099989249999908,
+        "mean_of_run_budget_miss_fractions": 0.0
+      }
+    },
+    {
+      "load": 0,
+      "arm": "bilinear-half",
+      "valid": true,
+      "required_runs": 4,
+      "valid_runs": 4,
+      "run_ids": [
+        "004-r0-load0-bilinear-half",
+        "025-r1-load0-bilinear-half",
+        "043-r2-load0-bilinear-half",
+        "046-r3-load0-bilinear-half"
+      ],
+      "summary": {
+        "mean_interval_ms": 6.467688758712872,
+        "mean_of_run_p95_interval_ms": 7.829812499999434,
+        "mean_of_run_p99_interval_ms": 8.222125000000233,
+        "mean_of_run_budget_miss_fractions": 0.0
+      }
+    },
+    {
+      "load": 8000,
+      "arm": "native-disabled-msaa4",
+      "valid": true,
+      "required_runs": 4,
+      "valid_runs": 4,
+      "run_ids": [
+        "009-r0-load8000-native-disabled-msaa4",
+        "020-r1-load8000-native-disabled-msaa4",
+        "033-r2-load8000-native-disabled-msaa4",
+        "056-r3-load8000-native-disabled-msaa4"
+      ],
+      "summary": {
+        "mean_interval_ms": 30.485724495709597,
+        "mean_of_run_p95_interval_ms": 33.469093750000184,
+        "mean_of_run_p99_interval_ms": 35.07665650000013,
+        "mean_of_run_budget_miss_fractions": 1.0
+      }
+    },
+    {
+      "load": 8000,
+      "arm": "temporal-native",
+      "valid": true,
+      "required_runs": 4,
+      "valid_runs": 4,
+      "run_ids": [
+        "005-r0-load8000-temporal-native",
+        "024-r1-load8000-temporal-native",
+        "034-r2-load8000-temporal-native",
+        "055-r3-load8000-temporal-native"
+      ],
+      "summary": {
+        "mean_interval_ms": 32.72375038067467,
+        "mean_of_run_p95_interval_ms": 36.181239500000174,
+        "mean_of_run_p99_interval_ms": 37.239187499999844,
+        "mean_of_run_budget_miss_fractions": 1.0
+      }
+    },
+    {
+      "load": 8000,
+      "arm": "temporal-half",
+      "valid": true,
+      "required_runs": 4,
+      "valid_runs": 4,
+      "run_ids": [
+        "006-r0-load8000-temporal-half",
+        "023-r1-load8000-temporal-half",
+        "030-r2-load8000-temporal-half",
+        "059-r3-load8000-temporal-half"
+      ],
+      "summary": {
+        "mean_interval_ms": 13.848162051281964,
+        "mean_of_run_p95_interval_ms": 16.737823000000162,
+        "mean_of_run_p99_interval_ms": 17.470885249999583,
+        "mean_of_run_budget_miss_fractions": 0.08897065711419642
+      }
+    },
+    {
+      "load": 8000,
+      "arm": "temporal-third",
+      "valid": true,
+      "required_runs": 4,
+      "valid_runs": 4,
+      "run_ids": [
+        "007-r0-load8000-temporal-third",
+        "022-r1-load8000-temporal-third",
+        "031-r2-load8000-temporal-third",
+        "058-r3-load8000-temporal-third"
+      ],
+      "summary": {
+        "mean_interval_ms": 11.17731946225771,
+        "mean_of_run_p95_interval_ms": 14.04889575000061,
+        "mean_of_run_p99_interval_ms": 16.391323000000057,
+        "mean_of_run_budget_miss_fractions": 0.009004410749982629
+      }
+    },
+    {
+      "load": 8000,
+      "arm": "bilinear-half",
+      "valid": true,
+      "required_runs": 4,
+      "valid_runs": 4,
+      "run_ids": [
+        "008-r0-load8000-bilinear-half",
+        "021-r1-load8000-bilinear-half",
+        "032-r2-load8000-bilinear-half",
+        "057-r3-load8000-bilinear-half"
+      ],
+      "summary": {
+        "mean_interval_ms": 12.891524434958283,
+        "mean_of_run_p95_interval_ms": 15.975843750000195,
+        "mean_of_run_p99_interval_ms": 17.640041750000137,
+        "mean_of_run_budget_miss_fractions": 0.021431844906363354
+      }
+    },
+    {
+      "load": 20000,
+      "arm": "native-disabled-msaa4",
+      "valid": true,
+      "required_runs": 4,
+      "valid_runs": 4,
+      "run_ids": [
+        "013-r0-load20000-native-disabled-msaa4",
+        "016-r1-load20000-native-disabled-msaa4",
+        "037-r2-load20000-native-disabled-msaa4",
+        "052-r3-load20000-native-disabled-msaa4"
+      ],
+      "summary": {
+        "mean_interval_ms": 69.87038817539909,
+        "mean_of_run_p95_interval_ms": 75.53596850000008,
+        "mean_of_run_p99_interval_ms": 77.60601025000028,
+        "mean_of_run_budget_miss_fractions": 1.0
+      }
+    },
+    {
+      "load": 20000,
+      "arm": "temporal-native",
+      "valid": true,
+      "required_runs": 4,
+      "valid_runs": 4,
+      "run_ids": [
+        "014-r0-load20000-temporal-native",
+        "015-r1-load20000-temporal-native",
+        "038-r2-load20000-temporal-native",
+        "051-r3-load20000-temporal-native"
+      ],
+      "summary": {
+        "mean_interval_ms": 73.31202516881416,
+        "mean_of_run_p95_interval_ms": 77.65265649999992,
+        "mean_of_run_p99_interval_ms": 78.61902074999989,
+        "mean_of_run_budget_miss_fractions": 1.0
+      }
+    },
+    {
+      "load": 20000,
+      "arm": "temporal-half",
+      "valid": true,
+      "required_runs": 4,
+      "valid_runs": 4,
+      "run_ids": [
+        "010-r0-load20000-temporal-half",
+        "019-r1-load20000-temporal-half",
+        "039-r2-load20000-temporal-half",
+        "050-r3-load20000-temporal-half"
+      ],
+      "summary": {
+        "mean_interval_ms": 27.421510258055683,
+        "mean_of_run_p95_interval_ms": 29.905656250000447,
+        "mean_of_run_p99_interval_ms": 30.720802000000276,
+        "mean_of_run_budget_miss_fractions": 1.0
+      }
+    },
+    {
+      "load": 20000,
+      "arm": "temporal-third",
+      "valid": true,
+      "required_runs": 4,
+      "valid_runs": 4,
+      "run_ids": [
+        "011-r0-load20000-temporal-third",
+        "018-r1-load20000-temporal-third",
+        "035-r2-load20000-temporal-third",
+        "054-r3-load20000-temporal-third"
+      ],
+      "summary": {
+        "mean_interval_ms": 16.87819594705507,
+        "mean_of_run_p95_interval_ms": 20.72920824999983,
+        "mean_of_run_p99_interval_ms": 23.12678125000025,
+        "mean_of_run_budget_miss_fractions": 0.5625339185953712
+      }
+    },
+    {
+      "load": 20000,
+      "arm": "bilinear-half",
+      "valid": true,
+      "required_runs": 4,
+      "valid_runs": 4,
+      "run_ids": [
+        "012-r0-load20000-bilinear-half",
+        "017-r1-load20000-bilinear-half",
+        "036-r2-load20000-bilinear-half",
+        "053-r3-load20000-bilinear-half"
+      ],
+      "summary": {
+        "mean_interval_ms": 26.42321117663391,
+        "mean_of_run_p95_interval_ms": 28.905551999999943,
+        "mean_of_run_p99_interval_ms": 30.725406249999878,
+        "mean_of_run_budget_miss_fractions": 1.0
+      }
+    }
+  ]
+}
