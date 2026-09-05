@@ -1,0 +1,56 @@
+{
+  "archive_valid": true,
+  "injected_fault_acceptance": false,
+  "payload_files": 10,
+  "payload_bytes": 42817,
+  "source_revision": "9a90c3d83c71a5083bad160af7cbd445409970c1",
+  "binary_sha256": "29a28b2a15a0b7663c6b2d662d8cfea2861577afbf0703c22bffe83a1fc54c7d",
+  "attempts": [
+    {
+      "requested_exercise": "creation-failure",
+      "started_utc": "2026-09-05T07:47:19.649733+00:00",
+      "finished_utc": "2026-09-05T07:47:24.770291+00:00",
+      "child_exit_code": 0,
+      "wrapper_exit_code": 1,
+      "lifecycle_captures": 0,
+      "injected_fault_acceptance": false,
+      "classification": "pre_injection_window_exit_missing_report",
+      "report_present": false,
+      "initial_readiness_proved": false,
+      "injection_observed": false,
+      "limitation": "No final lifecycle ledger survived; logs and absent initial capture do not prove a successful injected transition."
+    },
+    {
+      "requested_exercise": "creation-slow",
+      "started_utc": "2026-09-05T07:47:24.910083+00:00",
+      "finished_utc": "2026-09-05T07:48:04.267017+00:00",
+      "child_exit_code": 1,
+      "wrapper_exit_code": 1,
+      "lifecycle_captures": 0,
+      "injected_fault_acceptance": false,
+      "classification": "pre_injection_initial_no_render_timeout",
+      "report_present": true,
+      "initial_readiness_proved": false,
+      "injection_observed": false,
+      "initial_timeout_elapsed_s": 25.001693209,
+      "final_readback": "1280x720 all-zero RGBA; no rendered-content proof",
+      "display_awake_at_finish": false
+    }
+  ],
+  "scope": "Failure-artifact integrity and pre-injection classification only; no creation-fault, recovery, native sleep or visibility acceptance",
+  "archive": "/Users/sma/projects/docs/ushas/evidence/lifecycle-fault-window-attempts-02",
+  "archive_manifest_sha256": "bd8a7d1c1592f8e1bc2dfbe0d9fc879f8bd44722371cdd1471ebfb89c9666753",
+  "later_environment_observation": {
+    "awake": false,
+    "locked": true,
+    "on_console": true,
+    "source": "Root reported later outside-sandbox CoreGraphics/session probe tool stdout; no contemporaneous retained sample",
+    "not_a_causal_proof": true
+  },
+  "remaining_gates": [
+    "Injected failure and slow-creation fallback/recovery hardware evidence",
+    "Actual observed native window minimize/restore",
+    "Externally initiated NSWorkspace WillSleep/DidWake and render recovery",
+    "Historical MPSGraph crash remains unreproduced"
+  ]
+}
