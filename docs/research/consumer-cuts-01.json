@@ -1,0 +1,527 @@
+{
+  "schema": 1,
+  "scope": "Three frozen current-consumer image-only camera-cut runs; one per arm. Requests at script29/30/31/32/34/38; image readback asynchronous and pipelined.",
+  "verdict": "Retain native for the measured current-consumer fixture. Cut/readback smoke succeeds and Temporal reset request plus encoding are logged, but baseline post-cut texture corruption and legacy capture identity prevent a broad temporal-quality or exact reset-recovery pass.",
+  "validation": {
+    "runs": 3,
+    "exit_zero_runs": 3,
+    "reported_valid_runs": 3,
+    "decoded_opaque_pngs": 18,
+    "visually_inspected_pngs": 12,
+    "payload_files": 33,
+    "payload_bytes": 15807014,
+    "original_run_artifact_hashes_verified": 30
+  },
+  "archive": {
+    "directory": "/Users/sma/projects/docs/ushas/evidence/consumer-cuts-01",
+    "manifest": "archive-manifest.json",
+    "manifest_sha256": "2b9da776324cafd21fe062bedddc1efc325a05c3ed322bf46348a8f684a6ac3f"
+  },
+  "provenance": {
+    "consumer_commit": "2a49dfcb294a69283e9e4cf9aa0662b61c51495a",
+    "ushas_commit": "56a3b16c8c1c8f12a5320adc5082c6d20b6378c1",
+    "binary_sha256": "e1eaf124a3d01637a115af46bb9f02049c4ad093adb3596d5af49416df31a126",
+    "provenance_archive": "/Users/sma/projects/docs/ushas/evidence/consumer-completion-pilots-01",
+    "provenance_archive_manifest_sha256": "e5bc4d25d1f046417b1869a10299a1ab6bb28ae5a7cc61fce762bd9bba50831c",
+    "prepared_receipt": {
+      "path": "/Users/sma/projects/docs/ushas/evidence/consumer-completion-pilots-01/prepared.json",
+      "sha256": "94f5f6fc0ce78fa8fea954110e4498f3a51259e57aaf6f7c1dc065d7af473bff"
+    },
+    "build_receipt": {
+      "path": "/Users/sma/projects/docs/ushas/evidence/consumer-completion-pilots-01/build.json",
+      "sha256": "d39365899487d97a21e2f8cdc3283756f32a77c9d2a6f88e4f2de9255c6212ed"
+    },
+    "patch": {
+      "path": "/Users/sma/projects/docs/ushas/evidence/consumer-completion-pilots-01/consumer.patch",
+      "sha256": "5a76c579e780fefb20049584911c98580f77bc2c5e903c77d4d4d1e98a468aaa"
+    },
+    "runtime_environment": "Image mode retains pipelined rendering; runner sets OVERLAY=0. No per-run OS, thermal, inherited environment or display/lock observations are retained. Offscreen image targets have no presentation claim."
+  },
+  "fixture": {
+    "pre_cut_orbit": [
+      0.0,
+      0.3,
+      25.0
+    ],
+    "cut_script_frame": 30,
+    "cut_yaw_radians": 3.1415927,
+    "capture_script_frames": [
+      29,
+      30,
+      31,
+      32,
+      34,
+      38
+    ],
+    "minimum_distinct_ready": 20,
+    "warmup_seconds": 3.0,
+    "overlay_enabled": false,
+    "continuous_motion": false,
+    "reset_disabled_comparison": false
+  },
+  "runs": [
+    {
+      "arm": "native",
+      "directory": "native-_ag2hs9l",
+      "manifest_sha256": "e51d915b69eaf31ddd03ecdfe306c626a2ad31b2a0ae7a3f4b170cf6735faa99",
+      "reported_valid": true,
+      "exit_code": 0,
+      "mode": "Disabled",
+      "scale": 1.0,
+      "msaa_samples": 4,
+      "output_size": [
+        1600,
+        900
+      ],
+      "content_size": [
+        1600,
+        900
+      ],
+      "distinct_ready": 2120,
+      "per_frame_observation_rows": 2121,
+      "scripted_rows_1_through_42": 42,
+      "all_scripted_rows_ready": true,
+      "state_counts": {
+        "NoObservation": 1,
+        "Disabled": 2120
+      },
+      "reset_and_cut_log_events": [
+        {
+          "line": 25,
+          "text": "PLAYTEST frame 30: CUT (yaw 0 -> 3.1415927, delta 3.1415927)"
+        },
+        {
+          "line": 26,
+          "text": "PLAYTEST frame 30: FAIL \u2014 MetalFxHistoryReset absent"
+        }
+      ],
+      "post_cut_unique_png_hashes": 1,
+      "frame_identity_limit": "Capture report retains script counter and request main frame; its contemporaneous effect observation is two frames old. No exact captured render or reset-frame identity is established."
+    },
+    {
+      "arm": "temporal",
+      "directory": "temporal-whdc_mcl",
+      "manifest_sha256": "591055d5cad355d9fd745a99a641e78431b6f4bcc8a00eca76b719de7b278490",
+      "reported_valid": true,
+      "exit_code": 0,
+      "mode": "Temporal",
+      "scale": 0.5,
+      "msaa_samples": 1,
+      "output_size": [
+        1600,
+        900
+      ],
+      "content_size": [
+        800,
+        450
+      ],
+      "distinct_ready": 1508,
+      "per_frame_observation_rows": 1512,
+      "scripted_rows_1_through_42": 42,
+      "all_scripted_rows_ready": true,
+      "state_counts": {
+        "NoObservation": 1,
+        "Pending": 2,
+        "Encoded": 1,
+        "OutputWritten": 1508
+      },
+      "reset_and_cut_log_events": [
+        {
+          "line": 37,
+          "text": "PLAYTEST frame 30: CUT (yaw 0 -> 3.1415927, delta 3.1415927)"
+        },
+        {
+          "line": 38,
+          "text": "PLAYTEST frame 30: MetalFxHistoryReset requested"
+        },
+        {
+          "line": 41,
+          "text": "[2026-09-05T03:33:40.031Z INFO  bevy_metalfx::node::encode] MetalFxUpscaleNode: encoded MetalFxHistoryReset for temporal frame 1498"
+        }
+      ],
+      "post_cut_unique_png_hashes": 5,
+      "frame_identity_limit": "Capture report retains script counter and request main frame; its contemporaneous effect observation is two frames old. No exact captured render or reset-frame identity is established."
+    },
+    {
+      "arm": "bilinear",
+      "directory": "bilinear-r7juvuh5",
+      "manifest_sha256": "5ae8ed8f5eb811bad5b238207525bf8723756b5bb3f776f45702eaee31e1ebd0",
+      "reported_valid": true,
+      "exit_code": 0,
+      "mode": "Disabled",
+      "scale": 0.5,
+      "msaa_samples": 1,
+      "output_size": [
+        1600,
+        900
+      ],
+      "content_size": [
+        800,
+        450
+      ],
+      "distinct_ready": 1898,
+      "per_frame_observation_rows": 1901,
+      "scripted_rows_1_through_42": 42,
+      "all_scripted_rows_ready": true,
+      "state_counts": {
+        "NoObservation": 1,
+        "Pending": 2,
+        "Disabled": 1898
+      },
+      "reset_and_cut_log_events": [
+        {
+          "line": 26,
+          "text": "PLAYTEST frame 30: CUT (yaw 0 -> 3.1415927, delta 3.1415927)"
+        },
+        {
+          "line": 27,
+          "text": "PLAYTEST frame 30: FAIL \u2014 MetalFxHistoryReset absent"
+        }
+      ],
+      "post_cut_unique_png_hashes": 1,
+      "frame_identity_limit": "Capture report retains script counter and request main frame; its contemporaneous effect observation is two frames old. No exact captured render or reset-frame identity is established."
+    }
+  ],
+  "captures": [
+    {
+      "file": "native-_ag2hs9l/native_before.png",
+      "sha256": "ce9022d9bb717a350e819d1950f46c7e01e1ef9e7a07a5d37a7ce30143e39df0",
+      "script_frame": 29,
+      "request_main_frame": 2109,
+      "request_observation_frame": 2107,
+      "request_observation_age_frames": 2,
+      "size": [
+        1600,
+        900
+      ],
+      "opaque_pixels": 1440000,
+      "sampled_colors": 26619,
+      "visible_pixels": 1427921,
+      "visual_inspection": true
+    },
+    {
+      "file": "native-_ag2hs9l/native_p0.png",
+      "sha256": "88e7f45e4e0ca81d94c5a7b3205a06d0c6afcb161c1e4b411590d51ad86f9595",
+      "script_frame": 30,
+      "request_main_frame": 2110,
+      "request_observation_frame": 2108,
+      "request_observation_age_frames": 2,
+      "size": [
+        1600,
+        900
+      ],
+      "opaque_pixels": 1440000,
+      "sampled_colors": 3874,
+      "visible_pixels": 868140,
+      "visual_inspection": true
+    },
+    {
+      "file": "native-_ag2hs9l/native_p1.png",
+      "sha256": "88e7f45e4e0ca81d94c5a7b3205a06d0c6afcb161c1e4b411590d51ad86f9595",
+      "script_frame": 31,
+      "request_main_frame": 2111,
+      "request_observation_frame": 2109,
+      "request_observation_age_frames": 2,
+      "size": [
+        1600,
+        900
+      ],
+      "opaque_pixels": 1440000,
+      "sampled_colors": 3874,
+      "visible_pixels": 868140,
+      "visual_inspection": true
+    },
+    {
+      "file": "native-_ag2hs9l/native_p2.png",
+      "sha256": "88e7f45e4e0ca81d94c5a7b3205a06d0c6afcb161c1e4b411590d51ad86f9595",
+      "script_frame": 32,
+      "request_main_frame": 2112,
+      "request_observation_frame": 2110,
+      "request_observation_age_frames": 2,
+      "size": [
+        1600,
+        900
+      ],
+      "opaque_pixels": 1440000,
+      "sampled_colors": 3874,
+      "visible_pixels": 868140,
+      "visual_inspection": false
+    },
+    {
+      "file": "native-_ag2hs9l/native_p4.png",
+      "sha256": "88e7f45e4e0ca81d94c5a7b3205a06d0c6afcb161c1e4b411590d51ad86f9595",
+      "script_frame": 34,
+      "request_main_frame": 2114,
+      "request_observation_frame": 2112,
+      "request_observation_age_frames": 2,
+      "size": [
+        1600,
+        900
+      ],
+      "opaque_pixels": 1440000,
+      "sampled_colors": 3874,
+      "visible_pixels": 868140,
+      "visual_inspection": false
+    },
+    {
+      "file": "native-_ag2hs9l/native_p8.png",
+      "sha256": "88e7f45e4e0ca81d94c5a7b3205a06d0c6afcb161c1e4b411590d51ad86f9595",
+      "script_frame": 38,
+      "request_main_frame": 2118,
+      "request_observation_frame": 2116,
+      "request_observation_age_frames": 2,
+      "size": [
+        1600,
+        900
+      ],
+      "opaque_pixels": 1440000,
+      "sampled_colors": 3874,
+      "visible_pixels": 868140,
+      "visual_inspection": true
+    },
+    {
+      "file": "temporal-whdc_mcl/temporal_before.png",
+      "sha256": "39f32e46e3fd007b3ab1229b3ac98208655bc97d9728aac4a09ff810ce53f603",
+      "script_frame": 29,
+      "request_main_frame": 1500,
+      "request_observation_frame": 1498,
+      "request_observation_age_frames": 2,
+      "size": [
+        1600,
+        900
+      ],
+      "opaque_pixels": 1440000,
+      "sampled_colors": 24997,
+      "visible_pixels": 1428032,
+      "visual_inspection": true
+    },
+    {
+      "file": "temporal-whdc_mcl/temporal_p0.png",
+      "sha256": "97335d55ee4f47aa5e460dbb87b699b992841a707350769ce33b5a5c9499701a",
+      "script_frame": 30,
+      "request_main_frame": 1501,
+      "request_observation_frame": 1499,
+      "request_observation_age_frames": 2,
+      "size": [
+        1600,
+        900
+      ],
+      "opaque_pixels": 1440000,
+      "sampled_colors": 3877,
+      "visible_pixels": 863616,
+      "visual_inspection": true
+    },
+    {
+      "file": "temporal-whdc_mcl/temporal_p1.png",
+      "sha256": "b18fcc240ef323c0a35726ebdcfb87d4e1562d7d8bca1b241fbba3eb9a19e908",
+      "script_frame": 31,
+      "request_main_frame": 1502,
+      "request_observation_frame": 1500,
+      "request_observation_age_frames": 2,
+      "size": [
+        1600,
+        900
+      ],
+      "opaque_pixels": 1440000,
+      "sampled_colors": 3761,
+      "visible_pixels": 863898,
+      "visual_inspection": true
+    },
+    {
+      "file": "temporal-whdc_mcl/temporal_p2.png",
+      "sha256": "c8e11bb1c3931c9298053cef37c8b5d7cf373cd695f11c7d6b9c31930954664a",
+      "script_frame": 32,
+      "request_main_frame": 1503,
+      "request_observation_frame": 1501,
+      "request_observation_age_frames": 2,
+      "size": [
+        1600,
+        900
+      ],
+      "opaque_pixels": 1440000,
+      "sampled_colors": 3753,
+      "visible_pixels": 863198,
+      "visual_inspection": false
+    },
+    {
+      "file": "temporal-whdc_mcl/temporal_p4.png",
+      "sha256": "10ce4972d78f17e8061ba7d6377aed8604d043ab3276ed1547eab793f02bbcb8",
+      "script_frame": 34,
+      "request_main_frame": 1505,
+      "request_observation_frame": 1503,
+      "request_observation_age_frames": 2,
+      "size": [
+        1600,
+        900
+      ],
+      "opaque_pixels": 1440000,
+      "sampled_colors": 3679,
+      "visible_pixels": 862971,
+      "visual_inspection": false
+    },
+    {
+      "file": "temporal-whdc_mcl/temporal_p8.png",
+      "sha256": "6b5297c3f42527b4114a55747e909450a026fcec372cc257544d83e0ce717a33",
+      "script_frame": 38,
+      "request_main_frame": 1509,
+      "request_observation_frame": 1507,
+      "request_observation_age_frames": 2,
+      "size": [
+        1600,
+        900
+      ],
+      "opaque_pixels": 1440000,
+      "sampled_colors": 3689,
+      "visible_pixels": 862722,
+      "visual_inspection": true
+    },
+    {
+      "file": "bilinear-r7juvuh5/bilinear_before.png",
+      "sha256": "e0120888211e25dbd5ce0149a2547c930bb9de94823157b6db37e49ba95e2652",
+      "script_frame": 29,
+      "request_main_frame": 1889,
+      "request_observation_frame": 1887,
+      "request_observation_age_frames": 2,
+      "size": [
+        1600,
+        900
+      ],
+      "opaque_pixels": 1440000,
+      "sampled_colors": 24120,
+      "visible_pixels": 1428918,
+      "visual_inspection": true
+    },
+    {
+      "file": "bilinear-r7juvuh5/bilinear_p0.png",
+      "sha256": "12cfb9144c0e8ce3658d4012e9d037289e6572be279ccf349daff6a8f34b3304",
+      "script_frame": 30,
+      "request_main_frame": 1890,
+      "request_observation_frame": 1888,
+      "request_observation_age_frames": 2,
+      "size": [
+        1600,
+        900
+      ],
+      "opaque_pixels": 1440000,
+      "sampled_colors": 3966,
+      "visible_pixels": 866218,
+      "visual_inspection": true
+    },
+    {
+      "file": "bilinear-r7juvuh5/bilinear_p1.png",
+      "sha256": "12cfb9144c0e8ce3658d4012e9d037289e6572be279ccf349daff6a8f34b3304",
+      "script_frame": 31,
+      "request_main_frame": 1891,
+      "request_observation_frame": 1889,
+      "request_observation_age_frames": 2,
+      "size": [
+        1600,
+        900
+      ],
+      "opaque_pixels": 1440000,
+      "sampled_colors": 3966,
+      "visible_pixels": 866218,
+      "visual_inspection": true
+    },
+    {
+      "file": "bilinear-r7juvuh5/bilinear_p2.png",
+      "sha256": "12cfb9144c0e8ce3658d4012e9d037289e6572be279ccf349daff6a8f34b3304",
+      "script_frame": 32,
+      "request_main_frame": 1892,
+      "request_observation_frame": 1890,
+      "request_observation_age_frames": 2,
+      "size": [
+        1600,
+        900
+      ],
+      "opaque_pixels": 1440000,
+      "sampled_colors": 3966,
+      "visible_pixels": 866218,
+      "visual_inspection": false
+    },
+    {
+      "file": "bilinear-r7juvuh5/bilinear_p4.png",
+      "sha256": "12cfb9144c0e8ce3658d4012e9d037289e6572be279ccf349daff6a8f34b3304",
+      "script_frame": 34,
+      "request_main_frame": 1894,
+      "request_observation_frame": 1892,
+      "request_observation_age_frames": 2,
+      "size": [
+        1600,
+        900
+      ],
+      "opaque_pixels": 1440000,
+      "sampled_colors": 3966,
+      "visible_pixels": 866218,
+      "visual_inspection": false
+    },
+    {
+      "file": "bilinear-r7juvuh5/bilinear_p8.png",
+      "sha256": "12cfb9144c0e8ce3658d4012e9d037289e6572be279ccf349daff6a8f34b3304",
+      "script_frame": 38,
+      "request_main_frame": 1898,
+      "request_observation_frame": 1896,
+      "request_observation_age_frames": 2,
+      "size": [
+        1600,
+        900
+      ],
+      "opaque_pixels": 1440000,
+      "sampled_colors": 3966,
+      "visible_pixels": 866218,
+      "visual_inspection": true
+    }
+  ],
+  "visual_review": {
+    "matching": "All inspected before images show the same Africa/Europe-facing globe. All inspected post-cut images show the same opposite-side pose.",
+    "native": "Native before retains the finest terrain/coast detail. Its five post-cut PNGs are byte-identical and show a dark hemisphere with a pronounced central zig-zag texture seam.",
+    "temporal": "Before-cut detail is closer to native than bilinear. The p0 globe outline is coarser than p8 and all five post-cut PNG hashes differ. No obvious retained bright Africa image is visible in inspected p0,p1,p8; this is sampled visual inspection, not an exact frame recovery bound.",
+    "bilinear": "Before-cut fine texture and coastline detail are softer and the silhouette more stepped. Five post-cut PNGs are byte-identical; the same seam is present.",
+    "baseline_defect": "The central post-cut seam occurs with MetalFX Disabled at native resolution as well as both reconstruction arms. Its root cause was not diagnosed in this review; it is not attributable specifically to Temporal from these comparisons.",
+    "ui_and_hdr": "The webview overlay is disabled and these receipts do not establish an HDR main-texture contract. No UI/HDR acceptance claim."
+  },
+  "reset_evidence": {
+    "temporal_request": "One PLAYTEST frame30 reset request logged.",
+    "temporal_encode": "One encoded reset logged for temporal frame1498. Frozen encode.rs prints the scaler-local state.frame_count, not MetalFxObservationFrame; it cannot identify which PNG contains that encoding.",
+    "controls": "Native and bilinear log FAIL \u2014 MetalFxHistoryReset absent because Disabled mode has no temporal history resource. Their render/readback checks pass; they are not reset tests.",
+    "limit": "No reset-disabled arm and no screenshot-to-render-frame join; causality, same-frame reset application to p0, and continuous temporal stability remain unproved."
+  },
+  "performance_context": {
+    "report": "consumer-completion-trial-01.json",
+    "report_sha256": "3b9d2387ba7c4676d730e989b62c8934a8c879fcbb82a40503841bc1b76e0f77",
+    "scope": "Frozen static globe, 1600x900 offscreen, serial callback-observed completed-render cadence including CPU preparation/scheduling/logging/polling. Not production pipelined FPS, GPU busy cost, latency, physical presentation, or governor input.",
+    "verdict": "Retain native for this fixture: native already meets the mean budget and no candidate demonstrates the declared 8% practical improvement. Motion/cut quality and production pacing remain separate gates.",
+    "target_fps": 60,
+    "temporal_vs_native": {
+      "paired_interval_ratios": [
+        1.1912838963659953,
+        1.0739722822103268,
+        1.0238399953146273,
+        1.5536974236052818
+      ],
+      "mean_ratio": 1.2106983993740579,
+      "ci95_ratio": [
+        1.0489061387624772,
+        1.433766138256543
+      ],
+      "decision": "uncertain",
+      "method": "10000 paired-run mean bootstrap draws; seed 21434; four pairs; pointwise 95% interval"
+    },
+    "bilinear_vs_native": {
+      "paired_interval_ratios": [
+        1.1943749249809064,
+        1.0045330206847287,
+        0.9626225059426019,
+        1.0141015436095304
+      ],
+      "mean_ratio": 1.0439079988044417,
+      "ci95_ratio": [
+        0.9754922653593341,
+        1.146914448906862
+      ],
+      "decision": "uncertain",
+      "method": "10000 paired-run mean bootstrap draws; seed 21434; four pairs; pointwise 95% interval"
+    },
+    "relation": "These image-only runs add cut smoke evidence but no new timing estimate. They do not overturn the separate four-pair trial recommendation to retain native."
+  }
+}
