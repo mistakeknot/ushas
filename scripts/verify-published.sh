@@ -8,7 +8,7 @@
 # reachable inside the crate but not from outside, a feature that resolves only
 # because a sibling workspace member enabled it.
 #
-#   ./verify-published.sh            # against the published 0.2 on crates.io
+#   ./verify-published.sh            # against the published 0.4 on crates.io
 #   ./verify-published.sh --packaged # against the .crate tarball (pre-publish)
 #
 # --packaged repackages and extracts the tarball itself rather than reusing
@@ -35,7 +35,7 @@ if [[ "${1:-}" == "--packaged" ]]; then
     # a fact about the file, not about the code.
     CRATE_VERSION="$(awk -F'"' '/^version = /{print $2; exit}' "$CRATE_DIR/Cargo.toml")"
     echo "==> repackaging bevy_metalfx $CRATE_VERSION"
-    ( cd "$REPO_ROOT" && cargo package -p bevy_metalfx --quiet )
+    ( cd "$REPO_ROOT" && cargo package -p bevy_metalfx --target-dir "$REPO_ROOT/target" --quiet )
     TARBALL="$REPO_ROOT/target/package/bevy_metalfx-$CRATE_VERSION.crate"
     [[ -f "$TARBALL" ]] || { echo "no tarball at $TARBALL" >&2; exit 2; }
 
@@ -59,7 +59,7 @@ if [[ "${1:-}" == "--packaged" ]]; then
     #
     # Each entry is "description<TAB>grep -E pattern"; a `!` prefix asserts the
     # pattern is ABSENT. Update these when the release changes public API.
-    echo "==> asserting the 0.4 API surface is in the tarball"
+    echo "==> asserting the candidate API surface is in the tarball"
     API_CHECKS=(
         # 0.3 surface — kept, because a regression here is exactly the stale-
         # tarball failure these assertions exist to catch.
@@ -91,6 +91,15 @@ if [[ "${1:-}" == "--packaged" ]]; then
         "raw encoding gets its own command encoder	metalfx_raw_encode"
         "!raw encode never rides the context encoder	let encoder = render_context.command_encoder\(\);"
     )
+    API_CHECKS+=(
+        "effect observations are public	pub struct MetalFxEffectStatus"
+        "pure adaptive controller is public	pub struct AdaptiveController"
+        "validated sample boundary is public	pub struct ValidatedGpuFrameCost"
+        "adaptive status is public	pub struct MetalFxAdaptiveStatus"
+        "history has durable acknowledgements	acknowledge"
+        "interpolation uses real time	fn update_frame_timing\(time: Res<Time<Real>>"
+        "!legacy app-time governor is absent	pub struct AdaptiveScaleState"
+    )
     for check in "${API_CHECKS[@]}"; do
         desc="${check%%$'\t'*}"; pat="${check#*$'\t'}"
         if [[ "$desc" == !* ]]; then
@@ -107,9 +116,11 @@ if [[ "${1:-}" == "--packaged" ]]; then
     done
     DEP="bevy_metalfx = { path = \"$PKG\" }"
     SOURCE="tarball $TARBALL"
+    CANDIDATE_FEATURES="candidate"
 else
     DEP="bevy_metalfx = \"$VERSION\""
     SOURCE="crates.io $VERSION"
+    CANDIDATE_FEATURES=""
 fi
 
 WORK="$(mktemp -d)"
@@ -131,6 +142,7 @@ $DEP
 
 [features]
 temporal = ["bevy_metalfx/temporal"]
+candidate = []
 EOF
 
 cat > "$WORK/src/main.rs" <<'EOF'
@@ -151,6 +163,8 @@ fn main() {
 
         let mut app = App::new();
         app.add_plugins(MinimalPlugins).add_plugins(plugin);
+        #[cfg(feature = "candidate")]
+        verify_candidate(&app);
 
         // Public accessor added in 0.2 — reports the mode that survived any
         // runtime fallback, which is the whole reason it is readable.
@@ -191,6 +205,22 @@ fn main() {
     }
     println!("OK: public API consumed from outside the workspace");
 }
+
+#[cfg(feature = "candidate")]
+fn verify_candidate(app: &App) {
+    use bevy_metalfx::{MetalFxAdaptiveContext, MetalFxAdaptiveStatus,
+        MetalFxEffectState, MetalFxEffectStatus, MetalFxFrameCostInput};
+    use bevy_metalfx::adaptive::{AdaptiveConfig, AdaptiveController};
+    let controller = AdaptiveController::new(AdaptiveConfig::default(), vec![0.5, 1.0], 1.0).unwrap();
+    assert_eq!(controller.current_scale(), 1.0);
+    let effects = app.world().resource::<MetalFxEffectStatus>();
+    let missing = effects.snapshot(42, 1);
+    assert_eq!(missing.state(), MetalFxEffectState::NoRender);
+    assert!(!missing.is_fresh(2, std::time::Duration::from_millis(500)));
+    assert!(app.world().contains_resource::<MetalFxAdaptiveStatus>());
+    assert!(app.world().contains_resource::<MetalFxAdaptiveContext>());
+    assert!(app.world().resource::<MetalFxFrameCostInput>().latest(42).is_none());
+}
 EOF
 
 # Cross-check the non-macOS path. docs.rs builds on Linux, and a macOS-only
@@ -204,7 +234,7 @@ if rustup target list --installed 2>/dev/null | grep -qx "$CROSS_TARGET"; then
     for feats in "--no-default-features --features spatial" "" "--features temporal" \
                  "--features frame-interpolation"; do
         # shellcheck disable=SC2086
-        ( cd "$REPO_ROOT" && cargo check -p bevy_metalfx --target "$CROSS_TARGET" $feats --quiet )
+        cargo check --manifest-path "${PKG:-$REPO_ROOT}/Cargo.toml" --target "$CROSS_TARGET" $feats --quiet
         echo "    ok: ${feats:-default}"
     done
 else
@@ -213,7 +243,11 @@ fi
 
 echo "==> verifying bevy_metalfx from $SOURCE"
 echo "--- spatial (default features) ---"
-cargo run --quiet --manifest-path "$WORK/Cargo.toml"
+RUN_ARGS=(--quiet --manifest-path "$WORK/Cargo.toml")
+if [[ -n "$CANDIDATE_FEATURES" ]]; then
+    RUN_ARGS+=(--features "$CANDIDATE_FEATURES")
+fi
+cargo run "${RUN_ARGS[@]}"
 echo "--- temporal ---"
-cargo run --quiet --manifest-path "$WORK/Cargo.toml" --features temporal
+cargo run --quiet --manifest-path "$WORK/Cargo.toml" --features "temporal${CANDIDATE_FEATURES:+,$CANDIDATE_FEATURES}"
 echo "==> PASS"
