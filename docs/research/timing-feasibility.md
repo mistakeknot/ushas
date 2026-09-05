@@ -178,6 +178,59 @@ have not passed those gates. A failure there should leave the external-signal
 contract available and automatic collection unavailable, with the failure
 reason retained for diagnosis.
 
+## Loaded offscreen readback follow-up
+
+A native MSAA4 run on 2026-09-05 UTC completed queries, but none belonged to
+the measurement window. The artifact is
+`/private/tmp/ushas-roadmap-evidence/claude-marker-stages-native-01.json`, with
+its adjacent `.manifest.json` and PNG. It used the `claude-toy-v1` scene at
+1280×720, Disabled mode, scale 1.0, 8,000 pixel iterations, two seconds of
+warmup and two seconds of measurement. The image passed the nonuniform,
+opaque-pixel check. This was offscreen image rendering, with no presentation
+claim.
+
+The build reported revision `55f5ccaa0bacd416f7eda708de87422d26efa87d` with
+dirty source. The manifest records the exact invocation and dirty paths. Its
+binary SHA-256 remained
+`5811df0f06567be1142fd3507f3c1c014e54d901fe73c22590d8b360fcb494dc`
+before and after the run; the report SHA-256 is
+`9a99f91619edc1e42ada00067261f8f484ed27cd1b14832c2fb3b9ddf981b98f`.
+
+There were 17 completed readbacks: eight `ObservedUnvalidated` and nine
+`Failed`, all outside measured frame IDs 309–403. The retained completion IDs
+spanned 1–238. The ring skipped 492 requests. At the final stage snapshot,
+seven slots awaited mapping and one awaited its workload callback; that
+snapshot was 212 ms old when the report was assembled. The seven mapping
+slots had received their first callbacks 2,317.85–2,331.97 ms after encoding,
+then submitted their resolves only 1.07–1.73 ms later.
+
+The latest completed readback, frame 238, separates the long waits:
+
+| CPU-observed stage | Elapsed time |
+|---|---:|
+| Encode to workload callback | 2,357.54 ms |
+| Workload callback to resolve submission | 1.17 ms |
+| Resolve submission to mapping callback | 2,307.82 ms |
+| Mapping callback to harvest | 1.53 ms |
+| Total encode to harvest | 4,668.06 ms |
+
+That result exceeded the two-second freshness limit and was rejected. The
+empty measured list therefore does not establish an MSAA timestamp failure
+or a complete lack of callbacks. The long delay occurs on both sides of the
+separate resolve submission; the render system dispatches the resolve and
+harvests the mapped result promptly once notified.
+
+These timestamps use CPU `Instant`. wgpu invokes callbacks when submission
+or device polling observes completion, so the long stages combine GPU queue
+waiting/execution and callback polling delay. They do not identify hardware
+completion times or prove which component dominates. An independent trace is
+still needed to separate those causes. The reported 21.08 ms application
+update interval is also not GPU throughput. Keep the marker envelope and any
+quantitative budget forecast unvalidated; this experiment adds readback
+diagnostics, not a governor-ready signal. See the separate
+[marker scope analysis](marker-scope-01.md) for the already observed coverage
+and idle-time limitations.
+
 ## Capture validity before measuring a window
 
 The first half-resolution smoke captures exposed a separate Bevy 0.19 capture
