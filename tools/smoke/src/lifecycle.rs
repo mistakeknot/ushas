@@ -1,7 +1,9 @@
-//! Bounded lifecycle exercises using real window/camera mutations and render observations.
+//! Bounded lifecycle exercises using actual targets, mutations and render observations.
 
+use bevy::camera::RenderTarget;
 use bevy::prelude::*;
-use bevy::render::view::screenshot::{Screenshot, ScreenshotCaptured};
+use bevy::render::render_resource::{TextureDimension, TextureUsages};
+use bevy::render::view::screenshot::ScreenshotCaptured;
 use bevy::window::PrimaryWindow;
 use bevy_metalfx::{
     diagnostic_fault::ScalerFaultSnapshot, MetalFxAdaptiveContext, MetalFxDiagnosticFault,
@@ -102,6 +104,7 @@ pub struct LifecycleRun {
     outcome: Option<bool>,
     error: Option<String>,
     initial_size: Option<[u32; 2]>,
+    initial_target: Option<LifecycleTarget>,
     expected_size: Option<[u32; 2]>,
     initial_scale: Option<f32>,
     epoch_before_change: Option<u64>,
@@ -139,6 +142,7 @@ impl LifecycleRun {
             outcome: None,
             error: None,
             initial_size: None,
+            initial_target: None,
             expected_size: None,
             initial_scale: None,
             epoch_before_change: None,
@@ -191,6 +195,7 @@ impl LifecycleRun {
             "phase":self.phase.name(),"wall_elapsed_s":self.started.elapsed().as_secs_f64(),
             "wall_elapsed_clock":"wall_elapsed_s and event elapsed_s use Instant, which may exclude OS sleep on macOS; native_lifecycle.wall_elapsed_seconds uses sleep-inclusive SystemTime",
             "initial_size":self.initial_size,"expected_size":self.expected_size,"initial_scale":self.initial_scale,
+            "target":self.initial_target.map(LifecycleTarget::report),
             "fault_generation":self.fault_generation,"creation_reason_seen":self.creation_reason_seen,
             "native_lifecycle":self.native_evidence,
             "creation_fault_scope":self.exercise.creation_fault().map(|_|"simulated creation completion only; not a reproduced driver failure or OS sleep; changed-phase pixels exercise the real bilinear fallback"),
@@ -332,6 +337,99 @@ struct LifecycleCapture {
     expected_size: [u32; 2],
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum TargetIdentity {
+    Window(Entity),
+    Image(AssetId<Image>),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct LifecycleTarget {
+    identity: TargetIdentity,
+    size: [u32; 2],
+}
+
+impl LifecycleTarget {
+    fn resolve(
+        exercise: LifecycleExercise,
+        capture: &crate::offscreen::CaptureTarget,
+        images: &Assets<Image>,
+        window: Option<(Entity, [u32; 2])>,
+    ) -> Result<Self, String> {
+        match capture {
+            crate::offscreen::CaptureTarget::Window => {
+                let (entity, size) = window.ok_or("lifecycle requires one primary window")?;
+                Ok(Self {
+                    identity: TargetIdentity::Window(entity),
+                    size,
+                })
+            }
+            crate::offscreen::CaptureTarget::Image(handle) => {
+                if exercise.creation_fault().is_none() {
+                    return Err(
+                        "only creation-failure and creation-slow support image lifecycle targets"
+                            .into(),
+                    );
+                }
+                let image = images
+                    .get(handle)
+                    .ok_or("lifecycle image target is missing")?;
+                let descriptor = &image.texture_descriptor;
+                if descriptor.dimension != TextureDimension::D2
+                    || descriptor.size.depth_or_array_layers != 1
+                    || descriptor.sample_count != 1
+                    || descriptor.size.width == 0
+                    || descriptor.size.height == 0
+                    || !descriptor
+                        .usage
+                        .contains(TextureUsages::RENDER_ATTACHMENT | TextureUsages::COPY_SRC)
+                {
+                    return Err("lifecycle image requires a nonempty single-sample 2D render and readback texture".into());
+                }
+                Ok(Self {
+                    identity: TargetIdentity::Image(handle.id()),
+                    size: [descriptor.size.width, descriptor.size.height],
+                })
+            }
+        }
+    }
+
+    fn matches_camera_target(self, target: &RenderTarget) -> bool {
+        match self.identity {
+            TargetIdentity::Image(id) => target.as_image().is_some_and(|image| image.id() == id),
+            TargetIdentity::Window(primary) => match target {
+                RenderTarget::Window(bevy::window::WindowRef::Primary) => true,
+                RenderTarget::Window(bevy::window::WindowRef::Entity(entity)) => *entity == primary,
+                _ => false,
+            },
+        }
+    }
+
+    fn validate_continuity(self, initial: Self) -> Result<(), String> {
+        if self.identity != initial.identity {
+            Err("lifecycle target was replaced".into())
+        } else if matches!(self.identity, TargetIdentity::Image(_)) && self.size != initial.size {
+            Err("lifecycle image dimensions changed during a fixed-size creation exercise".into())
+        } else {
+            Ok(())
+        }
+    }
+
+    fn report(self) -> Value {
+        match self.identity {
+            TargetIdentity::Window(entity) => {
+                json!({"kind":"window","entity":entity.to_bits(),"size":self.size,
+                "scope":"window target only; no native visibility or OS transition inferred from pixels"})
+            }
+            TargetIdentity::Image(id) => {
+                json!({"kind":"image","asset_id":format!("{id:?}"),"size":self.size,
+                "geometry_source":"actual Image texture descriptor",
+                "scope":"offscreen image creation-fault exercise; no native window, swapchain, OS sleep or panel claim"})
+            }
+        }
+    }
+}
+
 fn capture_phase(
     event: On<ScreenshotCaptured>,
     config: Res<crate::RunConfig>,
@@ -372,7 +470,12 @@ fn capture_phase(
     run.captures.push(proof);
 }
 
-fn require_capture(run: &mut LifecycleRun, commands: &mut Commands, size: [u32; 2]) -> bool {
+fn require_capture(
+    run: &mut LifecycleRun,
+    commands: &mut Commands,
+    size: [u32; 2],
+    target: &crate::offscreen::CaptureTarget,
+) -> bool {
     if run.phase_capture == Some(true) {
         return true;
     }
@@ -380,7 +483,7 @@ fn require_capture(run: &mut LifecycleRun, commands: &mut Commands, size: [u32; 
         run.capture_pending = true;
         commands
             .spawn((
-                Screenshot::primary_window(),
+                target.screenshot(),
                 LifecycleCapture {
                     phase: run.phase,
                     expected_size: size,
@@ -404,23 +507,52 @@ fn exercise(
     mut history: Option<ResMut<MetalFxHistoryReset>>,
     mut fault: ResMut<MetalFxDiagnosticFault>,
     native: Option<Res<crate::window_lifecycle::WindowLifecycle>>,
+    capture_target: Res<crate::offscreen::CaptureTarget>,
+    images: Res<Assets<Image>>,
     mut windows: Query<(Entity, &mut Window), With<PrimaryWindow>>,
-    mut cameras: Query<(Entity, &mut Camera, &mut Transform), With<Camera3d>>,
+    mut cameras: Query<(Entity, &mut Camera, &mut Transform, &RenderTarget), With<Camera3d>>,
 ) {
     if run.finished() {
         return;
     }
     let now = Instant::now();
-    let Ok((window_entity, mut window)) = windows.single_mut() else {
-        fault.clear();
-        run.finish(
-            now,
-            frame.0,
-            Some("lifecycle requires one primary window".into()),
-        );
-        return;
+    let mut window = windows.single_mut().ok();
+    let resolved = LifecycleTarget::resolve(
+        run.exercise,
+        &capture_target,
+        &images,
+        window
+            .as_ref()
+            .map(|(entity, window)| (*entity, [window.physical_width(), window.physical_height()])),
+    );
+    let target = match resolved.and_then(|target| {
+        if let Some(initial) = run.initial_target {
+            target.validate_continuity(initial)?;
+        }
+        if cameras.iter().any(|(_, camera, _, camera_target)| {
+            camera.is_active && !target.matches_camera_target(camera_target)
+        }) {
+            return Err(
+                "active lifecycle camera does not render the selected capture target".into(),
+            );
+        }
+        Ok(target)
+    }) {
+        Ok(target) => target,
+        Err(error) => {
+            fault.clear();
+            restore(
+                &mut run,
+                &mut commands,
+                window.as_mut().map(|(_, window)| &mut **window),
+                &mut cameras,
+            );
+            run.finish(now, frame.0, Some(error));
+            return;
+        }
     };
-    let size = [window.physical_width(), window.physical_height()];
+    run.initial_target.get_or_insert(target);
+    let size = target.size;
     let native_mode = run.exercise.native_lifecycle();
     if native_mode {
         run.native_evidence = native.as_ref().map(|observer| observer.report());
@@ -431,7 +563,7 @@ fn exercise(
     let reset_pending = history.as_ref().is_some_and(|r| r.is_requested());
     let mut views: Vec<_> = cameras
         .iter()
-        .map(|(entity, camera, _)| {
+        .map(|(entity, camera, _, _)| {
             let effect = status.snapshot(entity.to_bits(), frame.0);
             let observed = effect.last_observation.as_ref();
             ViewEvidence {
@@ -497,7 +629,7 @@ fn exercise(
     } else if native_mode
         && run
             .native_window
-            .is_some_and(|original| original != window_entity)
+            .is_some_and(|original| Some(original) != window.as_ref().map(|(entity, _)| *entity))
     {
         Some("the native lifecycle test window was replaced".into())
     } else if (native_mode
@@ -569,7 +701,12 @@ fn exercise(
     };
     if let Some(error) = failure {
         fault.clear();
-        restore(&mut run, &mut commands, &mut window, &mut cameras);
+        restore(
+            &mut run,
+            &mut commands,
+            window.as_mut().map(|(_, window)| &mut **window),
+            &mut cameras,
+        );
         run.finish(now, frame.0, Some(error));
         return;
     }
@@ -606,6 +743,8 @@ fn exercise(
             .epoch_before_change
             .is_none_or(|old| snapshot.epoch > old);
     if native_mode && run.phase == Phase::Changed {
+        let (window_entity, window) = window.as_mut().expect("native lifecycle requires a window");
+        let window_entity = *window_entity;
         let observer = native.as_ref().expect("native observer checked above");
         let cursor = run
             .native_cursor
@@ -663,7 +802,12 @@ fn exercise(
     }
     if run.exercise == LifecycleExercise::InactiveCutResume && run.phase == Phase::Changed {
         if !reset_pending {
-            restore(&mut run, &mut commands, &mut window, &mut cameras);
+            restore(
+                &mut run,
+                &mut commands,
+                window.as_mut().map(|(_, window)| &mut **window),
+                &mut cameras,
+            );
             run.finish(
                 now,
                 frame.0,
@@ -675,7 +819,7 @@ fn exercise(
             && now.duration_since(run.phase_started) >= Duration::from_millis(300)
         {
             if let Some(primary) = run.primary {
-                if let Ok((_, mut camera, _)) = cameras.get_mut(primary) {
+                if let Ok((_, mut camera, _, _)) = cameras.get_mut(primary) {
                     camera.is_active = true;
                 }
             }
@@ -691,6 +835,10 @@ fn exercise(
         return;
     }
     let native_restored = if native_mode && run.phase == Phase::Restored {
+        let window_entity = window
+            .as_ref()
+            .expect("native lifecycle requires a window")
+            .0;
         let observer = native.as_ref().expect("native observer checked above");
         let cursor = run
             .native_cursor
@@ -757,7 +905,9 @@ fn exercise(
     let unsupported_phase =
         run.exercise == LifecycleExercise::MultipleViews && run.phase == Phase::Changed;
     let expected_size = run.expected_size.unwrap();
-    if !unsupported_phase && !require_capture(&mut run, &mut commands, expected_size) {
+    if !unsupported_phase
+        && !require_capture(&mut run, &mut commands, expected_size, &capture_target)
+    {
         return;
     }
     if run.phase == Phase::Initial {
@@ -768,6 +918,9 @@ fn exercise(
                 let changed = [(size[0] * 3 / 4).max(64), (size[1] * 3 / 4).max(64)];
                 run.expected_size = Some(changed);
                 window
+                    .as_mut()
+                    .expect("resize requires a window")
+                    .1
                     .resolution
                     .set_physical_resolution(changed[0], changed[1]);
                 run.event(
@@ -779,7 +932,7 @@ fn exercise(
             }
             LifecycleExercise::CameraCut | LifecycleExercise::InactiveCutResume => {
                 if let Some(primary) = run.primary {
-                    if let Ok((_, mut camera, mut transform)) = cameras.get_mut(primary) {
+                    if let Ok((_, mut camera, mut transform, _)) = cameras.get_mut(primary) {
                         transform.rotate_y(0.25);
                         if run.exercise == LifecycleExercise::InactiveCutResume {
                             camera.is_active = false;
@@ -829,6 +982,9 @@ fn exercise(
                     "reset_pending":true,"scope":"simulated creation result; no driver fault induced"}));
             }
             LifecycleExercise::WindowMinimize | LifecycleExercise::OsSleepResume => {
+                let (window_entity, window) =
+                    window.as_mut().expect("native lifecycle requires a window");
+                let window_entity = *window_entity;
                 let observer = native.as_ref().expect("native observer checked above");
                 run.native_window = Some(window_entity);
                 if run.exercise == LifecycleExercise::WindowMinimize {
@@ -851,6 +1007,9 @@ fn exercise(
                 let original = run.initial_size.unwrap();
                 run.expected_size = Some(original);
                 window
+                    .as_mut()
+                    .expect("resize requires a window")
+                    .1
                     .resolution
                     .set_physical_resolution(original[0], original[1]);
                 run.event(
@@ -917,20 +1076,27 @@ fn exercise(
 fn restore(
     run: &mut LifecycleRun,
     commands: &mut Commands,
-    window: &mut Window,
-    cameras: &mut Query<(Entity, &mut Camera, &mut Transform), With<Camera3d>>,
+    window: Option<&mut Window>,
+    cameras: &mut Query<(Entity, &mut Camera, &mut Transform, &RenderTarget), With<Camera3d>>,
 ) {
-    if run.exercise == LifecycleExercise::WindowMinimize {
-        window.set_minimized(false);
-    }
-    if let Some(size) = run.initial_size {
-        window.resolution.set_physical_resolution(size[0], size[1]);
+    if let Some(window) = window {
+        if run.exercise == LifecycleExercise::WindowMinimize {
+            window.set_minimized(false);
+        }
+        if matches!(
+            run.initial_target.map(|target| target.identity),
+            Some(TargetIdentity::Window(_))
+        ) {
+            if let Some(size) = run.initial_size {
+                window.resolution.set_physical_resolution(size[0], size[1]);
+            }
+        }
     }
     if let Some(extra) = run.secondary.take() {
         commands.entity(extra).despawn();
     }
     if let Some(primary) = run.primary {
-        if let Ok((_, mut camera, _)) = cameras.get_mut(primary) {
+        if let Ok((_, mut camera, _, _)) = cameras.get_mut(primary) {
             camera.is_active = true;
         }
     }
@@ -963,6 +1129,122 @@ fn capture_is_valid(proof: &Value, actual: [u32; 2], expected: [u32; 2]) -> bool
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn offscreen_fault_target_uses_the_real_image_without_a_window() {
+        let mut images = Assets::<Image>::default();
+        let handle = images.add(crate::offscreen::render_image(320, 180));
+        let capture = crate::offscreen::CaptureTarget::Image(handle.clone());
+        for exercise in [
+            LifecycleExercise::CreationFailure,
+            LifecycleExercise::CreationSlow,
+        ] {
+            for metadata in [None, Some((Entity::from_bits(7), [1280, 720]))] {
+                let target =
+                    LifecycleTarget::resolve(exercise, &capture, &images, metadata).unwrap();
+                assert_eq!(target.identity, TargetIdentity::Image(handle.id()));
+                assert_eq!(target.size, [320, 180]);
+            }
+        }
+        for exercise in [
+            LifecycleExercise::Resize,
+            LifecycleExercise::CameraCut,
+            LifecycleExercise::LateCamera,
+            LifecycleExercise::MultipleViews,
+            LifecycleExercise::InactiveCutResume,
+            LifecycleExercise::WindowMinimize,
+            LifecycleExercise::OsSleepResume,
+        ] {
+            assert!(LifecycleTarget::resolve(exercise, &capture, &images, None).is_err());
+        }
+        images
+            .get_mut(&handle)
+            .unwrap()
+            .texture_descriptor
+            .size
+            .width = 0;
+        assert!(LifecycleTarget::resolve(
+            LifecycleExercise::CreationFailure,
+            &capture,
+            &images,
+            None
+        )
+        .is_err());
+        images.remove(handle.id());
+        assert!(LifecycleTarget::resolve(
+            LifecycleExercise::CreationFailure,
+            &capture,
+            &images,
+            None
+        )
+        .is_err());
+    }
+
+    #[test]
+    fn offscreen_fault_camera_must_render_the_selected_image() {
+        let mut images = Assets::<Image>::default();
+        let handle = images.add(crate::offscreen::render_image(320, 180));
+        let other = images.add(crate::offscreen::render_image(320, 180));
+        let target = LifecycleTarget {
+            identity: TargetIdentity::Image(handle.id()),
+            size: [320, 180],
+        };
+        assert!(target.matches_camera_target(&handle.into()));
+        assert!(!target.matches_camera_target(&other.into()));
+        assert!(!target.matches_camera_target(&bevy::camera::RenderTarget::default()));
+    }
+
+    #[test]
+    fn window_capture_rejects_a_camera_on_another_same_sized_window() {
+        let primary = Entity::from_bits(7);
+        let other = Entity::from_bits(8);
+        let target = LifecycleTarget {
+            identity: TargetIdentity::Window(primary),
+            size: [320, 180],
+        };
+        assert!(target.matches_camera_target(&RenderTarget::default()));
+        assert!(target.matches_camera_target(&RenderTarget::Window(
+            bevy::window::WindowRef::Entity(primary)
+        )));
+        assert!(!target.matches_camera_target(&RenderTarget::Window(
+            bevy::window::WindowRef::Entity(other)
+        )));
+    }
+
+    #[test]
+    fn offscreen_fault_target_replacement_or_resize_cannot_reuse_old_evidence() {
+        let mut images = Assets::<Image>::default();
+        let handle = images.add(crate::offscreen::render_image(320, 180));
+        let other = images.add(crate::offscreen::render_image(320, 180));
+        let initial = LifecycleTarget {
+            identity: TargetIdentity::Image(handle.id()),
+            size: [320, 180],
+        };
+        assert!(initial.validate_continuity(initial).is_ok());
+        assert!(LifecycleTarget {
+            identity: TargetIdentity::Image(other.id()),
+            ..initial
+        }
+        .validate_continuity(initial)
+        .is_err());
+        assert!(LifecycleTarget {
+            size: [640, 360],
+            ..initial
+        }
+        .validate_continuity(initial)
+        .is_err());
+        let window = LifecycleTarget {
+            identity: TargetIdentity::Window(Entity::from_bits(7)),
+            ..initial
+        };
+        assert!(window.validate_continuity(initial).is_err());
+        assert!(LifecycleTarget {
+            size: [640, 360],
+            ..window
+        }
+        .validate_continuity(window)
+        .is_ok());
+    }
 
     fn view() -> ViewEvidence {
         ViewEvidence {

@@ -146,8 +146,19 @@ impl Config {
                 "creation faults and native lifecycle exercises require temporal mode".into(),
             );
         }
-        if c.offscreen && (c.lifecycle.is_some() || c.adaptive || c.mode == "interpolate") {
-            return Err("offscreen supports fixed-scale disabled/spatial/temporal rendering only; lifecycle, adaptive and interpolation require the window fixture".into());
+        let offscreen_creation_fault = matches!(
+            c.lifecycle.as_deref(),
+            Some("creation-failure" | "creation-slow")
+        );
+        if c.offscreen
+            && ((c.lifecycle.is_some() && !offscreen_creation_fault)
+                || c.adaptive
+                || c.mode == "interpolate")
+        {
+            return Err("offscreen supports fixed-scale rendering and Temporal creation-fault exercises; other lifecycle modes, adaptive and interpolation require the window fixture".into());
+        }
+        if c.lifecycle.is_some() && (c.completion || c.quality_sequence) {
+            return Err("lifecycle owns its captures and cannot be combined with completion or quality-sequence".into());
         }
         if c.completion && (!c.offscreen || c.experimental_timing) {
             return Err("completion requires offscreen rendering without experimental timestamp instrumentation".into());
@@ -270,6 +281,38 @@ mod tests {
             assert!(parse(&["--lifecycle", exercise]).is_err());
             assert!(parse(&["--mode", "spatial", "--lifecycle", exercise]).is_err());
             assert!(parse(&["--mode", "temporal", "--lifecycle", exercise]).is_ok());
+        }
+    }
+
+    #[test]
+    fn offscreen_creation_recovery_owns_its_capture_protocol() {
+        for exercise in ["creation-failure", "creation-slow"] {
+            let args = ["--offscreen", "--mode", "temporal", "--lifecycle", exercise];
+            assert!(parse(&args).is_ok(), "rejected {args:?}");
+            for extra in [
+                "--completion",
+                "--quality-sequence",
+                "--quality-moving-reset",
+                "--adaptive",
+            ] {
+                let mut combined = args.to_vec();
+                combined.push(extra);
+                assert!(parse(&combined).is_err(), "accepted {combined:?}");
+            }
+        }
+        for exercise in [
+            "resize",
+            "camera-cut",
+            "late-camera",
+            "multiple-views",
+            "inactive-cut-resume",
+            "window-minimize",
+            "os-sleep-resume",
+            "unknown",
+        ] {
+            assert!(
+                parse(&["--offscreen", "--mode", "temporal", "--lifecycle", exercise]).is_err()
+            );
         }
     }
 

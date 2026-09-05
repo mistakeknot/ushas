@@ -81,7 +81,7 @@ fn main() -> AppExit {
             [--lifecycle resize|camera-cut|late-camera|multiple-views|inactive-cut-resume]\n\
             [--lifecycle creation-failure|creation-slow: synthetic creation faults, temporal only]\n\
             [--lifecycle window-minimize|os-sleep-resume: observed native transitions, temporal only]\n\
-            [--offscreen: fixed-scale image rendering; no lifecycle/adaptive/interpolation/presentation]\n\
+            [--offscreen: fixed-scale image rendering; creation faults supported, native lifecycle/adaptive/interpolation require a window]\n\
             [--quality-sequence: offscreen deterministic twelve-image Claude sequence]\n\
             [--quality-moving-reset: offscreen Claude sequence with all sixteen moving post-cut steps]\n\
             [--completion: offscreen serial completed-render cadence, one frame in flight]\n\

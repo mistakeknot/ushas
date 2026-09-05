@@ -133,6 +133,16 @@ unconsumed history reset, and real Temporal output after releasing the fault.
 These are simulated creation outcomes; they do not reproduce a driver crash.
 The library feature is off by default.
 
+The two creation exercises also support `--offscreen`. They resolve geometry
+from the actual image asset, require the camera to keep rendering that same
+target, and retain initial, fallback and recovered captures. They reject
+`--completion` and quality-sequence modes, which have their own capture protocols.
+
+```sh
+python3 tools/smoke/run.py --timeout 60 -- --offscreen --mode temporal \
+  --scale 0.5 --lifecycle creation-slow --out /tmp/ushas-creation-slow-001.json
+```
+
 `window-minimize` requests minimize/restore of its own test window and requires
 both actual `WindowOccluded` events and native minimized-state transitions.
 `os-sleep-resume` observes externally initiated NSWorkspace system sleep/wake
@@ -152,8 +162,10 @@ or drawable, and captures that same image target, including native-resolution
 UI. This isolates image rendering from display availability and drawable waits;
 it does not measure presentation. Compare offscreen arms only with other
 offscreen arms because the target format and scheduling differ from the window
-fixture. Adaptive control, lifecycle exercises, and interpolation require the
-window fixture and are rejected with `--offscreen`.
+fixture. Adaptive control, interpolation and lifecycle exercises other than
+the two creation faults require the window fixture and are rejected with
+`--offscreen`. Image-target recovery does not establish native window or OS
+sleep recovery.
 
 ```sh
 python3 tools/smoke/run.py -- --offscreen --mode temporal --scale 0.5 \
