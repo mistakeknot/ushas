@@ -45,6 +45,7 @@ impl MetalFxHistoryReset {
         self.generation() > self.state.acknowledged.load(Ordering::Acquire)
     }
 
+    #[cfg(any(target_os = "macos", test))]
     pub(crate) fn pending_request(&self) -> Option<HistoryResetRequest> {
         let generation = self.generation();
         (generation > self.state.acknowledged.load(Ordering::Acquire)).then(|| {
@@ -73,11 +74,13 @@ impl ExtractResource for MetalFxHistoryReset {
 }
 
 /// A captured request. Dropping it without encoding leaves the request pending.
+#[cfg(any(target_os = "macos", test))]
 pub(crate) struct HistoryResetRequest {
     state: Arc<ResetState>,
     generation: u64,
 }
 
+#[cfg(any(target_os = "macos", test))]
 impl HistoryResetRequest {
     /// Call only after an actual temporal/interpolation reset encode succeeded.
     pub(crate) fn acknowledge(self) {

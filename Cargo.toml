@@ -18,16 +18,16 @@ readme = "README.md"
 # out of the package.
 exclude = ["examples/", "scripts/", "tools/"]
 
-# docs.rs must build on x86_64-unknown-linux-gnu, where this crate is almost
-# entirely #[cfg]'d out, so the rendered docs show the non-macOS stub rather
-# than the real API. That is not fixable from here.
+# docs.rs builds on x86_64-unknown-linux-gnu. The portable controller, effect
+# status and history APIs render there; macOS renderer and presentation modules
+# remain platform-gated. CI checks both the portable and complete macOS docs.
 #
 # 0.2.0 tried `default-target = "aarch64-apple-darwin"` and the build FAILED:
 # docs.rs cross-compiles from a Linux container and still has to compile the
 # dependency graph, and `blake3` (pulled in by bevy_asset, so unavoidable for
 # any bevy crate) has a cc-rs build script. Targeting Apple makes it pass
 # `-arch arm64 -mmacosx-version-min=11.0` to Linux gcc, which rejects them.
-# A failed build means no docs page at all — strictly worse than the stub.
+# A failed build means no docs page at all.
 #
 # So: build where it can build. `all-features` still helps, and the real API
 # docs are verified on a macOS runner by .github/workflows/ci.yml.

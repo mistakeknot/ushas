@@ -85,6 +85,17 @@ is checked again after a replacement.
 
 ## API Reference
 
+The Development APIs below require the source candidate, rather than the
+published 0.4 quick start:
+
+```toml
+bevy_metalfx = { git = "https://github.com/mistakeknot/ushas", rev = "288718b8ef4e6a733030c27930ddaa5af2c345cc", features = ["temporal"] }
+```
+
+This revision is an unpublished candidate; hardware validation and release
+preparation continue separately. A local checkout can use `path = "../ushas"`
+in place of `git` and `rev`.
+
 | Type | Purpose |
 |------|---------|
 | `MetalFxPlugin` | Initial mode, render scale, and adaptive opt-in |
@@ -235,9 +246,12 @@ fn on_teleport(mut reset: ResMut<MetalFxHistoryReset>) {
 }
 ```
 
-The request applies to the next rendered frame and clears itself. Spatial mode
-ignores it. For adaptive consumers, also reset the measurement context after a
-workload discontinuity so old cost evidence does not drive the new scene.
+The request stays pending until a Temporal or FrameInterpolation command
+encodes the reset. Inactive views, pending scalers, and failed encode attempts
+preserve it; Spatial mode does not consume it. An older frame's acknowledgement
+cannot clear a newer request. This acknowledgement proves command encoding,
+not GPU completion. For adaptive consumers, also reset the measurement context
+after a workload discontinuity so old cost evidence does not drive the new scene.
 
 ### GPU Timing and Measurement
 
@@ -256,7 +270,7 @@ output preservation, and overhead require validation; `ObservedUnvalidated`
 remains unvalidated even when timestamps are positive. This plugin never feeds
 the adaptive governor.
 
-Use the [standalone render smoke](tools/smoke/README.md) for the build command,
+Use the [standalone render smoke](https://github.com/mistakeknot/ushas/blob/main/tools/smoke/README.md) for the build command,
 readiness gates, matching control arms, captures, and artifact contract. A
 passing capture is evidence of rendered content, not physical panel delivery.
 No new GPU speedup or automatic timing validation is claimed for this development
@@ -431,7 +445,7 @@ temporal upscaling, 0.1 never worked for you off macOS; 0.2 does.
 - [API docs on docs.rs](https://docs.rs/bevy_metalfx)
 - [Apple MetalFX documentation](https://developer.apple.com/documentation/metalfx)
 - [objc2-metal-fx bindings](https://docs.rs/objc2-metal-fx)
-- [Render smoke and measurement procedure](tools/smoke/README.md)
+- [Render smoke and measurement procedure](https://github.com/mistakeknot/ushas/blob/main/tools/smoke/README.md)
 
 ## License
 

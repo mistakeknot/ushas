@@ -6,11 +6,11 @@
 //!
 //! <div class="warning">
 //!
-//! **If you are reading this on docs.rs, you are seeing the non-macOS stub.**
+//! **docs.rs shows the portable API built on Linux.**
 //!
-//! Almost everything here is `#[cfg(target_os = "macos")]`, and docs.rs builds
-//! on Linux. The `present` and `gpu_timing` modules are missing from the
-//! rendered page entirely, and platform-specific [`MetalFxPlugin`] fields are omitted.
+//! The controller, effect observations, and history requests are available there.
+//! The macOS renderer, timing, and presentation modules and platform-specific
+//! [`MetalFxPlugin`] fields require native documentation built on a Mac.
 //!
 //! Pinning docs.rs to an Apple target does not work: it cross-compiles from a
 //! Linux container and must still build the dependency graph, and `blake3`
@@ -1372,6 +1372,7 @@ mod tests {
                 Some(MetalFxMode::Disabled),
                 "the reported mode must say Disabled, not the requested mode"
             );
+            #[cfg(target_os = "macos")]
             assert!(
                 world.get_resource::<GpuTimingDiag>().is_some(),
                 "GpuTimingDiag must exist at scale {scale} in Disabled mode — this is \

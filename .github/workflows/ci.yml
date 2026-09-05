@@ -1,5 +1,5 @@
 # bevy_metalfx is published to crates.io, so its build surface is wider than a
-# single `cargo check`: four feature combinations, two platforms, and a docs
+# single `cargo check`: five feature combinations, two platforms, and a docs
 # build that renders for a target the crate cannot run on.
 #
 # This matrix exists because three real defects shipped through a plain
@@ -29,8 +29,10 @@ concurrency:
 
 env:
   CARGO_TERM_COLOR: always
+  # Match rust-toolchain.toml; test the development compiler deliberately.
+  RUST_TOOLCHAIN: '1.97.1'
   # A warning here is a defect: every one of the bugs above first appeared as
-  # one. The crate is warning-clean in all four combos on both platforms.
+  # one. Every platform and feature combination must remain warning-clean.
   RUSTFLAGS: -D warnings
 
 jobs:
@@ -39,14 +41,16 @@ jobs:
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
-      # Both axes are matrix dimensions so this is a genuine 2x4 cross-product,
-      # eight jobs. Listing the feature sets under `include:` instead would not
+      # Both axes are matrix dimensions so this is a genuine 2x5 cross-product,
+      # ten jobs. Listing the feature sets under `include:` instead would not
       # do that: include entries that do not match an existing combination get
       # merged into every combination in order, so each would overwrite the
       # last and only the final one would run.
       matrix:
         os: [macos-latest, ubuntu-latest]
         features:
+          - name: minimal
+            flags: --no-default-features
           - name: spatial
             flags: --no-default-features --features spatial
           - name: default
@@ -58,7 +62,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ env.RUST_TOOLCHAIN }}
+          components: clippy
 
       - uses: Swatinem/rust-cache@v2
         with:
@@ -70,19 +77,45 @@ jobs:
       - name: Check
         run: cargo check ${{ matrix.features.flags }} --all-targets
 
-      # Tests are pure logic (presentation telemetry maths) but the module they
-      # live in is macOS-only, so they only exist on that runner.
-      - name: Test
-        if: runner.os == 'macOS'
-        run: cargo test ${{ matrix.features.flags }}
+      # Controller, status, freshness and history contracts also run on Linux.
+      # Keep GPU-device probing in an explicitly invoked hardware validation.
+      - name: Test CPU contracts
+        run: cargo test ${{ matrix.features.flags }} --lib -- --skip platform::device_band_tests::the_device_reports_its_temporal_band
+
+      - name: Check doctests
+        run: cargo test ${{ matrix.features.flags }} --doc
+
+      - name: Clippy
+        run: cargo clippy ${{ matrix.features.flags }} --lib -- -D warnings
+
+  msrv:
+    name: Rust 1.95 / ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, ubuntu-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: '1.95.0'
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: metalfx-msrv
+      - name: Check the declared minimum compiler
+        run: |
+          cargo check --no-default-features --lib
+          cargo check --all-features --lib
 
   fmt:
     name: rustfmt
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@master
         with:
+          toolchain: ${{ env.RUST_TOOLCHAIN }}
           components: rustfmt
       - run: cargo fmt -- --check
 
@@ -92,7 +125,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ env.RUST_TOOLCHAIN }}
 
       - uses: Swatinem/rust-cache@v2
 
@@ -119,13 +154,21 @@ jobs:
           RUSTDOCFLAGS: -D warnings
         run: cargo doc --target aarch64-apple-darwin --all-features --no-deps
 
+      - name: Assert portable API documentation exists on Linux
+        run: |
+          DOC=target/x86_64-unknown-linux-gnu/doc/bevy_metalfx
+          for item in adaptive effect/struct.MetalFxEffectStatus.html \
+                      adaptive_runtime/struct.MetalFxAdaptiveConfig.html struct.MetalFxHistoryReset.html; do
+            test -e "$DOC/$item" || { echo "::error::missing portable API docs: $item"; exit 1; }
+          done
+
       # A green docs build is not enough: docs that build fine while describing
       # the wrong platform is the failure mode this guards.
       - name: Assert the macOS docs contain the macOS API
         run: |
           DOC=target/aarch64-apple-darwin/doc/bevy_metalfx
           fail=0
-          for item in present gpu_timing struct.MetalFxPlugin.html; do
+          for item in present gpu_timing frame_timing struct.MetalFxPlugin.html; do
             if [ ! -e "$DOC/$item" ]; then
               echo "::error::missing from generated docs: $item"
               fail=1
@@ -181,7 +224,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ env.RUST_TOOLCHAIN }}
 
       - uses: Swatinem/rust-cache@v2
 
@@ -199,6 +244,9 @@ jobs:
           echo "packaged $(find "$PKG" -type f | wc -l | tr -d ' ') files from $TARBALL"
           fail=0
           for required in LICENSE-MIT LICENSE-APACHE README.md src/lib.rs \
+                          src/adaptive.rs src/adaptive_runtime.rs src/effect.rs \
+                          src/effect_runtime.rs src/history.rs src/control_upscale.rs \
+                          src/frame_timing.rs \
                           src/node/depth_resolve.wgsl src/node/motion_resolve.wgsl; do
             if [ ! -f "$PKG/$required" ]; then
               echo "::error::missing from published tarball: $required"
@@ -206,3 +254,8 @@ jobs:
             fi
           done
           exit $fail
+
+      - name: Check all features from the packaged artifact
+        run: |
+          VERSION=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)
+          cargo check --manifest-path "target/package/bevy_metalfx-$VERSION/Cargo.toml" --all-features
