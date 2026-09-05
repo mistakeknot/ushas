@@ -708,7 +708,7 @@ impl bevy::app::Plugin for MetalFxPlugin {
         >::default());
 
         // Frame interpolation needs the real inter-frame interval; mirror the
-        // main world's `Time` delta into the render world (which has no `Time`).
+        // main world's `Time<Real>` delta into the render world.
         #[cfg(target_os = "macos")]
         if effective_mode == MetalFxMode::FrameInterpolation {
             app.insert_resource(MetalFxFrameTiming::default());
@@ -989,14 +989,15 @@ fn sync_config_scale(scale: Res<MetalFxRenderScale>, mut config: ResMut<MetalFxC
     }
 }
 
-/// Mirror the main-world frame delta into [`MetalFxFrameTiming`] for extraction.
+/// Mirror the real main-world frame delta into [`MetalFxFrameTiming`] for extraction.
+/// Game-time pausing and speed changes must not alter this interval.
 ///
 /// Clamped to a sane interval: MetalFX divides by `deltaTime` internally, so a
-/// zero (first frame, or a paused clock) would poison the interpolation, and a
+/// zero on the first frame would poison the interpolation, and a
 /// multi-second hitch would extrapolate motion absurdly far. The bounds span
 /// ~1000 Hz down to ~5 Hz.
 #[cfg(target_os = "macos")]
-fn update_frame_timing(time: Res<Time>, mut timing: ResMut<MetalFxFrameTiming>) {
+fn update_frame_timing(time: Res<Time<Real>>, mut timing: ResMut<MetalFxFrameTiming>) {
     timing.delta_seconds = time.delta_secs().clamp(0.001, 0.2);
 }
 
@@ -1139,6 +1140,66 @@ pub fn device_scale_band(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(target_os = "macos")]
+    fn interpolation_timing_app() -> App {
+        let mut app = App::new();
+        app.add_plugins(bevy::time::TimePlugin)
+            .insert_resource(bevy::time::TimeUpdateStrategy::ManualDuration(
+                std::time::Duration::from_millis(20),
+            ))
+            .init_resource::<MetalFxFrameTiming>()
+            .add_systems(Update, update_frame_timing);
+        app
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn interpolation_frame_timing_ignores_virtual_pause_and_speed() {
+        let mut app = interpolation_timing_app();
+        app.update();
+        for (paused, speed) in [(true, 1.0), (false, 0.25), (false, 2.0)] {
+            {
+                let mut virtual_time = app.world_mut().resource_mut::<Time<Virtual>>();
+                virtual_time.set_relative_speed(speed);
+                if paused {
+                    virtual_time.pause();
+                } else {
+                    virtual_time.unpause();
+                }
+            }
+            app.update();
+            let world = app.world();
+            assert_eq!(world.resource::<Time<Real>>().delta_secs(), 0.02);
+            assert_ne!(world.resource::<Time>().delta_secs(), 0.02);
+            assert_eq!(
+                world.resource::<MetalFxFrameTiming>().delta_seconds,
+                0.02,
+                "virtual pause={paused} speed={speed} must not alter interpolation's real interval"
+            );
+        }
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn interpolation_frame_timing_clamps_first_frame_and_real_hitch() {
+        let mut app = interpolation_timing_app();
+        app.update();
+        assert_eq!(app.world().resource::<Time<Real>>().delta_secs(), 0.0);
+        assert_eq!(
+            app.world().resource::<MetalFxFrameTiming>().delta_seconds,
+            0.001
+        );
+        app.insert_resource(bevy::time::TimeUpdateStrategy::ManualDuration(
+            std::time::Duration::from_secs(2),
+        ));
+        app.update();
+        assert_eq!(app.world().resource::<Time<Real>>().delta_secs(), 2.0);
+        assert_eq!(
+            app.world().resource::<MetalFxFrameTiming>().delta_seconds,
+            0.2
+        );
+    }
 
     /// The adaptive band must BE the governor's ladder, not a copy of it.
     ///
