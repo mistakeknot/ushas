@@ -1,0 +1,156 @@
+{
+  "schema": 1,
+  "status": "environment_unavailable",
+  "valid": false,
+  "exit_code": 3,
+  "net_benefit_verdict": "not_established",
+  "scope": "One blocked preflight attempt with two near-simultaneous boundary samples; no renderer execution or presentation measurement.",
+  "started_utc": "2026-09-05T03:58:01.055319+00:00",
+  "finished_utc": "2026-09-05T03:58:01.140934+00:00",
+  "binary_sha256": "5c773aba90f70229d03f1ac87045045f11a6f2e435bb9bc21f55e1b0266b4744",
+  "expected_compiled_source_revision": "56a3b16c8c1c8f12a5320adc5082c6d20b6378c1",
+  "invoker_revision": "55755d15eea77513704192262b4c0112e8e50f97",
+  "invoker_clean": true,
+  "argv": [
+    "tools/smoke/presentation_probe.py",
+    "--binary",
+    "/private/tmp/ushas-completion-artifacts-01/ushas-smoke",
+    "--source-revision",
+    "56a3b16c8c1c8f12a5320adc5082c6d20b6378c1",
+    "--out",
+    "/private/tmp/ushas-roadmap-evidence/presentation-diagnostic-01"
+  ],
+  "parent": {
+    "pid": 90921,
+    "ppid": 45219,
+    "cwd": "/Users/sma/projects/ushas",
+    "python": "/opt/homebrew/opt/python@3.14/bin/python3.14",
+    "manifest": null,
+    "manifest_sha256": null
+  },
+  "environment": {},
+  "environment_sha256": "bbaee3218de5c0ee6e8622b897ad7a3e9fd128f5dbac050a027f0f4c33a929bb",
+  "environment_hash_scope": "Hash of complete inherited environment; only render-related values disclosed.",
+  "tool_sha256": {
+    "run.py": "b2854209f7b116110e819219a802289fa67970b9ab154a6d01f59af8f027b430",
+    "presentation_probe.py": "794e44c1db2745bee0247e36a27ccc5f714cd0492c0b15c147058ad912a0973f"
+  },
+  "display_samples": [
+    {
+      "display_id": 1,
+      "awake": false,
+      "locked": true,
+      "on_console": true,
+      "lock_source": "CGSessionCopyCurrentDictionary",
+      "lock_error": null,
+      "error": null,
+      "elapsed_s": 0.006590124998183455,
+      "utc": "2026-09-05T03:58:01.107447+00:00"
+    },
+    {
+      "display_id": 1,
+      "awake": false,
+      "locked": true,
+      "on_console": true,
+      "lock_source": "CGSessionCopyCurrentDictionary",
+      "lock_error": null,
+      "error": null,
+      "elapsed_s": 0.006942332998733036,
+      "utc": "2026-09-05T03:58:01.107796+00:00"
+    }
+  ],
+  "observed": {
+    "main_display_id": 1,
+    "awake": false,
+    "locked": true,
+    "on_console": true,
+    "lock_source": "CGSessionCopyCurrentDictionary",
+    "probe_errors": [],
+    "sample_count": 2,
+    "samples_span_seconds": 0.0003522080005495809
+  },
+  "arms": [
+    {
+      "arm": "temporal-only",
+      "mode": "temporal",
+      "presentation": "default",
+      "argv": [
+        "/opt/homebrew/opt/python@3.14/bin/python3.14",
+        "/Users/sma/projects/ushas/tools/smoke/run.py",
+        "--timeout",
+        "65",
+        "--binary",
+        "/private/tmp/ushas-completion-artifacts-01/ushas-smoke",
+        "--",
+        "--subject",
+        "claude",
+        "--mode",
+        "temporal",
+        "--presentation",
+        "default",
+        "--refresh-hz",
+        "120",
+        "--scale",
+        "0.5",
+        "--width",
+        "1280",
+        "--height",
+        "720",
+        "--pixel-iterations",
+        "20000",
+        "--warmup",
+        "2",
+        "--seconds",
+        "6",
+        "--out",
+        "/private/tmp/ushas-roadmap-evidence/presentation-diagnostic-01/temporal-only.json"
+      ],
+      "argv_sha256": "3cac8861d80fd5990bd618c2faa8b7e118367a08fead16f126b68ff1468ce304",
+      "process": {
+        "exit_code": 3,
+        "timed_out": false,
+        "child_exit_code": null,
+        "status": "environment_unavailable"
+      },
+      "status": "environment_unavailable",
+      "display_errors": [
+        "display asleep or unknown",
+        "session locked, off-console, or unknown"
+      ],
+      "evidence_errors": [
+        "not launched: environment_unavailable"
+      ],
+      "render_evidence_valid": false,
+      "valid": false,
+      "observed_presentation": null,
+      "presentation_disposition": "unavailable_invalid_child_evidence",
+      "net_benefit_verdict": "not_established"
+    },
+    {
+      "arm": "interpolation-single",
+      "mode": "interpolate",
+      "presentation": "single",
+      "status": "skipped",
+      "skipped": "environment unavailable at preceding arm preflight"
+    },
+    {
+      "arm": "interpolation-dual",
+      "mode": "interpolate",
+      "presentation": "dual",
+      "status": "skipped",
+      "skipped": "environment unavailable at preceding arm preflight"
+    }
+  ],
+  "renderer_launches": 0,
+  "completed_gpu_arms": 0,
+  "png_captures": 0,
+  "interpretation": "Display asleep and session explicitly locked caused the initial temporal-only preflight to block. Single/dual interpolation were skipped, not measured. This attempt neither proves nor disproves interpolation performance, panel presentation, frame ordering/content, or latency.",
+  "future_gate": "A fresh invocation with explicit awake/unlocked/on-console samples is needed to collect these diagnostic arms. Even then the existing aggregate sink cannot establish frame-kind/order/content/latency or net benefit.",
+  "archive": {
+    "directory": "/Users/sma/projects/docs/ushas/evidence/presentation-diagnostic-01",
+    "manifest_sha256": "edb26b35c30b986a11ffc5bd2d63b8a593e3d1c4db83d6615df2c415fd27d46c",
+    "payload_files": 7,
+    "payload_bytes": 84815,
+    "original_manifest_sha256": "257d2df28e8725c213847ad049ab13006f7dba3e87bfbf03c2c60bc6a5ba7479"
+  }
+}
