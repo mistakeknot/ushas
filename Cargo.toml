@@ -1,6 +1,6 @@
 [package]
 name = "bevy_metalfx"
-version = "0.4.2"
+version = "0.5.0-rc.1"
 edition = "2021"
 authors = ["mk <mk@generalsystemsventures.com>"]
 description = "Bevy plugin for Apple MetalFX upscaling and frame interpolation"

@@ -9,8 +9,9 @@ commit history when this file was added.
 
 ## [Unreleased]
 
-Development changes intended for **0.5**. These APIs are not published;
-package metadata and the README's crates.io quick start remain at 0.4.2 / 0.4.
+The checkout is the unpublished **0.5.0-rc.1** candidate. These APIs are not
+published; the README's crates.io quick start remains on the released 0.4 series.
+Hardware and release acceptance gates are still in progress.
 
 ### Added
 
@@ -61,6 +62,11 @@ package metadata and the README's crates.io quick start remain at 0.4.2 / 0.4.
 
 ### Fixed
 
+- Temporal jitter now uses the actual pixel displacement from Bevy's perspective
+  projection. The previous horizontal sign produced a reproducible sawtooth
+  artifact in static geometry; paired captured images confirm the correction.
+- Frame interpolation uses `Time<Real>` for its inter-frame interval, so pausing
+  or changing simulation speed does not alter interpolation timing.
 - The reduced-scale `Disabled` comparison uses bilinear sampling of the actual
   content region. Bevy 0.19's final blit sampled the full allocated texture with
   nearest filtering, so it did not provide a valid reduced-scale control.

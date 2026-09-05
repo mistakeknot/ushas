@@ -11,8 +11,9 @@ image. Whether this improves frame cost depends on the workload and hardware.
 The repository is `ushas`; its published crate is `bevy_metalfx`.
 **The quick start below uses the published 0.4 series. Sections marked
 Development describe unpublished changes intended for 0.5, including a breaking
-adaptive-controller replacement.** The checkout's package version remains 0.4.2
-until a release is prepared. See [CHANGELOG.md](CHANGELOG.md).
+adaptive-controller replacement.** The checkout is the unpublished
+`0.5.0-rc.1` candidate; hardware and release gates are still in progress.
+See [CHANGELOG.md](CHANGELOG.md).
 
 ## Quick Start
 

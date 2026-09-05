@@ -879,7 +879,7 @@ dependencies = [
 
 [[package]]
 name = "bevy_metalfx"
-version = "0.4.2"
+version = "0.5.0-rc.1"
 dependencies = [
  "bevy",
  "block2 0.6.2",
