@@ -54,11 +54,10 @@ independent repetitions; their uncertainty resolution is limited.
 At the middle load, half Temporal's 13.848 ms mean corresponds to 72.21 serial
 completed renders per second. Its mean of per-run 95th-percentile intervals is
 16.738 ms and its miss fraction is 8.90%; passing the average budget does not
-establish smooth 60 FPS pacing. The unmeasured intermediate presets can change
-the highest-quality choice, so a focused load-8,000 refinement follows.
-That [20-run refinement](claude-middle-presets-01.md) also passed: neither
-0.58 nor two thirds met the mean budget, leaving half as the highest tested
-Temporal preset that did.
+establish smooth 60 FPS pacing. The subsequent
+[20-run refinement](claude-middle-presets-01.md) tested intermediate presets at
+load 8,000 and also passed: neither 0.58 nor two thirds met the mean budget,
+leaving half as the highest tested Temporal preset that did.
 One half-Temporal repetition was slower: 15.241 ms with 26.65% misses, versus
 13.232–13.688 ms and 2.20–3.87% misses in the other three. The balanced design
 retains this variability rather than selecting the best run.
@@ -76,9 +75,13 @@ Native MSAA4, half Temporal and third Temporal captures show the same static
 Claude poses and native-resolution UI. Half retains clean facial strokes and
 silhouettes; third shows finer edge breakup on rays and the background. This
 agrees with the earlier [motion/HDR assessment](claude-quality.md), while neither
-set proves continuous temporal consistency. Matched motion and cut sequences
-remain a separate gate. Native changes AA policy relative to Temporal; bilinear
-and Temporal half both use MSAA off and the same input dimensions.
+set proves continuous temporal consistency. The later
+[matched motion/cut sequence](claude-matched-quality-01.md) records slightly
+softer half-resolution motion, visible reset-frame aliasing and cleaner held
+recovery, with more detail loss at third resolution. It does not establish
+immediate native quality or full continuous stability. Native changes AA policy
+relative to Temporal; bilinear and Temporal half both use MSAA off and the same
+input dimensions.
 
 The successful heavy runs replace the missing comparisons from the
 [first CPU-loop campaign](claude-campaign-01.md) only for this serial mode.

@@ -59,7 +59,12 @@ native `native-xbac967x`, Temporal `temporal-cvp4qk6n`, and bilinear
 Temporal half retains substantially more coastline and terrain detail than
 bilinear half; bilinear is visibly softer and its globe silhouette is more
 stepped. These static endpoints do not establish motion, camera-cut recovery
-or continuous temporal stability. The matched cut-image gate remains pending.
+or continuous temporal stability. The subsequent
+[consumer cut samples](consumer-cuts-01.md) retain eighteen opaque images across
+the same three arms. A seam in the native post-cut baseline and the legacy
+probe's request-only frame identity prevent an exact reset-recovery quality
+verdict; there is also no reset-disabled comparison. Those samples leave the
+recommendation to retain native unchanged.
 Native changes AA policy relative to Temporal; the two half-resolution arms
 share dimensions and MSAA off, but their difference includes the whole Temporal
 path and prepasses, not an isolated MetalFX kernel.

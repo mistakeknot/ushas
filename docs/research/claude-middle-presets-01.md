@@ -46,9 +46,12 @@ fraction still prevents a smooth-60-FPS claim. At load 20,000 even the tested
 0.5 floor misses the mean budget; at zero load native already meets it.
 
 The two new Temporal captures preserve Claude's facial strokes, rays and
-output-resolution UI at the same static pose. Matched motion/cut review is a
-separate quality gate. These measurements neither supply a GPU busy-cost signal
-nor establish production pipelined FPS, input latency or presentation.
+output-resolution UI at the same static pose. The later
+[matched quality sequence](claude-matched-quality-01.md) covers native, half,
+third and half-resolution HDR, but has no 0.58 or two-thirds arm. Matched
+motion/cut quality at these intermediate presets therefore remains unproved.
+These measurements neither supply a GPU busy-cost signal nor establish
+production pipelined FPS, input latency or presentation.
 
 All 126 payload files (49,072,839 bytes) are hash-verified in
 `/Users/sma/projects/docs/ushas/evidence/claude-middle-presets-01/`, including

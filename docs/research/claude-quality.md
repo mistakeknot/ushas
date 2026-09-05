@@ -29,6 +29,13 @@ output observations, not completed or displayed GPU frames. The Spatial arm
 has no input AA; its jagged edges are not a like-for-like comparison to native
 MSAA4. HDR changes the tonemapped background and must be assessed separately.
 
+The later [matched quality sequence](claude-matched-quality-01.md), on clean
+`ac3091f4b3f2cfe9d6dfc099298addfba8f35555`, adds 72 captures across six arms
+with matching logical poses and render-frame evidence. It documents visible
+reset-frame aliasing and cleaner held recovery; it does not establish immediate
+native quality or full continuous temporal stability. The original four runs
+above retain their differing-pose scope.
+
 The images support retaining the conservative **0.5 default quality floor**.
 One third stays an explicit quality choice. No automatic rung or frame-budget
 claim follows from these captures. The separately balanced
@@ -51,7 +58,9 @@ reports, images, logs and run manifests are archived at
 | Half Spatial static | `8c451f39eb688caee315abde7deb661b7f8ddc933cf9f9123fae9f14130bcc26` | `4e6ac3672db0dd276a260aca5fe8dfc5ee0d0e81274fb009295aa8ff0ef1d65c` |
 | Half Temporal HDR motion | `1209d041bdd1616fab703b3ba0fc8b0092e3ab63ddd64b77024a859251868e3f` | `63b7ef6425058978e1772fdc14b70204a4db14d6dd8a419d115f7f46870ec385` |
 
-Visible-window resize, camera-cut sequences, inactive resume, operating-system
-sleep/resume, and frame-interpolation composition require their own evidence.
-The missing/sleeping display during later runs does not invalidate these image
-targets, but it prevents a window or panel verdict.
+Separate [window-target lifecycle checks](lifecycle-candidate-01.md) now cover
+resize, camera cuts and inactive resume. They do not establish verified visible
+or unlocked presentation. Operating-system sleep/resume and frame-interpolation
+composition still require their own evidence. The missing/sleeping display
+during later runs does not invalidate these image targets, but these four runs
+provide no window or panel verdict.
