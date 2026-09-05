@@ -12,6 +12,15 @@ The [captured half-resolution Temporal preview](preview.png) has its
 Build and run from the Ushas repository. Rust 1.97.1 is selected by its tracked
 toolchain file.
 
+The Python runners and offline tests use Python 3.14 in CI. Install their pinned
+image-validation dependency in a virtual environment before using them:
+
+```sh
+python3.14 -m venv /tmp/ushas-smoke-venv
+. /tmp/ushas-smoke-venv/bin/activate
+python -m pip install --requirement tools/smoke/requirements.txt
+```
+
 ```sh
 cargo build --release --locked --manifest-path tools/smoke/Cargo.toml
 caffeinate -d tools/smoke/target/release/ushas-smoke \
