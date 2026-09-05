@@ -1,5 +1,7 @@
 import copy
+import contextlib
 import importlib.util
+import io
 import json
 import math
 from pathlib import Path
@@ -7,13 +9,43 @@ import subprocess
 import sys
 import tempfile
 import time
+from types import SimpleNamespace
 import unittest
+from unittest import mock
 from PIL import Image
 
 import quality_runner as q
 
 
 class QualityContract(unittest.TestCase):
+    def invoke_quality(self, args, sysname=None):
+        # CLI contracts run real children and cleanup, without host power assertions.
+        # Fast-exiting macOS caffeinate helpers can reject the final group SIGKILL;
+        # production must still treat that uncertain cleanup as a failed run.
+        sysname=sysname or q.os.uname().sysname
+        helper=Path(self.temp.name)/'fake caffeinate'
+        helper_args=Path(self.temp.name)/'caffeinate-args.json'
+        helper.write_text('#!'+sys.executable+'\nimport json,os,pathlib,sys\n'
+            'pathlib.Path('+repr(str(helper_args))+').write_text(json.dumps(sys.argv[1:]))\n'
+            'os.execv(sys.argv[2],sys.argv[2:])\n')
+        helper.chmod(0o700)
+        real_popen=subprocess.Popen
+
+        def launch(command, **kwargs):
+            if sysname=='Darwin':
+                self.assertEqual(command[:2],['/usr/bin/caffeinate','-di'],
+                                 'fixture refuses unexpected caffeinate prefix')
+                command=[str(helper),*command[1:]]
+            return real_popen(command,**kwargs)
+
+        stdout,stderr=io.StringIO(),io.StringIO()
+        with mock.patch.object(q.os,'uname',return_value=SimpleNamespace(sysname=sysname)), \
+                mock.patch.object(q.subprocess,'Popen',side_effect=launch), \
+                contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
+            try:code=q.main(args)
+            except SystemExit as error:code=error.code
+        return subprocess.CompletedProcess(args,code,stdout.getvalue(),stderr.getvalue())
+
     @staticmethod
     def radical(n,base):
         total=0.;denominator=1.
@@ -206,7 +238,7 @@ class QualityContract(unittest.TestCase):
         binary.write_text('#!'+sys.executable+'\nimport pathlib,sys\npathlib.Path(sys.argv[sys.argv.index("--out")+1]).write_bytes(pathlib.Path('+repr(str(fixture))+').read_bytes())\n')
         binary.chmod(0o700)
         output=Path(self.temp.name)/'malformed-result.json'
-        child=subprocess.run([sys.executable,str(Path(q.__file__)), '--binary',str(binary),'--out',str(output),'--mode','temporal','--scale','.5','--width','64','--height','64'],capture_output=True,text=True)
+        child=self.invoke_quality(['--binary',str(binary),'--out',str(output),'--mode','temporal','--scale','.5','--width','64','--height','64'])
         self.assertNotEqual(child.returncode,0)
         receipt=json.loads(Path(str(output)+'.quality-manifest.json').read_text())
         self.assertEqual(receipt['child_exit'],0, receipt)
@@ -215,24 +247,68 @@ class QualityContract(unittest.TestCase):
     def test_cli_retains_failed_run_and_refuses_existing_artifacts(self):
         binary=Path(self.temp.name)/'fake';binary.write_text('#!/bin/sh\nexit 0\n');binary.chmod(0o700)
         output=Path(self.temp.name)/'new.json'
-        command=[sys.executable,str(Path(q.__file__)), '--binary',str(binary),'--out',str(output),'--mode','temporal','--scale','.5']
-        child=subprocess.run(command,capture_output=True,text=True)
+        command=['--binary',str(binary),'--out',str(output),'--mode','temporal','--scale','.5']
+        child=self.invoke_quality(command)
         self.assertNotEqual(child.returncode,0)
         manifest=Path(str(output)+'.quality-manifest.json')
         self.assertTrue(manifest.is_file())
         receipt=json.loads(manifest.read_text())
-        self.assertFalse(receipt['valid']);self.assertEqual(receipt['child_exit'],0)
+        self.assertFalse(receipt['valid']);self.assertEqual(receipt['child_exit'],0,receipt)
         original=manifest.read_bytes()
-        child=subprocess.run(command,capture_output=True,text=True)
+        child=self.invoke_quality(command)
         self.assertNotEqual(child.returncode,0);self.assertEqual(manifest.read_bytes(),original)
+
+    def test_cli_fixture_isolates_power_helper_and_preserves_child_arguments(self):
+        for sysname in ('Darwin', 'Linux'):
+            with self.subTest(sysname=sysname):
+                binary=Path(self.temp.name)/('fixture-child-'+sysname)
+                child_args=Path(str(binary)+'.args.json')
+                binary.write_text('#!'+sys.executable+'\nimport json,pathlib,sys\n'
+                    'pathlib.Path('+repr(str(child_args))+').write_text(json.dumps(sys.argv[1:]))\n')
+                binary.chmod(0o700)
+                output=Path(self.temp.name)/('fixture-'+sysname+'.json')
+                child=self.invoke_quality(['--moving-reset','--binary',str(binary),
+                    '--out',str(output),'--mode','temporal','--scale','1'],sysname=sysname)
+                receipt=json.loads(Path(str(output)+'.quality-manifest.json').read_text())
+                helper_args=Path(self.temp.name)/'caffeinate-args.json'
+                if sysname=='Darwin':
+                    self.assertTrue(helper_args.is_file(),receipt)
+                    self.assertEqual(receipt['command'][:2],['/usr/bin/caffeinate','-di'])
+                    self.assertEqual(json.loads(helper_args.read_text()),receipt['command'][1:])
+                    self.assertEqual(json.loads(child_args.read_text()),receipt['command'][3:])
+                    helper_args.unlink()
+                else:
+                    self.assertFalse(helper_args.exists())
+                    self.assertEqual(receipt['command'][0],str(binary.resolve()))
+                    self.assertEqual(json.loads(child_args.read_text()),receipt['command'][1:])
+                self.assertEqual(receipt['child_exit'],0,receipt)
+                self.assertNotEqual(child.returncode,0)
+                self.assertFalse(receipt['valid'])
+
+    def test_cli_fixture_rejects_an_unexpected_native_helper_prefix(self):
+        binary=Path(self.temp.name)/'wrong-prefix-child'
+        binary.write_text('#!/bin/sh\nexit 0\n');binary.chmod(0o700)
+        output=Path(self.temp.name)/'wrong-prefix.json'
+
+        def wrong_prefix(command, log, _timeout):
+            return q.subprocess.Popen([command[0],'-d',*command[2:]],stdout=log).wait()
+
+        with mock.patch.object(q,'bounded',side_effect=wrong_prefix):
+            child=self.invoke_quality(['--binary',str(binary),'--out',str(output),
+                '--mode','temporal','--scale','1'],sysname='Darwin')
+        receipt=json.loads(Path(str(output)+'.quality-manifest.json').read_text())
+        self.assertNotEqual(child.returncode,0)
+        self.assertIsNone(receipt['child_exit'])
+        self.assertFalse((Path(self.temp.name)/'caffeinate-args.json').exists())
+        self.assertTrue(any('fixture refuses unexpected caffeinate prefix' in error
+                            for error in receipt['errors']),receipt)
 
     def test_moving_reset_cli_routes_a_distinct_twenty_three_capture_protocol(self):
         binary=Path(self.temp.name)/'moving-fake'
         binary.write_text('#!/bin/sh\nexit 0\n');binary.chmod(0o700)
         output=Path(self.temp.name)/'moving-result.json'
-        child=subprocess.run([sys.executable,str(Path(q.__file__)), '--moving-reset',
-            '--binary',str(binary),'--out',str(output),'--mode','temporal','--scale','1'],
-            capture_output=True,text=True)
+        child=self.invoke_quality(['--moving-reset',
+            '--binary',str(binary),'--out',str(output),'--mode','temporal','--scale','1'])
         self.assertNotEqual(child.returncode,0)
         manifest=Path(str(output)+'.quality-manifest.json')
         self.assertTrue(manifest.is_file(),child.stderr)
@@ -241,7 +317,7 @@ class QualityContract(unittest.TestCase):
         self.assertIn('--quality-moving-reset',receipt['command'])
         self.assertNotIn('--quality-sequence',receipt['command'])
         self.assertFalse(receipt['valid'])
-        self.assertEqual(receipt['child_exit'],0)
+        self.assertEqual(receipt['child_exit'],0,receipt)
         expected={f'moving-cut{i}' for i in range(17)} | {
             'moving-settled','moving-motion32','moving-motion62','moving-motion63',
             'moving-motion64','moving-before-cut'}
