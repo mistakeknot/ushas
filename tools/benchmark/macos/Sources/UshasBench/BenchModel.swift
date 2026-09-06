@@ -43,6 +43,7 @@ final class BenchModel {
   var publishingVideo = false
   @ObservationIgnored var publicationTask: Task<URL, Error>?
   @ObservationIgnored var videoDestination: VideoDestination?
+  @ObservationIgnored var videoSavePanel: NSSavePanel?
   @ObservationIgnored let session = ChildSession()
   @ObservationIgnored var store: RunStore?
   @ObservationIgnored var output: URL?
@@ -64,7 +65,7 @@ final class BenchModel {
   }
   var helper: URL { Bundle.main.bundleURL.appendingPathComponent("Contents/Helpers/ushas-bench") }
   func launch(_ command: String, using requested: BenchConfiguration? = nil) {
-    guard !running, let store else { return }
+    guard !running, videoSavePanel == nil, let store else { return }
     error = nil
     exportMessage = nil
     publishedVideo = nil
@@ -229,7 +230,7 @@ final class BenchModel {
     } catch { self.error = error.localizedDescription }
   }
   func exportVideo(from result: LoadedReport? = nil) {
-    guard !running else { return }
+    guard !running, videoSavePanel == nil else { return }
     var replay = configuration
     videoComparison = result?.report.kind == "compare"
     videoFromSavedResult = result != nil
@@ -255,11 +256,23 @@ final class BenchModel {
     panel.canCreateDirectories = true
     panel.nameFieldStringValue = "Ushas-\(replay.mode.rawValue).mp4"
     panel.accessoryView = NSHostingView(rootView: VideoExportOptions(model: self))
-    guard panel.runModal() == .OK, let destination = panel.url else { return }
-    do {
-      videoDestination = try VideoDestination(url: destination)
-      launch("video", using: videoConfiguration)
-    } catch { self.error = error.localizedDescription }
+    videoSavePanel = panel
+    // Keep the main actor available for the SwiftUI accessory's menu actions.
+    // A nested runModal loop can leave its picker visible but unable to open.
+    let completion: (NSApplication.ModalResponse) -> Void = { [weak self] response in
+      guard let self else { return }
+      self.videoSavePanel = nil
+      guard response == .OK, let destination = panel.url else { return }
+      do {
+        self.videoDestination = try VideoDestination(url: destination)
+        self.launch("video", using: self.videoConfiguration)
+      } catch { self.error = error.localizedDescription }
+    }
+    if let window = NSApp.keyWindow {
+      panel.beginSheetModal(for: window, completionHandler: completion)
+    } else {
+      panel.begin(completionHandler: completion)
+    }
   }
   func openVideo(reveal: Bool = false) {
     do {
