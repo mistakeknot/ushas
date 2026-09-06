@@ -127,6 +127,8 @@ its executable path. No encoder download or ffmpeg installation is needed by
 the packaged app. `verify_video.py` and `macos/Support/VerifyVideoEncoder.py`
 use ffmpeg/ffprobe only for developer verification. See the
 [video stream contract](VIDEO-CONTRACT.md).
+The [video validation record](../../docs/research/ushas-video-export-validation.md)
+includes decoded-frame checks, native Save/cancellation flows and QuickTime playback.
 
 The CLI keeps its original windowed default when `--background` is omitted.
 Existing reports without the background field remain windowed reports. An
