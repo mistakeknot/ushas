@@ -23,11 +23,13 @@ public struct BenchConfiguration: Sendable, Equatable {
   public var lights: Int = 8
   public var particles: Int = 4096
   public var fill: Int = 0
+  public var videoChapter: VideoChapter = .all
+  public var seed: Int = 21434
   public init() {}
   public func arguments(command: String, output: URL) -> [String] {
     var result = [
       command, "--out", output.path, "--width", "2560", "--height", "1440",
-      "--frames", "1200", "--seed", "21434",
+      "--frames", "1200", "--seed", String(seed),
     ]
     if command != "compare" {
       result += ["--mode", mode.rawValue, "--scale", mode == .native ? "1" : scale]
@@ -39,7 +41,10 @@ public struct BenchConfiguration: Sendable, Equatable {
         "--particles", String(particles), "--fill", String(fill),
       ]
     }
-    if background { result.append("--background") }
+    if command == "video", videoChapter != .all {
+      result += ["--scene", videoChapter.rawValue]
+    }
+    if background || command == "video" { result.append("--background") }
     return result
   }
   public var stressMessage: Data {
@@ -62,7 +67,7 @@ public struct RunPresentation: Sendable, Equatable {
   public var activatesResults: Bool { !background }
   public var handlesLauncherEscape: Bool { background }
   public init(command: String, configuration: BenchConfiguration) {
-    background = configuration.background
+    background = configuration.background || command == "video"
     launchBehavior =
       background ? .stayInLauncher : (command == "stress" ? .showStressPanel : .hideLauncher)
   }
@@ -78,10 +83,14 @@ public struct ChildEvent: Decodable, Sendable, Equatable {
   public let report: String?
   public let path: String?
   public let valid: Bool?
+  public let videoFrames: Int?
+  public let videoTotalFrames: Int?
   enum CodingKeys: String, CodingKey {
     case schemaVersion = "schema_version"
     case event, message, scene, progress, report, path, valid
     case renderFPS = "render_fps"
+    case videoFrames = "video_frames"
+    case videoTotalFrames = "video_total_frames"
   }
 }
 
@@ -106,6 +115,7 @@ public struct RunStatusUpdates: Sendable {
       switch command {
       case "benchmark": return "Rendering \(scene.lowercased())…"
       case "stress": return "Stress running · \(scene)"
+      case "video": return "Rendering video · \(scene)"
       default: return nil
       }
     default: return nil

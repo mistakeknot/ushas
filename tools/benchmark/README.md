@@ -17,6 +17,7 @@ image without a live preview, so Chrome or another window can stay in front.
 Other apps can still affect the result through CPU/GPU activity. Turn Background
 run off to watch the lab in its own window; covering or minimizing that render
 window can invalidate a windowed measurement.
+For continuous viewing, choose **Stress** with Background run off.
 
 - **Benchmark:** choose Native MSAA4, Temporal, Spatial, or Bilinear and a legal
   render scale. Native always uses full resolution.
@@ -28,6 +29,20 @@ window can invalidate a windowed measurement.
   Stress runs are custom workloads and have no benchmark score.
 - **Results:** inspect retained runs, compare original image pairs, and export a
   self-contained folder containing JSON, offline HTML, images, and child reports.
+- **Export video…:** beside Run benchmark, render the selected mode and scale as
+  a silent 2560 × 1440, 60 fps H.264 MP4. Choose all three chapters (30 seconds)
+  or one chapter (10 seconds), then choose a filename in the Save dialog. No
+  completed benchmark is required. Rendering stays offscreen, shows progress and
+  Cancel, and produces no performance score. After success, use Open video or
+  Show in Finder. Only one render/export job runs at a time.
+
+Standard Benchmark and Compare results also offer video export. Compare replays
+choose one of the six modes, defaulting to Native. These exports render again
+with the current app version; they are not recordings of the saved measurement.
+The video's report retains the renderer revision, settings and movie hash.
+Existing filenames use the Save dialog's replacement confirmation; failed or
+cancelled exports preserve the existing file. A file changed during rendering
+requires another confirmation before replacement.
 
 Stop, or Escape while Ushas is active, ends a run and preserves its artifacts. A stopped or failed
 benchmark receives no score. Invalid comparison arms remain visible. Reduced
@@ -85,6 +100,8 @@ ushas-bench benchmark --background --mode temporal --scale 2/3 --out /tmp/ushas-
 ushas-bench compare --background --rounds 4 --out /tmp/ushas-comparison
 ushas-bench stress --background --duration 600 --claudes 64 --lights 8 --particles 4096 --out /tmp/ushas-stress
 ushas-bench capture --mode native --out /tmp/ushas-quality
+ushas-bench video --mode temporal --scale 2/3 --out /tmp/ushas-video
+ushas-bench video --mode native --scene lighting --out /tmp/ushas-lighting-video
 ```
 
 Output must be a new directory. stdout contains newline-delimited JSON events;
@@ -93,6 +110,23 @@ absolute `result.json` path. Reports retain build revision, dirty-build flag,
 invoked helper hash, configuration, device details, cohort proofs, and failures.
 Public OS thermal pressure is recorded where available; no GPU temperature or
 utilization value is inferred from it.
+
+Video uses the fixed standard lab dimensions and 1,200 simulation ticks per
+chapter. Every 120 Hz simulation tick renders; every second tick enters the
+60 fps movie with a timestamp derived from its frame index. A bounded pipe
+pauses rendering when the bundled Swift AVFoundation encoder falls behind,
+preserving temporal history. The encoder explicitly converts sRGB output to
+SDR Rec.709 and targets 30 Mbps. Video readbacks and encoder waits are installed
+only for `video`; scored measurements and Stress keep their original paths.
+The video omits interactive instructions and performance counters and retains
+Claude attribution. PNG captures remain the source for pixel comparisons.
+
+The package includes `ushas-video-encoder` beside the renderer. For development
+CLI runs, build the Swift product of that name and set `USHAS_VIDEO_ENCODER` to
+its executable path. No encoder download or ffmpeg installation is needed by
+the packaged app. `verify_video.py` and `macos/Support/VerifyVideoEncoder.py`
+use ffmpeg/ffprobe only for developer verification. See the
+[video stream contract](VIDEO-CONTRACT.md).
 
 The CLI keeps its original windowed default when `--background` is omitted.
 Existing reports without the background field remain windowed reports. An

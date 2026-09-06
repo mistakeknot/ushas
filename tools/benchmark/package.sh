@@ -55,6 +55,7 @@ swift_args=(--package-path "$package_root/macos" --scratch-path "$scratch_root/b
   --cache-path "$scratch_root/cache" --config-path "$scratch_root/configuration"
   --security-path "$scratch_root/security" --disable-sandbox --configuration "$swift_configuration" --arch arm64)
 /usr/bin/xcrun swift build "${swift_args[@]}" --product UshasBench
+/usr/bin/xcrun swift build "${swift_args[@]}" --product ushas-video-encoder
 swift_binary_dir="$(/usr/bin/xcrun swift build "${swift_args[@]}" --show-bin-path)"
 mkdir -p "$output_root"
 output_root="$(cd "$output_root" && pwd)"
@@ -62,7 +63,8 @@ app_path="$output_root/Ushas Bench.app"
 mkdir -p "$app_path/Contents/MacOS" "$app_path/Contents/Helpers" "$app_path/Contents/Resources"
 /bin/cp -f "$swift_binary_dir/UshasBench" "$app_path/Contents/MacOS/UshasBench"
 /bin/cp -f "$renderer_path" "$app_path/Contents/Helpers/ushas-bench"
-/bin/chmod 755 "$app_path/Contents/MacOS/UshasBench" "$app_path/Contents/Helpers/ushas-bench"
+/bin/cp -f "$swift_binary_dir/ushas-video-encoder" "$app_path/Contents/Helpers/ushas-video-encoder"
+/bin/chmod 755 "$app_path/Contents/MacOS/UshasBench" "$app_path/Contents/Helpers/ushas-bench" "$app_path/Contents/Helpers/ushas-video-encoder"
 /bin/cp -f "$package_root/../claude-model/CHARACTER.md" "$app_path/Contents/Resources/CHARACTER.md"
 /bin/cp -f "$package_root/../../LICENSE-MIT" "$app_path/Contents/Resources/LICENSE-MIT"
 /bin/cp -f "$package_root/../../LICENSE-APACHE" "$app_path/Contents/Resources/LICENSE-APACHE"
@@ -90,13 +92,14 @@ PLIST
 /usr/bin/plutil -lint "$app_path/Contents/Info.plist"
 # Sign nested executable first, then seal its containing app.
 /usr/bin/codesign --force --sign - --timestamp=none "$app_path/Contents/Helpers/ushas-bench"
+/usr/bin/codesign --force --sign - --timestamp=none "$app_path/Contents/Helpers/ushas-video-encoder"
 /usr/bin/codesign --force --sign - --timestamp=none "$app_path/Contents/MacOS/UshasBench"
 /usr/bin/codesign --force --sign - --timestamp=none "$app_path"
 /usr/bin/codesign --verify --deep --strict "$app_path"
 /usr/bin/ditto -c -k --sequesterRsrc --keepParent "$app_path" "$output_root/Ushas Bench.zip"
 (
   cd "$output_root"
-  /usr/bin/shasum -a 256 "Ushas Bench.app/Contents/Helpers/ushas-bench" "Ushas Bench.app/Contents/MacOS/UshasBench" "Ushas Bench.zip" > SHA256SUMS
+  /usr/bin/shasum -a 256 "Ushas Bench.app/Contents/Helpers/ushas-bench" "Ushas Bench.app/Contents/Helpers/ushas-video-encoder" "Ushas Bench.app/Contents/MacOS/UshasBench" "Ushas Bench.zip" > SHA256SUMS
 )
 echo "Packaged: $app_path"
 echo "Archive:  $output_root/Ushas Bench.zip"

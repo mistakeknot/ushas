@@ -60,13 +60,15 @@ pub fn metadata(config: &RunConfig, kind: &str, started: &str) -> Result<Value, 
         "source_revision":env!("USHAS_BENCH_SOURCE_REVISION"),
         "source_dirty":env!("USHAS_BENCH_SOURCE_DIRTY")=="true",
         "binary_sha256":sha256(&std::env::current_exe().map_err(|e|e.to_string())?)?,
-        "started_utc":started,"metric":if config.action == Action::Capture {"deterministic image replay"} else {"completed-render throughput"},
+        "started_utc":started,"metric":match config.action { Action::Capture => "deterministic image replay", Action::Video => "deterministic video replay", _ => "completed-render throughput" },
         "metric_scope":metric_scope(config),
-        "target_render_fps":120,"valid":false,"stopped":false,"errors":[],"render_fps":null}))
+        "target_render_fps":if config.action == Action::Video {None}else{Some(120)},"valid":false,"stopped":false,"errors":[],"render_fps":null}))
 }
 
 fn metric_scope(config: &RunConfig) -> &'static str {
-    if config.action == Action::Capture {
+    if config.action == Action::Video {
+        "Separate offscreen video replay with readbacks and encoder backpressure; no benchmark score. Simulation remains 120 Hz and the silent SDR Rec.709 H.264 video has fixed 60 fps timestamps."
+    } else if config.action == Action::Capture {
         "Separate offscreen image replay with readbacks; no benchmark score, surface acquisition or presentation. Capture replay does not measure GPU busy time."
     } else if config.background {
         "Offscreen completed-render throughput from first cohort admission through asynchronous closing render-queue completion; includes CPU/render scheduling and queue callback dispatch, with no surface acquisition or presentation. This is not GPU busy time, displayed FPS, frame pacing or 1% lows."
@@ -134,8 +136,47 @@ fn validate_capture(config: &RunConfig, capture: &mut Value) -> Result<(), Strin
     Ok(())
 }
 
+fn validate_video(config: &RunConfig, video: Option<&Value>) -> Result<(), String> {
+    let video = video.ok_or("encoded artifact missing")?;
+    let frames = config.scenes().len() as u64 * 600;
+    for (key, value) in [
+        ("width", 2560),
+        ("height", 1440),
+        ("fps", 60),
+        ("simulation_hz", 120),
+        ("frame_count", frames),
+        ("bitrate", 30_000_000),
+    ] {
+        if video[key].as_u64() != Some(value) {
+            return Err(format!("{key} does not match the video contract"));
+        }
+    }
+    for (key, value) in [
+        ("path", "video.mp4"),
+        ("codec", "h264"),
+        ("color_space", "rec709"),
+    ] {
+        if video[key].as_str() != Some(value) {
+            return Err(format!("{key} does not match the video contract"));
+        }
+    }
+    if video["duration_seconds"].as_f64() != Some(frames as f64 / 60.) {
+        return Err("duration does not match fixed frame cadence".into());
+    }
+    let path = contained_file(&config.out, "video.mp4")?;
+    if std::fs::metadata(&path).map_err(|e| e.to_string())?.len() == 0
+        || config.out.join("video.partial.mp4").exists()
+    {
+        return Err("movie is empty or unfinished".into());
+    }
+    if video["sha256"].as_str() != Some(&sha256(&path)?) {
+        return Err("movie differs from retained hash".into());
+    }
+    Ok(())
+}
+
 pub fn seal(config: &RunConfig, mut result: EngineResult, mut envelope: Value) -> Value {
-    if config.background {
+    if config.background || config.action == Action::Video {
         for (key, expected) in [
             ("render_target", "offscreen_image"),
             ("runner", "schedule_loop"),
@@ -151,7 +192,7 @@ pub fn seal(config: &RunConfig, mut result: EngineResult, mut envelope: Value) -
                 .errors
                 .push("background live_preview must be false".into());
         }
-        if config.action != Action::Capture {
+        if !matches!(config.action, Action::Capture | Action::Video) {
             if result.environment["measured_readbacks"].as_bool() != Some(false) {
                 result.errors.push(
                     "background measured_readbacks must be false outside capture replay".into(),
@@ -216,6 +257,17 @@ pub fn seal(config: &RunConfig, mut result: EngineResult, mut envelope: Value) -
             }
         }
     }
+    if config.action == Action::Video {
+        for scene in &mut result.scenes {
+            scene.render_fps = None;
+        }
+        if let Err(error) = validate_video(config, result.video.as_ref()) {
+            result.errors.push(format!("video: {error}"));
+        }
+        if result.environment["measured_readbacks"] != true {
+            result.errors.push("video readback evidence missing".into());
+        }
+    }
     let fps = if config.action == Action::Benchmark {
         geometric_fps(&result.scenes)
     } else {
@@ -232,6 +284,7 @@ pub fn seal(config: &RunConfig, mut result: EngineResult, mut envelope: Value) -
     envelope["errors"] = json!(result.errors);
     envelope["scenes"] = json!(result.scenes);
     envelope["captures"] = json!(result.captures);
+    envelope["video"] = json!(result.video);
     envelope["stress_samples"] = json!(result.stress_samples);
     envelope["environment"] = result.environment;
     envelope["render_fps"] = json!(if valid { fps } else { None });
@@ -267,11 +320,24 @@ pub fn write_bundle(root: &Path, value: &Value) -> Result<PathBuf, String> {
     } else {
         "Not qualified"
     };
-    let rate = value["render_fps"]
-        .as_f64()
-        .map(|v| format!("{v:.1} completed-render FPS"))
-        .unwrap_or_else(|| "No aggregate benchmark score".into());
+    let rate = if value["kind"] == "video" {
+        value["video"]["duration_seconds"]
+            .as_f64()
+            .map(|seconds| format!("{seconds:.0}-second video replay"))
+            .unwrap_or_else(|| "No completed video".into())
+    } else {
+        value["render_fps"]
+            .as_f64()
+            .map(|v| format!("{v:.1} completed-render FPS"))
+            .unwrap_or_else(|| "No aggregate benchmark score".into())
+    };
     let mut images = String::new();
+    if value["valid"] == true
+        && value["kind"] == "video"
+        && contained_file(root, "video.mp4").is_ok()
+    {
+        images.push_str("<p><a href=video.mp4>Open video</a></p><video controls style='width:100%' src=video.mp4></video>");
+    }
     let captures = value["captures"].as_array().into_iter().flatten().chain(
         value["arms"]
             .as_array()
@@ -310,6 +376,7 @@ pub struct EngineResult {
     pub captures: Vec<Value>,
     pub stress_samples: Vec<Value>,
     pub environment: Value,
+    pub video: Option<Value>,
 }
 
 pub fn emit(event: &str, data: Value) {
@@ -446,6 +513,25 @@ mod tests {
                 "live_preview":false, "measured_readbacks":false}),
             ..Default::default()
         }
+    }
+    #[test]
+    fn video_reports_require_a_verified_movie_and_never_retain_scores() {
+        let mut value = serde_json::to_value(RunConfig::default()).unwrap();
+        value["action"] = json!("video");
+        value["background"] = json!(true);
+        let config: RunConfig = serde_json::from_value(value).expect("video configuration");
+        let value = seal(&config, complete_result(), json!({}));
+        assert_eq!(
+            value["valid"], false,
+            "a video cannot qualify without its encoded artifact"
+        );
+        assert!(value["render_fps"].is_null());
+        assert!(value["scenes"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|s| s["render_fps"].is_null()));
+        assert!(metric_scope(&config).contains("no benchmark score"));
     }
     #[test]
     fn background_metadata_declares_a_separate_profile_and_metric_scope() {

@@ -113,6 +113,7 @@ public struct BenchReport: Decodable, Sendable {
   public let arms: [ArmReport]?
   public let pairedSummaries: [PairedSummary]?
   public let rounds: Int?
+  public let video: VideoReport?
   enum CodingKeys: String, CodingKey {
     case schemaVersion = "schema_version"
     case profileVersion = "profile_version"
@@ -120,14 +121,20 @@ public struct BenchReport: Decodable, Sendable {
     case binarySHA256 = "binary_sha256"
     case startedUTC = "started_utc"
     case renderFPS = "render_fps"
-    case kind, valid, stopped, errors, config, scenes, captures, arms, rounds
+    case kind, valid, stopped, errors, config, scenes, captures, arms, rounds, video
     case pairedSummaries = "paired_summaries"
   }
   public var compatible: Bool {
-    schemaVersion == 1 && ["benchmark", "compare", "stress", "capture"].contains(kind)
-      && ["claude-lab-standard-v1", "claude-lab-offscreen-v1", "custom"].contains(profileVersion)
+    schemaVersion == 1
+      && (kind == "video"
+        ? profileVersion == "claude-lab-video-v1"
+        : ["benchmark", "compare", "stress", "capture"].contains(kind)
+          && ["claude-lab-standard-v1", "claude-lab-offscreen-v1", "custom"].contains(
+            profileVersion))
   }
-  public var executionLabel: String { config?.background == true ? "Background" : "Windowed" }
+  public var executionLabel: String {
+    kind == "video" ? "Offscreen replay" : config?.background == true ? "Background" : "Windowed"
+  }
   private var standardProfileMatchesTarget: Bool {
     profileVersion
       == (config?.background == true ? "claude-lab-offscreen-v1" : "claude-lab-standard-v1")
@@ -146,8 +153,19 @@ public struct BenchReport: Decodable, Sendable {
       return "The report is missing required configuration or validation metadata."
     }
     if let error = errors.first { return error }
-    if profileVersion != "custom" && (!standardProfileMatchesTarget || !config.standard) {
+    if kind != "video",
+      profileVersion != "custom" && (!standardProfileMatchesTarget || !config.standard)
+    {
       return "The standard profile has incompatible run settings."
+    }
+    if kind == "video" {
+      let expected = config.scene.map { [$0] } ?? ["materials", "geometry", "lighting"]
+      guard renderFPS == nil, let video, video.matches(config), let scenes,
+        scenes.map(\.scene) == expected,
+        scenes.allSatisfy({
+          $0.valid && $0.errors.isEmpty && $0.frames == 1200 && $0.renderFPS == nil
+        })
+      else { return "The video replay is incomplete or has incompatible settings." }
     }
     if kind == "benchmark" {
       guard let scenes, !scenes.isEmpty, let score = renderFPS, score.isFinite, score > 0,
@@ -218,6 +236,17 @@ public struct LoadedReport: Sendable, Identifiable {
     let report = try JSONDecoder().decode(BenchReport.self, from: bytes)
     var problem = report.failure
     var loaded: [LoadedArm] = []
+    if report.kind == "video", problem == nil {
+      do {
+        guard let video = report.video else {
+          throw BenchError.invalid("The video result is missing.")
+        }
+        let movie = try ContainedPath.regularFile(video.path, in: root)
+        guard try VideoFile.hash(movie) == video.sha256 else {
+          throw BenchError.invalid("The saved video changed after rendering.")
+        }
+      } catch { problem = error.localizedDescription }
+    }
     for arm in report.arms ?? [] {
       do {
         let childURL = try ContainedPath.regularFile(arm.report, in: root)
@@ -257,5 +286,15 @@ public struct LoadedReport: Sendable, Identifiable {
   }
   public func imageURL(_ capture: CaptureReference) throws -> URL {
     try ContainedPath.regularFile(capture.path, in: root)
+  }
+  public func videoURL() throws -> URL {
+    guard accepted, let video = report.video else {
+      throw BenchError.invalid("No completed video is available.")
+    }
+    let movie = try ContainedPath.regularFile(video.path, in: root)
+    guard try VideoFile.hash(movie) == video.sha256 else {
+      throw BenchError.invalid("The saved video has changed.")
+    }
+    return movie
   }
 }

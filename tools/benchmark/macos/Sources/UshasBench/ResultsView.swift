@@ -11,8 +11,15 @@ struct ResultsView: View {
             VStack(alignment: .leading, spacing: 13) {
               Eyebrow(
                 text: result.report.kind == "compare"
-                  ? "Comparison result" : "Completed-render throughput")
-              if let score = result.score {
+                  ? "Comparison result"
+                  : result.report.kind == "video" ? "Video replay" : "Completed-render throughput")
+              if result.report.kind == "video" {
+                Text(
+                  result.accepted
+                    ? result.report.video?.durationLabel ?? "Video" : "Video incomplete"
+                )
+                .font(.custom("AvenirNext-DemiBold", size: 32)).foregroundStyle(Color.labCoral)
+              } else if let score = result.score {
                 HStack(alignment: .firstTextBaseline, spacing: 9) {
                   Text(String(format: "%.1f", score)).font(
                     .system(size: 63, weight: .light, design: .monospaced)
@@ -27,27 +34,47 @@ struct ResultsView: View {
               }
               Text(
                 result.problem ?? result.report.failure
-                  ?? "The measured rendering cohort, through its closing queue completion. This is not displayed FPS or GPU-only time."
+                  ?? (result.report.kind == "video"
+                    ? "2560 × 1440 · 60 fps · H.264 MP4. Separately rendered replay; no benchmark score."
+                    : "The measured rendering cohort, through its closing queue completion. This is not displayed FPS or GPU-only time.")
               )
               .font(.system(size: 12)).foregroundStyle(Color.labMuted).fixedSize(
                 horizontal: false, vertical: true)
               HStack {
                 StatusPill(
                   title: result.accepted
-                    ? (result.report.standard ? "STANDARD PROFILE" : "CUSTOM") : "UNQUALIFIED",
+                    ? (result.report.kind == "video"
+                      ? "REPLAY" : result.report.standard ? "STANDARD PROFILE" : "CUSTOM")
+                    : "UNQUALIFIED",
                   good: result.accepted)
                 StatusPill(
                   title: result.accepted ? "VALID" : "NOT QUALIFIED", good: result.accepted)
               }
               StatusPill(title: result.report.executionLabel.uppercased(), good: result.accepted)
+              if result.report.kind == "video", let revision = result.report.sourceRevision {
+                Text("Renderer \(revision)").font(.system(size: 10, design: .monospaced))
+                  .foregroundStyle(Color.labMuted).textSelection(.enabled)
+              }
             }.frame(maxWidth: .infinity, alignment: .leading)
           }
           VStack(alignment: .leading, spacing: 12) {
+            if result.report.standard, ["benchmark", "compare"].contains(result.report.kind) {
+              Button("Export video…") { model.exportVideo(from: result) }
+                .buttonStyle(LabButtonStyle(prominent: true)).disabled(model.running)
+              Text("Replay rendered with the current app version.").font(.system(size: 11))
+                .foregroundStyle(Color.labMuted)
+            }
+            if result.accepted, result.report.video != nil {
+              Button("Open video") { model.openVideo() }.buttonStyle(
+                LabButtonStyle(prominent: true))
+              Button("Show in Finder") { model.openVideo(reveal: true) }.buttonStyle(
+                LabButtonStyle())
+            }
             Button {
               model.export()
             } label: {
               Label("Export offline report", systemImage: "square.and.arrow.up")
-            }.buttonStyle(LabButtonStyle(prominent: true))
+            }.buttonStyle(LabButtonStyle(prominent: true)).disabled(model.running)
             Button {
               model.revealCurrent()
             } label: {
@@ -61,7 +88,7 @@ struct ResultsView: View {
             ).foregroundStyle(Color.labMuted)
           }.frame(width: 207, alignment: .leading)
         }
-        if let scenes = result.report.scenes, !scenes.isEmpty {
+        if result.report.kind != "video", let scenes = result.report.scenes, !scenes.isEmpty {
           HStack(spacing: 13) {
             ForEach(scenes) { scene in
               LabCard {
@@ -188,7 +215,8 @@ struct ResultsView: View {
               Spacer()
               Text(
                 entry.result?.score.map { String(format: "%.1f FPS", $0) }
-                  ?? (entry.result?.accepted == true ? "Completed" : "Not qualified")
+                  ?? (entry.result?.accepted == true
+                    ? entry.result?.report.video?.durationLabel ?? "Completed" : "Not qualified")
               ).font(.system(size: 12, design: .monospaced)).foregroundStyle(Color.labMuted)
               Image(systemName: "arrow.up.right").font(.system(size: 10)).foregroundStyle(
                 Color.labMuted)

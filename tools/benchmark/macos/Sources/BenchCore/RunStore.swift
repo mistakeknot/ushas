@@ -165,7 +165,16 @@ public struct RunStore: Sendable {
     }
     let score =
       report.score.map { String(format: "%.1f", $0) + " completed-render FPS" }
-      ?? (report.accepted ? "Completed" : "No valid score")
+      ?? (report.accepted
+        ? report.report.video?.durationLabel ?? "Completed"
+        : report.report.kind == "video" ? "Video incomplete" : "No valid score")
+    let explanation =
+      report.report.kind == "video"
+      ? "Separately rendered video replay. No benchmark score."
+      : "Completed-render rate. This does not measure GPU busy time or physical panel delivery."
+    let movie =
+      report.report.kind == "video" && report.accepted
+      ? "<p><a href=\"video.mp4\">Open video</a> · 2560 × 1440 · 60 fps · H.264 MP4</p>" : ""
     let arms = report.arms.map {
       "<tr><td>\(escape($0.arm.label)) · Round \($0.arm.round)</td><td>\(report.accepted ? $0.score.map { String(format: "%.1f", $0) } ?? "Unavailable" : "Unavailable")</td></tr>"
     }.joined()
@@ -180,7 +189,7 @@ public struct RunStore: Sendable {
     return """
       <!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>Ushas Bench report</title>
       <style>body{margin:0;background:#151b1e;color:#f6eee5;font:16px/1.6 -apple-system,sans-serif}main{max-width:1100px;margin:60px auto;padding:0 30px}h1{font-size:58px;line-height:1.1;letter-spacing:-2px}h2{color:#ef9278}small,figcaption{color:#a2b1ad}strong{font:44px ui-monospace,monospace;color:#ef9278}table{width:100%;border-collapse:collapse}td{padding:12px;border-bottom:1px solid #374044}img{width:100%;border-radius:14px}figure{margin:34px 0}a{color:#ef9278}</style>
-      <main><small>USHAS / RENDER LAB · OFFLINE REPORT</small><h1>Every frame<br>has a character.</h1><strong>\(escape(score))</strong><p>\(escape(report.problem ?? "Completed-render rate. This does not measure GPU busy time or physical panel delivery."))</p><p>Execution: \(escape(report.report.executionLabel)) · Profile: \(escape(report.report.profileVersion))</p><table>\(arms)</table><h2>Retained images</h2>\(images)<p><a href="result.json">Portable result</a> · <a href="originals/result.json">Original structured result</a> · Source \(escape(report.report.sourceRevision ?? "unavailable"))</p></main></html>
+      <main><small>USHAS / RENDER LAB · OFFLINE REPORT</small><h1>Every frame<br>has a character.</h1><strong>\(escape(score))</strong><p>\(escape(report.problem ?? explanation))</p>\(movie)<p>Execution: \(escape(report.report.executionLabel)) · Profile: \(escape(report.report.profileVersion))</p><table>\(arms)</table><h2>Retained images</h2>\(images)<p><a href="result.json">Portable result</a> · <a href="originals/result.json">Original structured result</a> · Source \(escape(report.report.sourceRevision ?? "unavailable"))</p></main></html>
       """
   }
 }

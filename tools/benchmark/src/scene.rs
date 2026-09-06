@@ -21,6 +21,7 @@ pub struct SceneState {
     pub generation: u64,
     pub load: StressLoad,
     pub caption: String,
+    pub video: bool,
 }
 
 #[derive(SystemSet, Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -152,26 +153,29 @@ fn prepare_assets(
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
     mut fill: ResMut<Assets<StressFillMaterial>>,
+    state: Res<SceneState>,
 ) {
     commands.insert_resource(LabAssets::new(&mut meshes, &mut materials, &mut fill));
-    commands.spawn((
-        Caption,
-        Text::new("USHAS / RENDER LAB"),
-        TextFont {
-            font_size: bevy::text::FontSize::Px(19.),
-            ..default()
-        },
-        TextColor(Color::srgb(0.82, 0.88, 0.92)),
-        Node {
-            position_type: PositionType::Absolute,
-            left: px(28),
-            right: px(150),
-            bottom: px(25),
-            padding: UiRect::axes(px(16), px(11)),
-            ..default()
-        },
-        BackgroundColor(Color::srgba(0.015, 0.022, 0.032, 0.86)),
-    ));
+    if !state.video {
+        commands.spawn((
+            Caption,
+            Text::new("USHAS / RENDER LAB"),
+            TextFont {
+                font_size: bevy::text::FontSize::Px(19.),
+                ..default()
+            },
+            TextColor(Color::srgb(0.82, 0.88, 0.92)),
+            Node {
+                position_type: PositionType::Absolute,
+                left: px(28),
+                right: px(150),
+                bottom: px(25),
+                padding: UiRect::axes(px(16), px(11)),
+                ..default()
+            },
+            BackgroundColor(Color::srgba(0.015, 0.022, 0.032, 0.86)),
+        ));
+    }
     commands.spawn((
         Text::new("USHAS   /   CLAUDE RENDER LAB"),
         TextFont {
@@ -201,20 +205,22 @@ fn prepare_assets(
             ..default()
         },
     ));
-    commands.spawn((
-        Text::new("ESC / STOP"),
-        TextFont {
-            font_size: bevy::text::FontSize::Px(13.),
-            ..default()
-        },
-        TextColor(Color::srgb(0.59, 0.66, 0.72)),
-        Node {
-            position_type: PositionType::Absolute,
-            right: px(28),
-            bottom: px(28),
-            ..default()
-        },
-    ));
+    if !state.video {
+        commands.spawn((
+            Text::new("ESC / STOP"),
+            TextFont {
+                font_size: bevy::text::FontSize::Px(13.),
+                ..default()
+            },
+            TextColor(Color::srgb(0.59, 0.66, 0.72)),
+            Node {
+                position_type: PositionType::Absolute,
+                right: px(28),
+                bottom: px(28),
+                ..default()
+            },
+        ));
+    }
 }
 impl LabAssets {
     fn new(

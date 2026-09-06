@@ -4,6 +4,7 @@ use std::path::PathBuf;
 
 pub const PROFILE_VERSION: &str = "claude-lab-standard-v1";
 pub const OFFSCREEN_PROFILE_VERSION: &str = "claude-lab-offscreen-v1";
+pub const VIDEO_PROFILE_VERSION: &str = "claude-lab-video-v1";
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -59,6 +60,7 @@ pub enum Action {
     Benchmark,
     Stress,
     Capture,
+    Video,
 }
 impl Action {
     pub fn as_str(self) -> &'static str {
@@ -66,6 +68,7 @@ impl Action {
             Self::Benchmark => "benchmark",
             Self::Stress => "stress",
             Self::Capture => "capture",
+            Self::Video => "video",
         }
     }
 }
@@ -147,10 +150,17 @@ impl RunConfig {
         if self.action != Action::Stress && self.load != StressLoad::default() {
             return Err("custom workload controls are available only in stress mode".into());
         }
+        if self.action == Action::Video
+            && [self.width, self.height, self.frames] != [2560, 1440, 1200]
+        {
+            return Err(
+                "video requires 2560 by 1440 output and 1200 simulation ticks per chapter".into(),
+            );
+        }
         Ok(())
     }
     pub fn standard(&self) -> bool {
-        self.action != Action::Stress
+        !matches!(self.action, Action::Stress | Action::Video)
             && self.width == 2560
             && self.height == 1440
             && self.frames == 1200
@@ -159,7 +169,9 @@ impl RunConfig {
             && self.load == StressLoad::default()
     }
     pub fn profile_version(&self) -> &'static str {
-        if !self.standard() {
+        if self.action == Action::Video {
+            VIDEO_PROFILE_VERSION
+        } else if !self.standard() {
             "custom"
         } else if self.background {
             OFFSCREEN_PROFILE_VERSION

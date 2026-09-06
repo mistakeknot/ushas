@@ -7,6 +7,7 @@ mod engine;
 mod measurement;
 mod report;
 mod scene;
+mod video;
 
 fn main() {
     let command = match cli::parse(std::env::args().skip(1)) {

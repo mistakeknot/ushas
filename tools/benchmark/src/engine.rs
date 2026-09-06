@@ -10,9 +10,11 @@ use bevy::camera::{NormalizedRenderTarget, RenderTarget};
 use bevy::prelude::*;
 use bevy::render::camera::{ExtractedCamera, TemporalJitter};
 use bevy::render::extract_resource::{ExtractResource, ExtractResourcePlugin};
+use bevy::render::render_asset::RenderAssets;
 use bevy::render::render_resource::{PollType, TextureFormat, TextureUsages};
 use bevy::render::renderer::{RenderAdapterInfo, RenderDevice, RenderQueue};
 use bevy::render::sync_world::MainEntity;
+use bevy::render::texture::GpuImage;
 use bevy::render::view::screenshot::Screenshot;
 use bevy::render::view::{ExtractedView, ViewTarget};
 use bevy::render::{Extract, ExtractSchedule, Render, RenderApp, RenderSystems};
@@ -127,6 +129,14 @@ struct SharedData {
 }
 #[derive(Resource, Clone, Default)]
 struct Shared(Arc<Mutex<SharedData>>);
+#[derive(Resource, Clone)]
+struct VideoStream(Arc<Mutex<crate::video::Encoder>>);
+struct VideoOwner(VideoStream);
+impl Drop for VideoOwner {
+    fn drop(&mut self) {
+        self.0 .0.lock().unwrap_or_else(|e| e.into_inner()).abort();
+    }
+}
 impl Shared {
     fn error(&self, error: impl Into<String>) {
         let mut data = self.0.lock().expect("benchmark ledger poisoned");
@@ -221,7 +231,7 @@ impl Drop for IdleSleepActivity {
 }
 
 fn uses_image_target(config: &RunConfig) -> bool {
-    config.background || config.action == Action::Capture
+    config.background || matches!(config.action, Action::Capture | Action::Video)
 }
 
 fn target_image(config: &RunConfig) -> Option<Image> {
@@ -234,7 +244,7 @@ fn target_image(config: &RunConfig) -> Option<Image> {
         TextureFormat::Rgba8UnormSrgb,
         None,
     );
-    if config.action == Action::Capture {
+    if matches!(config.action, Action::Capture | Action::Video) {
         image.texture_descriptor.usage |= TextureUsages::COPY_SRC;
     }
     Some(image)
@@ -245,6 +255,19 @@ fn requests_capture(config: &RunConfig, tick: u32) -> bool {
 }
 
 pub fn run(config: RunConfig) -> EngineResult {
+    let video = if config.action == Action::Video {
+        match crate::video::Encoder::start(&config) {
+            Ok(encoder) => Some(VideoOwner(VideoStream(Arc::new(Mutex::new(encoder))))),
+            Err(error) => {
+                return EngineResult {
+                    errors: vec![error],
+                    ..Default::default()
+                }
+            }
+        }
+    } else {
+        None
+    };
     let offscreen = uses_image_target(&config);
     #[cfg(target_os = "macos")]
     let idle_sleep_activity = IdleSleepActivity::begin(offscreen);
@@ -285,6 +308,11 @@ pub fn run(config: RunConfig) -> EngineResult {
                 continue;
             }
             if let Ok(value) = serde_json::from_slice::<Value>(&line) {
+                // Wake a video readback or full pipe even while render extraction
+                // has blocked the main app. Signals use this same atomic path.
+                if value["event"] == "stop" {
+                    crate::control::request_stop();
+                }
                 let _ = tx.try_send(value);
             }
         }
@@ -345,6 +373,7 @@ pub fn run(config: RunConfig) -> EngineResult {
         seed: config.seed,
         generation: 1,
         load: config.load.clone(),
+        video: config.action == Action::Video,
         ..default()
     });
     app.insert_resource(settings.clone())
@@ -406,6 +435,14 @@ pub fn run(config: RunConfig) -> EngineResult {
                     seal_and_poll.after(RenderSystems::PostCleanup),
                 ),
             );
+        if let Some(video) = &video {
+            render.insert_resource(video.0.clone()).add_systems(
+                Render,
+                stream_video_frame
+                    .after(record_render)
+                    .before(RenderSystems::Cleanup),
+            );
+        }
     }
     emit(
         "started",
@@ -442,7 +479,9 @@ pub fn run(config: RunConfig) -> EngineResult {
             value
         })
         .collect();
-    let scope = if config.action == Action::Capture {
+    let scope = if config.action == Action::Video {
+        "separate offscreen 120 Hz deterministic replay with bounded 60 fps video readbacks and encoder admission; no benchmark score"
+    } else if config.action == Action::Capture {
         "separate deterministic offscreen image replay with screenshot readbacks; scoreless quality evidence"
     } else if offscreen {
         "normal-pipelined completed offscreen-render throughput; includes CPU/render scheduling and callback dispatch; no surface acquisition, preview or measured readbacks; not GPU busy time, frame pacing or panel delivery"
@@ -452,8 +491,8 @@ pub fn run(config: RunConfig) -> EngineResult {
     result.environment = json!({"scope":scope,
         "render_target":if offscreen {"offscreen_image"} else {"window"},
         "runner":if offscreen {"schedule_loop"} else {"winit"},
-        "live_preview":!offscreen,"measured_readbacks":config.action==Action::Capture,
-        "pipelined_rendering":true,"measurement_per_frame_gpu_callbacks":false,"per_frame_gpu_waits":false,"legacy_metalfx_gpu_timing_disabled":true,
+        "live_preview":!offscreen,"measured_readbacks":matches!(config.action,Action::Capture|Action::Video),
+        "pipelined_rendering":true,"measurement_per_frame_gpu_callbacks":false,"per_frame_gpu_waits":config.action==Action::Video,"legacy_metalfx_gpu_timing_disabled":true,
         "completion_boundary":if offscreen {"after RenderSystems::PostCleanup; prior wgpu submissions to the owned image target"} else {"after RenderSystems::PostCleanup; prior wgpu submissions, not final native Present buffer"},
         "present_mode_requested":if offscreen {None}else{Some("Immediate")},"present_mode_resolved":null,
         "present_mode_resolved_unavailable_reason":if offscreen {"not applicable: no native surface"} else {"Bevy 0.19 surface configuration is private; the window field retains the request rather than a resolved runtime policy."},
@@ -511,6 +550,25 @@ pub fn run(config: RunConfig) -> EngineResult {
         result
             .errors
             .push("stress ended before a completed checkpoint".into());
+    }
+    drop(data);
+    if let Some(video) = &video {
+        let mut encoder = video.0 .0.lock().unwrap_or_else(|e| e.into_inner());
+        if result.valid && !crate::control::stop_requested() {
+            match encoder.finish() {
+                Ok(movie) => result.video = Some(movie),
+                Err(error) => {
+                    result.valid = false;
+                    result.errors.push(error);
+                }
+            }
+        } else {
+            encoder.abort();
+        }
+        if crate::control::stop_requested() {
+            result.stopped = true;
+            result.valid = false;
+        }
     }
     result
 }
@@ -785,8 +843,15 @@ fn drive(
                                 scene: scene.kind.as_str().into(),
                                 valid,
                                 frames: cohort.frames.len() as u32,
-                                elapsed_seconds: cohort.seconds().unwrap_or(0.),
-                                render_fps: if settings.config.action == Action::Capture {
+                                elapsed_seconds: if settings.config.action == Action::Video {
+                                    settings.config.frames as f64 / 120.
+                                } else {
+                                    cohort.seconds().unwrap_or(0.)
+                                },
+                                render_fps: if matches!(
+                                    settings.config.action,
+                                    Action::Capture | Action::Video
+                                ) {
                                     None
                                 } else {
                                     fps
@@ -893,7 +958,7 @@ fn drive(
                         .contains_key(&controller.epoch);
                 stress_reset(first_of_segment, previous_seconds, scene.time_seconds)
             } else {
-                controller.next_tick == 0 || scene.tick == crate::scene::CAMERA_CUT_TICK
+                replay_reset(scene.tick)
             };
         if request.reset_expected {
             if let Some(reset) = &mut reset {
@@ -928,7 +993,7 @@ fn drive(
             };
         controller.next_tick += 1;
         controller.stress_tick += 1;
-        if controller.next_tick.is_multiple_of(120) {
+        if controller.next_tick.is_multiple_of(120) && settings.config.action != Action::Video {
             let progress = if settings.config.action == Action::Stress {
                 controller
                     .stress_started
@@ -952,7 +1017,12 @@ fn drive(
     // This timer is a safety limit, never the benchmark's score denominator.
     if settings.config.action != Action::Stress
         && controller.phase == Phase::Measure
-        && controller.phase_started.elapsed() > Duration::from_secs(600)
+        && controller.phase_started.elapsed()
+            > Duration::from_secs(if settings.config.action == Action::Video {
+                3600
+            } else {
+                600
+            })
     {
         controller
             .result
@@ -974,6 +1044,9 @@ fn stress_reset(first_of_segment: bool, previous_seconds: f32, seconds: f32) -> 
     let cut_seconds = crate::scene::CAMERA_CUT_TICK as f32 / 120.;
     first_of_segment || previous_seconds < cut_seconds && seconds >= cut_seconds
 }
+fn replay_reset(tick: u32) -> bool {
+    tick == 0 || tick == crate::scene::CAMERA_CUT_TICK
+}
 fn apply_load(controller: &mut Controller, scene: &mut SceneState) {
     if let Some(load) = controller.pending_load.take() {
         scene.load = load;
@@ -984,7 +1057,10 @@ fn apply_load(controller: &mut Controller, scene: &mut SceneState) {
 }
 fn finish(controller: &mut Controller, settings: &Settings, exit: &mut MessageWriter<AppExit>) {
     if controller.manual_stop && settings.config.action != Action::Stress {
-        controller.result.errors.push("benchmark cancelled".into());
+        controller
+            .result
+            .errors
+            .push(format!("{} cancelled", settings.config.action.as_str()));
     }
     controller.phase = Phase::Finished;
     *controller
@@ -1390,6 +1466,147 @@ fn note_readiness(data: &mut SharedData, request: &Request, qualified: bool, dia
     }
 }
 
+fn video_frame_qualified(request: &Request, data: &SharedData) -> bool {
+    data.cohorts.get(&request.epoch).is_some_and(|cohort| {
+        cohort.errors.is_empty()
+            && cohort.frames.last().is_some_and(|(token, proof)| {
+                token.epoch == request.epoch
+                    && token.tick == request.tick
+                    && token.frame == request.frame
+                    && token.view == request.view
+                    && token.frame == proof.frame
+                    && token.view == proof.view
+                    && token.output == proof.output
+                    && token.content == proof.content
+                    && token.mode == proof.mode
+                    && token.scale_bits == proof.scale_bits
+                    && proof.output_ready
+                    && proof.target_valid
+            })
+    })
+}
+
+/// This system only exists in video runs. Rendering and UI composition have
+/// submitted before this point. The exact owned image is copied once, joined to
+/// the original render proof above, then synchronously admitted to a bounded pipe.
+/// While blocked, no second render executes and temporal history remains intact.
+#[allow(clippy::too_many_arguments)]
+fn stream_video_frame(
+    request: Res<Request>,
+    settings: Res<Settings>,
+    shared: Res<Shared>,
+    video: Res<VideoStream>,
+    images: Res<RenderAssets<GpuImage>>,
+    device: Res<RenderDevice>,
+    queue: Res<RenderQueue>,
+    mut readback: Local<Option<bevy::render::render_resource::Buffer>>,
+) {
+    use bevy::render::render_resource::*;
+    if request.phase != Phase::Measure || !request.tick.is_multiple_of(2) {
+        return;
+    }
+    let result = (|| -> Result<(), String> {
+        if !video_frame_qualified(
+            &request,
+            &shared.0.lock().expect("benchmark ledger poisoned"),
+        ) {
+            return Err(format!(
+                "video readback lacks original qualified frame {}",
+                request.frame
+            ));
+        }
+        let handle = settings.image.as_ref().ok_or("video image target absent")?;
+        let image = images
+            .get(handle.id())
+            .ok_or("video image is not available on the GPU")?;
+        let descriptor = &image.texture_descriptor;
+        if descriptor.format != TextureFormat::Rgba8UnormSrgb
+            || [
+                descriptor.size.width,
+                descriptor.size.height,
+                descriptor.size.depth_or_array_layers,
+            ] != [crate::video::WIDTH, crate::video::HEIGHT, 1]
+            || !descriptor.usage.contains(TextureUsages::COPY_SRC)
+        {
+            return Err("video GPU target dimensions, color format or copy usage changed".into());
+        }
+        let buffer = readback.get_or_insert_with(|| {
+            device.create_buffer(&BufferDescriptor {
+                label: Some("video-only bounded frame readback"),
+                size: u64::from(crate::video::FRAME_BYTES),
+                usage: BufferUsages::COPY_DST | BufferUsages::MAP_READ,
+                mapped_at_creation: false,
+            })
+        });
+        // 2560 * 4 is already a multiple of wgpu's 256-byte row alignment.
+        let mut commands = device.create_command_encoder(&CommandEncoderDescriptor {
+            label: Some("video-only frame copy"),
+        });
+        commands.copy_texture_to_buffer(
+            image.texture.as_image_copy(),
+            TexelCopyBufferInfo {
+                buffer,
+                layout: TexelCopyBufferLayout {
+                    offset: 0,
+                    bytes_per_row: Some(crate::video::WIDTH * 4),
+                    rows_per_image: Some(crate::video::HEIGHT),
+                },
+            },
+            descriptor.size,
+        );
+        queue.submit([commands.finish()]);
+        let (tx, rx) = mpsc::sync_channel(1);
+        buffer.slice(..).map_async(MapMode::Read, move |result| {
+            let _ = tx.send(result);
+        });
+        let started = Instant::now();
+        loop {
+            if crate::control::stop_requested() {
+                buffer.unmap();
+                return Err("video export cancelled".into());
+            }
+            device
+                .poll(PollType::Poll)
+                .map_err(|e| format!("video readback poll failed: {e}"))?;
+            match rx.try_recv() {
+                Ok(result) => {
+                    result.map_err(|e| format!("video frame map failed: {e}"))?;
+                    break;
+                }
+                Err(mpsc::TryRecvError::Disconnected) => {
+                    return Err("video readback callback disappeared".into())
+                }
+                Err(mpsc::TryRecvError::Empty) => {}
+            }
+            if started.elapsed() > Duration::from_secs(60) {
+                buffer.unmap();
+                return Err("video readback timed out".into());
+            }
+            std::thread::sleep(Duration::from_millis(1));
+        }
+        let pixels = buffer.slice(..).get_mapped_range();
+        let scene = settings
+            .config
+            .scenes()
+            .into_iter()
+            .find(|scene| scene.as_str() == request.scene)
+            .ok_or("video readback chapter absent")?;
+        let result =
+            video
+                .0
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .submit(scene, request.tick, &pixels);
+        drop(pixels);
+        buffer.unmap();
+        result
+    })();
+    if let Err(error) = result {
+        video.0.lock().unwrap_or_else(|e| e.into_inner()).abort();
+        shared.error(error);
+    }
+}
+
 fn seal_and_poll(
     request: Res<Request>,
     settings: Res<Settings>,
@@ -1459,6 +1676,78 @@ fn platform() -> Value {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn video_owns_readback_target_but_never_spawns_quality_screenshots() {
+        let mut value = serde_json::to_value(RunConfig::default()).unwrap();
+        value["action"] = json!("video");
+        let config: RunConfig = serde_json::from_value(value).expect("video action");
+        let image = target_image(&config).expect("video has an offscreen target");
+        assert!(image
+            .texture_descriptor
+            .usage
+            .contains(TextureUsages::COPY_SRC));
+        for tick in 0..1200 {
+            assert!(!requests_capture(&config, tick));
+        }
+    }
+    #[test]
+    fn video_temporal_resets_happen_once_at_chapter_start_and_camera_cut() {
+        let resets: Vec<_> = (0..1200).filter(|tick| replay_reset(*tick)).collect();
+        assert_eq!(resets, [0, 900]);
+        assert!(resets.iter().all(|tick| tick.is_multiple_of(2)));
+    }
+
+    #[test]
+    fn video_readback_requires_the_original_render_frame_view_and_tick() {
+        let request = Request {
+            phase: Phase::Measure,
+            epoch: 1,
+            tick: 0,
+            frame: 10,
+            view: 7,
+            ..Default::default()
+        };
+        let token = FrameToken {
+            epoch: 1,
+            tick: 0,
+            frame: 10,
+            view: 7,
+            output: [2560, 1440],
+            content: [2560, 1440],
+            scale_bits: 1f32.to_bits(),
+            mode: 0,
+            started_ns: 10,
+        };
+        let proof = Proof {
+            frame: 10,
+            view: 7,
+            output: [2560, 1440],
+            content: [2560, 1440],
+            scale_bits: 1f32.to_bits(),
+            mode: 0,
+            output_ready: true,
+            target_valid: true,
+            reason: "fixture".into(),
+        };
+        let mut data = SharedData::default();
+        let mut cohort = Cohort::new(1, 1200, 1);
+        cohort.record(token, proof);
+        data.cohorts.insert(1, cohort);
+        assert!(video_frame_qualified(&request, &data));
+        for field in ["frame", "view", "tick", "epoch"] {
+            let mut wrong = request.clone();
+            match field {
+                "frame" => wrong.frame += 1,
+                "view" => wrong.view += 1,
+                "tick" => wrong.tick += 1,
+                _ => wrong.epoch += 1,
+            }
+            assert!(!video_frame_qualified(&wrong, &data));
+        }
+        data.cohorts.get_mut(&1).unwrap().frames[0].1.target_valid = false;
+        assert!(!video_frame_qualified(&request, &data));
+    }
 
     #[test]
     fn background_workloads_have_exact_image_targets_without_readback_usage() {

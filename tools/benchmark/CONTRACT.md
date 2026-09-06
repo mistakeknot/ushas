@@ -7,7 +7,11 @@ App owner owns macos/** and package.sh. No agent commits or edits other lanes.
 
 ## CLI
 
-Binary `ushas-bench`; commands benchmark,compare,stress,capture.
+Binary `ushas-bench`; commands benchmark,compare,stress,capture,video.
+Video extends this contract through [VIDEO-CONTRACT.md](VIDEO-CONTRACT.md),
+with a separate scoreless profile `claude-lab-video-v1`. It is always offscreen
+and fixes output to 2560 × 1440, 1,200 simulation ticks per chapter and 60 fps
+encoding. Mode, scale, scene and seed remain selectable.
 Common flags: --out DIRECTORY (new path),--mode native|temporal|spatial|bilinear,
 --scale 1|2/3|1/2,--width2560,--height1440,--frames1200 (per scene),--seed21434,
 --scene materials|geometry|lighting (optional; default all for benchmark/capture),
@@ -31,7 +35,8 @@ Background benchmark/stress never creates a native render window or reads back
 images. Keep normal pipelining and the existing cohort completion/proof rules.
 Environment evidence names `render_target=offscreen_image`,
 `runner=schedule_loop`, `live_preview=false`, and `measured_readbacks=false`.
-Only capture replays create screenshot/readback requests. The SwiftUI launcher
+Capture replays create screenshot requests; video replays use a separate bounded
+image readback after rendering. The SwiftUI launcher
 remains available for progress, stress controls, Stop and foreground Escape;
 background launch/completion must not steal focus from another application.
 
@@ -49,7 +54,7 @@ a new reporting epoch. Escape stops. No score for cancelled/invalid benchmark.
 
 Mode enum Native,Temporal,Spatial,Bilinear (serde lowercase). SceneKind enum
 Materials,Geometry,Lighting (serde lowercase),ALL array and as_str().
-Action enum Benchmark,Stress,Capture (serde lowercase).
+Action enum Benchmark,Stress,Capture,Video (serde lowercase).
 RunConfig fields: action:Action,mode:Mode,scale:f32,width:u32,height:u32,
 frames:u32,seed:u64,scene:Option<SceneKind>,duration:u64,out:PathBuf,
 load:StressLoad. StressLoad fields claudes/lights/particles:Option<u32>,fill:u32.
@@ -61,7 +66,8 @@ after app exit. Root report types:
 SceneResult {scene:String,valid:bool,frames:u32,elapsed_seconds:f64,
 render_fps:Option<f64>,errors:Vec<String>};
 EngineResult {valid:bool,stopped:bool,errors:Vec<String>,scenes:Vec<SceneResult>,
-captures:Vec<serde_json::Value>,stress_samples:Vec<Value>,environment:Value}.
+captures:Vec<serde_json::Value>,stress_samples:Vec<Value>,environment:Value,
+video:Option<Value>}.
 Both derive Serialize/Deserialize/Default/Clone. emit(event:&str,data:Value)
 prints oneJSONline with schema_version andevent. Root seals RunReport envelope.
 

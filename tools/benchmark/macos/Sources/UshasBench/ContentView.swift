@@ -102,7 +102,8 @@ struct ContentView: View {
           }
           Button("Live controls") { model.showStressControls() }.buttonStyle(LabButtonStyle())
         }
-        Button("Stop") { model.stop() }.buttonStyle(LabButtonStyle())
+        Button(model.activeCommand == "video" ? "Cancel" : "Stop") { model.stop() }.buttonStyle(
+          LabButtonStyle())
       }
     }
   }
@@ -157,15 +158,18 @@ struct ContentView: View {
             .font(
               .system(size: 11)
             ).foregroundStyle(Color.labMuted).fixedSize(horizontal: false, vertical: true)
-            Button {
-              model.launch("benchmark")
-            } label: {
-              HStack {
-                Text("Run benchmark")
-                Spacer()
-                Image(systemName: "arrow.up.right")
-              }
-            }.buttonStyle(LabButtonStyle(prominent: true)).disabled(model.running)
+            HStack {
+              Button {
+                model.launch("benchmark")
+              } label: {
+                HStack {
+                  Text("Run benchmark")
+                  Image(systemName: "arrow.up.right")
+                }
+              }.buttonStyle(LabButtonStyle(prominent: true)).disabled(model.running)
+              Button("Export video…") { model.exportVideo() }.buttonStyle(LabButtonStyle())
+                .disabled(model.running)
+            }
             Text(
               model.configuration.background
                 ? "Results appear here when the background run finishes."
@@ -173,7 +177,7 @@ struct ContentView: View {
             ).font(.system(size: 10))
               .foregroundStyle(Color.labMuted).fixedSize(horizontal: false, vertical: true)
           }
-        }.frame(width: 294)
+        }.frame(width: 330)
       }
     }
   }
@@ -219,7 +223,9 @@ struct ContentView: View {
       Toggle("Background run", isOn: $model.configuration.background).toggleStyle(.switch)
         .font(.custom("AvenirNext-Medium", size: 12))
       Text(
-        "Render the full scene without a live preview. You can use other apps; their CPU/GPU activity can affect results."
+        model.configuration.background
+          ? "On: render offscreen without a live preview. Other apps’ CPU/GPU activity can affect results."
+          : "Off: watch the lab in a visible render window. Keep it uncovered for Benchmark. Choose Stress for continuous viewing."
       )
       .font(.system(size: 11)).foregroundStyle(Color.labMuted).fixedSize(
         horizontal: false, vertical: true)

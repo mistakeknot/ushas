@@ -2,6 +2,7 @@ import AppKit
 import BenchCore
 import Observation
 import SwiftUI
+import UniformTypeIdentifiers
 
 @MainActor @Observable
 final class BenchModel {
@@ -35,6 +36,13 @@ final class BenchModel {
   var selectedHistoryID: String?
   var error: String?
   var exportMessage: String?
+  var videoConfiguration = BenchConfiguration()
+  var videoComparison = false
+  var videoFromSavedResult = false
+  var publishedVideo: URL?
+  var publishingVideo = false
+  @ObservationIgnored var publicationTask: Task<URL, Error>?
+  @ObservationIgnored var videoDestination: VideoDestination?
   @ObservationIgnored let session = ChildSession()
   @ObservationIgnored var store: RunStore?
   @ObservationIgnored var output: URL?
@@ -42,6 +50,7 @@ final class BenchModel {
   @ObservationIgnored var quitAfterStop = false
   @ObservationIgnored var stressPanel: NSPanel?
   @ObservationIgnored var statusUpdates = RunStatusUpdates()
+  @ObservationIgnored var historyTask: Task<Void, Never>?
   init() {
     do {
       let support = try FileManager.default.url(
@@ -51,22 +60,23 @@ final class BenchModel {
       refreshHistory()
     } catch { self.error = "Local history could not be opened: \(error.localizedDescription)" }
     session.onEvent = { [weak self] event in self?.receive(event) }
-    session.onFinish = { [weak self] outcome in self?.finish(outcome) }
+    session.onFinish = { [weak self] outcome in Task { await self?.finish(outcome) } }
   }
   var helper: URL { Bundle.main.bundleURL.appendingPathComponent("Contents/Helpers/ushas-bench") }
-  func launch(_ command: String) {
+  func launch(_ command: String, using requested: BenchConfiguration? = nil) {
     guard !running, let store else { return }
     error = nil
     exportMessage = nil
+    publishedVideo = nil
     selected = nil
     liveFPS = nil
     progress = 0
     activeCommand = command
     statusUpdates = RunStatusUpdates()
-    let runConfiguration = configuration
+    let runConfiguration = requested ?? configuration
     let presentation = RunPresentation(command: command, configuration: runConfiguration)
     activePresentation = presentation
-    status = "Opening the render lab…"
+    status = command == "video" ? "Preparing your video…" : "Opening the render lab…"
     currentScene = "Preparing the lab"
     let output = store.newOutput()
     self.output = output
@@ -89,12 +99,17 @@ final class BenchModel {
       self.error = error.localizedDescription
       running = false
       activePresentation = nil
+      videoDestination = nil
     }
   }
   func stop() {
     guard running else { return }
     statusUpdates.stop()
-    status = "Stopping and preserving the run…"
+    status = activeCommand == "video" ? "Cancelling the video…" : "Stopping and preserving the run…"
+    if publishingVideo {
+      publicationTask?.cancel()
+      return
+    }
     session.stop()
   }
   func configureStress() {
@@ -116,10 +131,8 @@ final class BenchModel {
       status = message
     }
   }
-  private func finish(_ outcome: ChildOutcome) {
+  private func finish(_ outcome: ChildOutcome) async {
     let presentation = activePresentation
-    running = false
-    activePresentation = nil
     configureTask?.cancel()
     configureTask = nil
     stressPanel?.close()
@@ -129,9 +142,37 @@ final class BenchModel {
         self.error = "The launcher receipt could not be saved: \(error.localizedDescription)"
       }
     }
-    selected = outcome.result.map { report in outcome.error.map { report.invalidated($0) } ?? report
+    let finishedReport = outcome.result.map { report in
+      outcome.error.map { report.invalidated($0) } ?? report
     }
-    selectedHistoryID = selected?.id
+    if activeCommand == "video", !outcome.cancelled, outcome.error == nil,
+      let result = finishedReport, let destination = videoDestination
+    {
+      publishingVideo = true
+      status = "Saving your video…"
+      let task = Task.detached {
+        let source = try result.videoURL()
+        try destination.publish(source: source, checkCancellation: { try Task.checkCancellation() })
+        return destination.url
+      }
+      publicationTask = task
+      do {
+        publishedVideo = try await task.value
+        exportMessage = "Video exported."
+      } catch is CancellationError {
+        exportMessage = "Export cancelled. The completed replay remains in local history."
+      } catch {
+        self.error =
+          "The video is saved in local history, but could not be exported: \(error.localizedDescription)"
+      }
+      publicationTask = nil
+      publishingVideo = false
+    }
+    videoDestination = nil
+    selected = finishedReport
+    selectedHistoryID = finishedReport?.id
+    running = false
+    activePresentation = nil
     status =
       outcome.cancelled
       ? "Stopped. Artifacts saved locally."
@@ -148,11 +189,23 @@ final class BenchModel {
       NSApp.windows.first(where: { !($0 is NSPanel) })?.makeKeyAndOrderFront(nil)
     }
   }
-  func refreshHistory() { history = store?.history() ?? [] }
+  func refreshHistory() {
+    historyTask?.cancel()
+    guard let store else {
+      history = []
+      return
+    }
+    historyTask = Task { [weak self] in
+      let entries = await Task.detached { store.history() }.value
+      guard !Task.isCancelled else { return }
+      self?.history = entries
+    }
+  }
   func select(_ item: HistoryEntry) {
     selected = item.result
     selectedHistoryID = item.id
     error = item.error
+    publishedVideo = nil
     page = .results
   }
   func revealCurrent() {
@@ -173,6 +226,50 @@ final class BenchModel {
       try store.export(selected, to: destination)
       exportMessage = "Offline report exported."
       NSWorkspace.shared.activateFileViewerSelecting([destination])
+    } catch { self.error = error.localizedDescription }
+  }
+  func exportVideo(from result: LoadedReport? = nil) {
+    guard !running else { return }
+    var replay = configuration
+    videoComparison = result?.report.kind == "compare"
+    videoFromSavedResult = result != nil
+    if let result {
+      guard result.report.standard, ["benchmark", "compare"].contains(result.report.kind) else {
+        return
+      }
+      replay = BenchConfiguration()
+      replay.seed = result.report.config?.seed ?? 21434
+      if !videoComparison {
+        replay.mode = RenderMode(rawValue: result.report.config?.mode ?? "native") ?? .native
+        let scale = result.report.config?.scale ?? 1
+        replay.scale = abs(scale - 0.5) < 1e-6 ? "1/2" : abs(scale - 2.0 / 3.0) < 1e-6 ? "2/3" : "1"
+      }
+    }
+    replay.background = true
+    replay.videoChapter = .all
+    videoConfiguration = replay
+    let panel = NSSavePanel()
+    panel.title = "Export video"
+    panel.prompt = "Render video"
+    panel.allowedContentTypes = [.mpeg4Movie]
+    panel.canCreateDirectories = true
+    panel.nameFieldStringValue = "Ushas-\(replay.mode.rawValue).mp4"
+    panel.accessoryView = NSHostingView(rootView: VideoExportOptions(model: self))
+    guard panel.runModal() == .OK, let destination = panel.url else { return }
+    do {
+      videoDestination = try VideoDestination(url: destination)
+      launch("video", using: videoConfiguration)
+    } catch { self.error = error.localizedDescription }
+  }
+  func openVideo(reveal: Bool = false) {
+    do {
+      guard let selected else { return }
+      let movie = try publishedVideo ?? selected.videoURL()
+      if reveal {
+        NSWorkspace.shared.activateFileViewerSelecting([movie])
+      } else {
+        NSWorkspace.shared.open(movie)
+      }
     } catch { self.error = error.localizedDescription }
   }
   func showStressControls() {
