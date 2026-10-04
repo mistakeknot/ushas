@@ -23,7 +23,7 @@
   "parent": {
     "pid": 90921,
     "ppid": 45219,
-    "cwd": "/Users/sma/projects/ushas",
+    "cwd": "/Users/user/ushas",
     "python": "/opt/homebrew/opt/python@3.14/bin/python3.14",
     "manifest": null,
     "manifest_sha256": null
@@ -76,7 +76,7 @@
       "presentation": "default",
       "argv": [
         "/opt/homebrew/opt/python@3.14/bin/python3.14",
-        "/Users/sma/projects/ushas/tools/smoke/run.py",
+        "/Users/user/ushas/tools/smoke/run.py",
         "--timeout",
         "65",
         "--binary",
@@ -147,7 +147,7 @@
   "interpretation": "Display asleep and session explicitly locked caused the initial temporal-only preflight to block. Single/dual interpolation were skipped, not measured. This attempt neither proves nor disproves interpolation performance, panel presentation, frame ordering/content, or latency.",
   "future_gate": "A fresh invocation with explicit awake/unlocked/on-console samples is needed to collect these diagnostic arms. Even then the existing aggregate sink cannot establish frame-kind/order/content/latency or net benefit.",
   "archive": {
-    "directory": "/Users/sma/projects/docs/ushas/evidence/presentation-diagnostic-01",
+    "directory": "/Users/user/ushas/evidence/presentation-diagnostic-01",
     "manifest_sha256": "edb26b35c30b986a11ffc5bd2d63b8a593e3d1c4db83d6615df2c415fd27d46c",
     "payload_files": 7,
     "payload_bytes": 84815,

@@ -61,8 +61,8 @@ All 18 PNGs were independently decoded as 1600×900 RGBA with every alpha byte
 255. All 30 original per-run artifact hashes were checked; the full three run
 directories were copied with source-before/source-after/destination SHA256
 agreement. The archive contains 33 payload files (15,807,014 bytes) plus its
-[verified manifest](/Users/sma/projects/docs/ushas/evidence/consumer-cuts-01/archive-manifest.json).
+[verified manifest](/Users/user/ushas/evidence/consumer-cuts-01/archive-manifest.json).
 Prepared-source, patch, check and build receipts are linked to the existing
-[pilot provenance archive](/Users/sma/projects/docs/ushas/evidence/consumer-completion-pilots-01/archive-manifest.json),
+[pilot provenance archive](/Users/user/ushas/evidence/consumer-completion-pilots-01/archive-manifest.json),
 whose referenced hashes and current binary identity were rechecked. No source,
 runner, live consumer worktree or GPU workload was changed during this audit.

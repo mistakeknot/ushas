@@ -45,12 +45,12 @@ captured. This is a serial, unpaced simulation, not a real-time video recording.
 
 The harness author viewed all 69 original images at their supplied 1280×720
 dimensions, grouped by matched state. The
-[per-capture record](/Users/sma/projects/docs/ushas/evidence/claude-moving-quality-02/review/author-inspection.json)
+[per-capture record](/Users/user/ushas/evidence/claude-moving-quality-02/review/author-inspection.json)
 records all three faces and ray silhouettes, limbs and tails, six rails and their
 occlusion boundaries, checkerboard and full UI. The review is not blinded and
 uses the declared qualitative feature/readability rules. A second reviewer
 independently inspected all 69 original images and recorded the
-[separate verdict](/Users/sma/projects/docs/ushas/evidence/claude-moving-quality-02/review/independent-inspection.json)
+[separate verdict](/Users/user/ushas/evidence/claude-moving-quality-02/review/independent-inspection.json)
 before reading the author's review. That reviewer also verified that all 69
 reviewed originals matched the archived PNG hashes. Both reviewers agreed on
 every gate below; neither review was blinded.
@@ -75,18 +75,18 @@ wall-clock recovery time is inferred.
 ## Retention and limits
 
 The separate archive at
-`/Users/sma/projects/docs/ushas/evidence/claude-moving-quality-02/` contains **104
+`/Users/user/ushas/evidence/claude-moving-quality-02/` contains **104
 payload files, 126,160,873 bytes**: all three original reports, manifests and logs;
 69 PNGs; the exact executable; build and launch receipts; frozen source files and
 a complete committed-source bundle; the declared protocol; the CPU audit and
 both separate inspections. Copied files matched source-before, source-after and
 destination hashes. No old quality archive was modified. Its
-[manifest](/Users/sma/projects/docs/ushas/evidence/claude-moving-quality-02/archive-manifest.json)
+[manifest](/Users/user/ushas/evidence/claude-moving-quality-02/archive-manifest.json)
 has SHA256 `0b98522bcea2b74778627efe8ec48170f5130a8c22e9bf422665ddc037757794`.
 
 ```sh
 PYTHONDONTWRITEBYTECODE=1 python3 \
-  /Users/sma/projects/docs/ushas/evidence/claude-moving-quality-02/audit.py
+  /Users/user/ushas/evidence/claude-moving-quality-02/audit.py
 ```
 
 The [machine-readable report](claude-moving-quality-02.json) separates validated

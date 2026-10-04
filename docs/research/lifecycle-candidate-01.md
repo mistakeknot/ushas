@@ -50,7 +50,7 @@ checks, not verified visible presentation. The preceding sandbox probe reported
 unavailable display state and is excluded.
 
 The archive at
-`/Users/sma/projects/docs/ushas/evidence/lifecycle-candidate-01/` contains **43
+`/Users/user/ushas/evidence/lifecycle-candidate-01/` contains **43
 hash-verified payloads, 8,749,674 bytes**: 36 candidate artifacts, six earlier
 failed-resize artifacts under `history/`, and a CPU-only `audit.py` that can
 recheck the archived candidate files. Its manifest SHA-256 is

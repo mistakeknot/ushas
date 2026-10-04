@@ -28,9 +28,9 @@ candidate commit rather than a mutable worktree. Preparation needs approximately
 python3 tools/consumer-smoke/run.py prepare --revision <ushas-commit>
 # The command prints a unique /private/tmp/ushas-consumer-... directory.
 python3 tools/consumer-smoke/run.py build <directory> --check \
-  --target-dir /Users/sma/projects/shadow-work/.claude/worktrees/metalfx-m5-research/target
+  --target-dir /Users/user/consumer-workspace/target
 python3 tools/consumer-smoke/run.py build <directory> \
-  --target-dir /Users/sma/projects/shadow-work/.claude/worktrees/metalfx-m5-research/target
+  --target-dir /Users/user/consumer-workspace/target
 ```
 
 `--check` compiles without launching a renderer. The second command creates a

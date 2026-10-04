@@ -9,13 +9,13 @@ and HDR composition.
 ## Inspected versions
 
 The historical consumer worktree is
-`/Users/sma/projects/shadow-work/.claude/worktrees/metalfx-m5-research`, at
+`/Users/user/consumer-workspace`, at
 `2a49dfcb294a69283e9e4cf9aa0662b61c51495a`. The requested old `tools/research`
 paths do not exist there. The actual scripts are
 `crates/sw-renderer/scripts/gate1-gauge.sh` and
 `crates/gpu-load-bench/scripts/sweep.sh`.
 
-Its root Cargo patch points to the live `/Users/sma/projects/ushas` directory.
+Its root Cargo patch points to the live `/Users/user/ushas` directory.
 The resolved package still says `bevy_metalfx 0.4.2`; that version does not pin the
 local implementation. Ushas was at `7db0818b6374f99475995b9939afdf9032aa18ce`
 when its current sink and CI invariants were inspected. Subsequent candidate
@@ -216,8 +216,8 @@ effect.
 
 ```bash
 set -euo pipefail
-consumer=/Users/sma/projects/shadow-work/.claude/worktrees/metalfx-m5-research
-ushas=/Users/sma/projects/ushas
+consumer=/Users/user/consumer-workspace
+ushas=/Users/user/ushas
 trial=$(mktemp -d /private/tmp/ushas-fg-candidate.XXXXXX)
 candidate=$(git -C "$ushas" rev-parse HEAD)
 git -C "$ushas" status --porcelain > "$trial/ushas-status.txt"

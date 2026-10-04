@@ -565,7 +565,7 @@
     }
   ],
   "scope": "Offscreen synthetic creation fault lifecycle and decoded phase pixels; not native window/OS, exclusive GPU completion, performance, driver-failure reproduction or adaptive acceptance",
-  "archive": "/Users/sma/projects/docs/ushas/evidence/lifecycle-fault-offscreen-03",
+  "archive": "/Users/user/ushas/evidence/lifecycle-fault-offscreen-03",
   "archive_manifest_sha256": "ecc0c03914cfef84c67e31f84662f36a63cc5f447ca1b74deb7632cf68f4dfb7",
   "acceptance_scope": "Both bounded synthetic creation exercises pass within retained phase windows with separate ordered transition events and decoded phase captures; not a complete history of every render frame",
   "independent_pixel_review": {

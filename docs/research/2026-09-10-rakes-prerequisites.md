@@ -40,6 +40,6 @@ Experimental presentation ownership/resize/synchronization repair and validated
 full-frame CPU/GPU/presentation measurement remain separate prerequisites.
 Adaptive scaling and interpolation were not enabled or changed by this patch.
 
-Fleet task `mk-ag2s.226` remains pending: registration is disabled and has no
+A fleet CI migration task remains pending: registration is disabled and has no
 required checks or isolated guest evidence. This patch does not migrate CI or
 authorize publication.

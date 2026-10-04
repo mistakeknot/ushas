@@ -38,7 +38,7 @@
     }
   ],
   "scope": "Failure-artifact integrity and pre-injection classification only; no creation-fault, recovery, native sleep or visibility acceptance",
-  "archive": "/Users/sma/projects/docs/ushas/evidence/lifecycle-fault-window-attempts-02",
+  "archive": "/Users/user/ushas/evidence/lifecycle-fault-window-attempts-02",
   "archive_manifest_sha256": "bd8a7d1c1592f8e1bc2dfbe0d9fc879f8bd44722371cdd1471ebfb89c9666753",
   "later_environment_observation": {
     "awake": false,

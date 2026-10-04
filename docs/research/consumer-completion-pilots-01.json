@@ -10,7 +10,7 @@
   },
   "measurement_scope": "Serial completed-render cadence includes CPU preparation, scheduling, logging, callback delivery and polling. It is not GPU busy time, normal pipelined app FPS, input latency, panel delivery or power.",
   "archive": {
-    "directory": "/Users/sma/projects/docs/ushas/evidence/consumer-completion-pilots-01",
+    "directory": "/Users/user/ushas/evidence/consumer-completion-pilots-01",
     "manifest": "archive-manifest.json",
     "manifest_sha256": "e5bc4d25d1f046417b1869a10299a1ab6bb28ae5a7cc61fce762bd9bba50831c",
     "retained_files": 29,
@@ -19,8 +19,8 @@
   "provenance": {
     "consumer_commit": "2a49dfcb294a69283e9e4cf9aa0662b61c51495a",
     "ushas_commit": "56a3b16c8c1c8f12a5320adc5082c6d20b6378c1",
-    "original_consumer_source": "/Users/sma/projects/shadow-work/.claude/worktrees/metalfx-m5-research",
-    "original_ushas_source": "/Users/sma/projects/ushas",
+    "original_consumer_source": "/Users/user/consumer-workspace",
+    "original_ushas_source": "/Users/user/ushas",
     "frozen_directory": "/private/tmp/ushas-consumer-zex22ugt",
     "resolved_metalfx": "path+file:///private/tmp/ushas-consumer-zex22ugt/ushas#bevy_metalfx@0.5.0-rc.1",
     "binary_sha256": "e1eaf124a3d01637a115af46bb9f02049c4ad093adb3596d5af49416df31a126",
@@ -52,7 +52,7 @@
       "sha256": "b79aed5f4e5638b539de879ccff6e5ada1725c1e6c934c741e8193d50cc74f94",
       "source_included_in": "consumer.patch"
     },
-    "instrumentation_directory": "/Users/sma/projects/ushas/tools/consumer-smoke",
+    "instrumentation_directory": "/Users/user/ushas/tools/consumer-smoke",
     "instrumentation_sha256": {
       "run.py": "064d6f0786c12ac3605a7a7b7bf579810959352a1bf9f620e03b73b2822c6d60",
       "probe.rs": "db2707814eb8ea96daa358015ad2deaa26d517e4b47f3ac423f9817187130abe",

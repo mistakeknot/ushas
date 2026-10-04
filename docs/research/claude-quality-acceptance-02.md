@@ -29,7 +29,7 @@ output paths were unused. Only the coordinating operator launches GPU work:
 
 ```sh
 PYTHONDONTWRITEBYTECODE=1 MTL_DEBUG_LAYER=1 python3 \
-  /Users/sma/projects/docs/ushas/evidence/claude-matched-quality-01/source/tools/smoke/quality_runner.py \
+  /Users/user/ushas/evidence/claude-matched-quality-01/source/tools/smoke/quality_runner.py \
   --binary /private/tmp/ushas-quality-artifacts-01/ushas-smoke \
   --out /private/tmp/ushas-roadmap-evidence/quality-native-temporal-02.json \
   --mode temporal --scale 1
@@ -131,7 +131,7 @@ and output are both 1280×720, with MSAA off and the expected SDR main format.
 
 The harness author inspected all twelve captures from native MSAA4, native
 Temporal and Temporal half: **36 images**. The
-[per-capture review](/Users/sma/projects/docs/ushas/evidence/claude-quality-acceptance-02/review/author-inspection.json)
+[per-capture review](/Users/user/ushas/evidence/claude-quality-acceptance-02/review/author-inspection.json)
 records grades and observations separately from the machine evidence. No missing
 or merged facial mark, missing reference-visible rail segment, duplicated contour,
 obvious old-pose overlay or corrupted UI was observed in the settled and moving
@@ -154,7 +154,7 @@ a baseline Temporal-path limitation, with additional loss at reduced resolution.
 
 The second reviewer independently inspected the same 36 distinct images and
 agreed with every gate result. The
-[separate review record](/Users/sma/projects/docs/ushas/evidence/claude-quality-acceptance-02/review/independent-inspection.json)
+[separate review record](/Users/user/ushas/evidence/claude-quality-acceptance-02/review/independent-inspection.json)
 retains that review's extent and observations. Both reviews were nonblinded and
 use the stated qualitative rules; they are not a calibrated population study.
 
@@ -165,11 +165,11 @@ Do not use this result to approve ongoing motion after a cut or general consumer
 enablement.
 
 The new run is archived separately at
-`/Users/sma/projects/docs/ushas/evidence/claude-quality-acceptance-02/`: **23
+`/Users/user/ushas/evidence/claude-quality-acceptance-02/`: **23
 payload files, 4,447,516 bytes**, including its report, twelve PNGs, log, manifest,
 frozen validator, build receipt, linked binary provenance, declared protocol,
 data audit, both separate inspections and a CPU-only `audit.py`. The
-[archive manifest](/Users/sma/projects/docs/ushas/evidence/claude-quality-acceptance-02/archive-manifest.json)
+[archive manifest](/Users/user/ushas/evidence/claude-quality-acceptance-02/archive-manifest.json)
 has SHA256 `36908f607d4d3e1507787668b3aa01e2e59a6a87f35cf474ab97b98acfb4a0b0`.
 Every copied file matched source-before, source-after and destination hashes.
 All 111 old payloads were rehashed and the old archive's exact file inventory
@@ -178,7 +178,7 @@ the visual review above covers only the stated 36 images.
 
 ```sh
 PYTHONDONTWRITEBYTECODE=1 python3 \
-  /Users/sma/projects/docs/ushas/evidence/claude-quality-acceptance-02/audit.py
+  /Users/user/ushas/evidence/claude-quality-acceptance-02/audit.py
 ```
 
 ## Prospective moving-after-cut experiment

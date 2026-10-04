@@ -48,7 +48,7 @@ the experimental timer cannot drive the governor.
 Original reports are under `/private/tmp/ushas-roadmap-evidence/` with `.json`,
 `.json.png`, and `.json.png.warmup.png` suffixes. Verified copies of all 20
 reports, images, logs and run manifests are archived at
-`/Users/sma/projects/docs/ushas/evidence/claude-quality-01/`; its
+`/Users/user/ushas/evidence/claude-quality-01/`; its
 `archive-manifest.json` records every file's size and SHA-256.
 
 | Run | Report SHA-256 | Final PNG SHA-256 |

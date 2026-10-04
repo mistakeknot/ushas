@@ -6,7 +6,7 @@
   "source_status_at_build": "",
   "binary_sha256": "29a28b2a15a0b7663c6b2d662d8cfea2861577afbf0703c22bffe83a1fc54c7d",
   "runner_sha256": "4839e7abff54c891d643ba9271db2c0483acc24bdc2266add7eb52d9286b07fe",
-  "archive": "/Users/sma/projects/docs/ushas/evidence/claude-moving-quality-02",
+  "archive": "/Users/user/ushas/evidence/claude-moving-quality-02",
   "archive_manifest_sha256": "0b98522bcea2b74778627efe8ec48170f5130a8c22e9bf422665ddc037757794",
   "archive_payload_files": 104,
   "archive_payload_bytes": 126160873,

@@ -59,7 +59,7 @@ A separate reviewer inspected all six lifecycle originals, and the audit author
 crosschecked the four changed/restored originals. Both changed images show a
 recognizable Claude scene, rails and UI with conspicuous fallback aliasing. Both
 restored images have smoother outlines. The
-[pixel review](/Users/sma/projects/docs/ushas/evidence/lifecycle-fault-offscreen-02/independent-pixels.json)
+[pixel review](/Users/user/ushas/evidence/lifecycle-fault-offscreen-02/independent-pixels.json)
 explicitly withholds the slow arm's missing ledger acceptance.
 
 These captures are associated with settled lifecycle phases. The harness does
@@ -74,23 +74,23 @@ reproduce a driver failure or the historical MPSGraph crash.
 
 The [machine-readable report](lifecycle-fault-offscreen-02.json) separates wrapper
 success, decoded pixels and independent lifecycle acceptance. The separate
-archive at `/Users/sma/projects/docs/ushas/evidence/lifecycle-fault-offscreen-02/`
+archive at `/Users/user/ushas/evidence/lifecycle-fault-offscreen-02/`
 retains the exact executable, build/launch receipts, all original artifacts and
 an immutable committed-source archive.
 
 Manifest revision 2 contains **29 payload files, 111,597,756 bytes**, excluding
 itself. It adds the independent pixel review and corrected audit while preserving
 the original manifest and all 26 original payloads byte-for-byte. The
-[revision 2 manifest](/Users/sma/projects/docs/ushas/evidence/lifecycle-fault-offscreen-02/archive-manifest-v2.json)
+[revision 2 manifest](/Users/user/ushas/evidence/lifecycle-fault-offscreen-02/archive-manifest-v2.json)
 SHA256 is `c4097ad5f76efa1390b29a63dc4b3d6146a652c04e32a041d0fb4a9f3e9a9da6`.
 The original manifest SHA256 remains
 `5ed4dd3c822c6aabd35a80c12b9475df374f500202ad5405db8d32dac9bbd291`.
 
 ```sh
 PYTHONDONTWRITEBYTECODE=1 python3 \
-  /Users/sma/projects/docs/ushas/evidence/lifecycle-fault-offscreen-02/audit-v2.py
+  /Users/user/ushas/evidence/lifecycle-fault-offscreen-02/audit-v2.py
 PYTHONDONTWRITEBYTECODE=1 python3 \
-  /Users/sma/projects/docs/ushas/evidence/lifecycle-fault-offscreen-02/audit-v2.py --self-test
+  /Users/user/ushas/evidence/lifecycle-fault-offscreen-02/audit-v2.py --self-test
 ```
 
 The corrected audit has six passing CPU tests, including a regression that

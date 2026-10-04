@@ -19,7 +19,7 @@ import tomllib
 import trial
 
 PIN = "2a49dfcb294a69283e9e4cf9aa0662b61c51495a"
-CONSUMER = Path("/Users/sma/projects/shadow-work/.claude/worktrees/metalfx-m5-research")
+CONSUMER = Path("/Users/user/consumer-workspace")
 HERE = Path(__file__).resolve().parent
 SHOTS = ("before", "p0", "p1", "p2", "p4", "p8")
 ARMS = {"native": ("off", "Disabled", 1.0), "bilinear": ("off", "Disabled", 0.5),
@@ -169,7 +169,7 @@ def patch_consumer(consumer, ushas, completed=False):
         path.write_text(after)
         files[relative] = (files.get(relative, (before,))[0], after)
 
-    change("Cargo.toml", [('bevy_metalfx = { path = "/Users/sma/projects/ushas" }',
+    change("Cargo.toml", [('bevy_metalfx = { path = "/Users/user/ushas" }',
                            'bevy_metalfx = { path = "../ushas" }')])
     change("crates/sw-renderer/Cargo.toml", [
         ('bevy_metalfx = { version = "0.4",', f'bevy_metalfx = {{ version = "={version}",'),

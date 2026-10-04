@@ -90,7 +90,7 @@ runs remain archived, including seven failures in the original unpaced
 
 The implementation and frozen evidence are committed on `main`. Large raw
 artifacts and exact executables are hash-archived under
-`/Users/sma/projects/docs/ushas/evidence/`; individual reports identify their
+`/Users/user/ushas/evidence/`; individual reports identify their
 manifests. The local roadmap checkpoint separates the current source from the
 latest confirmed CI and package revisions; none is labelled the final accepted
 release. The September 5 follow-up inspected the live restored native window;
