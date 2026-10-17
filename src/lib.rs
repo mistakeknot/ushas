@@ -17,7 +17,8 @@
 //! (via `bevy_asset`) has a C build script that needs an Apple toolchain. That
 //! was tried in 0.2.0 and produced no docs page at all.
 //!
-//! For the real API: `cargo doc --open -p bevy_metalfx --all-features` on a
+//! docs.rs builds on Linux, so the macOS-only modules are missing there. For
+//! the real API, run `cargo doc --open -p bevy_metalfx --all-features` on a
 //! Mac, or read the source.
 //!
 //! </div>
