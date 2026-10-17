@@ -3,7 +3,7 @@ name = "bevy_metalfx"
 version = "0.5.0-rc.1"
 edition = "2021"
 authors = ["mk <mk@generalsystemsventures.com>"]
-description = "Bevy plugin for Apple MetalFX upscaling and frame interpolation"
+description = "Apple MetalFX upscaling for Bevy, with experimental frame interpolation"
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/mistakeknot/ushas"
 keywords = ["bevy", "metalfx", "upscaling", "apple", "metal"]
@@ -13,10 +13,14 @@ categories = ["game-engines", "rendering", "graphics"]
 rust-version = "1.97.1"
 readme = "README.md"
 # examples/present_repro.rs is a bug-reproduction harness for an internal
-# issue, referencing scripts that live outside this crate; scripts/ verifies a
-# *published* build and cannot run from inside one. Both stay in the repo and
-# out of the package.
-exclude = ["examples/", "scripts/", "tools/"]
+# issue, referencing scripts that live outside this crate; it stays out of the
+# package. scripts/ verifies a *published* build and cannot run from inside one.
+# The other examples are small public demos and ship with the crate.
+exclude = ["examples/present_repro.rs", "scripts/", "tools/"]
+
+[[example]]
+name = "temporal_with_ui"
+required-features = ["temporal"]
 
 # docs.rs builds on x86_64-unknown-linux-gnu. The portable controller, effect
 # status and history APIs render there; macOS renderer and presentation modules
@@ -50,6 +54,32 @@ bevy = { version = "0.20", default-features = false, features = [
   "bevy_window",
 ] }
 log = "0.4"
+
+# The examples need windowing, PBR, UI and text, which the library itself does
+# not depend on.
+[dev-dependencies]
+bevy = { version = "0.20", default-features = false, features = [
+  "bevy_asset",
+  "bevy_color",
+  "bevy_core_pipeline",
+  "bevy_log",
+  "bevy_pbr",
+  "bevy_render",
+  "bevy_window",
+  "bevy_winit",
+  "bevy_ui",
+  "bevy_ui_render",
+  "bevy_text",
+  "default_font",
+  "multi_threaded",
+  "png",
+] }
+
+# winit needs a Linux window backend to compile, so the Linux CI jobs can build
+# the examples and link the test binaries. x11 is loaded at run time with
+# dlopen, so this needs no system libraries on the runner.
+[target.'cfg(target_os = "linux")'.dev-dependencies]
+bevy = { version = "0.20", default-features = false, features = ["x11"] }
 
 [target.'cfg(target_os = "macos")'.dependencies]
 # wgpu + wgpu-hal for raw Metal device/texture/cmdbuf extraction via as_hal

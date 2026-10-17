@@ -10,8 +10,16 @@ commit history when this file was added.
 ## [Unreleased]
 
 The checkout is the unpublished **0.5.0-rc.1** candidate. These APIs are not
-published; the README's crates.io quick start remains on the released 0.4 series.
-Hardware and release acceptance gates are still in progress.
+published. The README quick start targets 0.5 and Bevy 0.20. Hardware and
+release acceptance gates are still in progress.
+
+Frame interpolation and the adaptive controller remain **experimental** in 0.5.
+The controller has no default validated GPU timing producer, so it holds its
+configured quality until an external adapter supplies samples. Spatial and
+temporal upscaling are the supported modes, for one active 3D camera with a
+full-target viewport.
+
+The Bevy 0.20 / wgpu 30 port was contributed by @cdeil.
 
 ### Added
 
@@ -98,6 +106,18 @@ Hardware and release acceptance gates are still in progress.
   targeting an image next to a window was sized after the window.
 - The instrumented `Disabled` command-buffer diagnostic is available before
   plugin early returns. `GpuTimingSink::snapshot()` returns chronological samples.
+
+### Documentation
+
+- README rewritten for 0.5: Bevy 0.20 quick start and compatibility table, a
+  sourced "Does it help?" summary, a stability statement, and absolute links so
+  the crates.io page resolves. Per-version upgrade notes moved to
+  `docs/upgrading.md`.
+- New published examples: `spatial`, `temporal_with_ui` (feature `temporal`) and
+  `quality_menu`. `examples/present_repro.rs` stays out of the package.
+- The crate description now reads "Apple MetalFX upscaling for Bevy, with
+  experimental frame interpolation". The crate docs note that docs.rs builds on
+  Linux, so macOS-only modules are missing there.
 
 ### Evidence and Limitations
 

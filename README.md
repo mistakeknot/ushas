@@ -4,25 +4,34 @@
 [![Docs.rs](https://docs.rs/bevy_metalfx/badge.svg)](https://docs.rs/bevy_metalfx)
 [![License](https://img.shields.io/crates/l/bevy_metalfx.svg)](https://github.com/mistakeknot/ushas#license)
 
-Bevy plugin for Apple MetalFX upscaling and experimental frame interpolation.
-It renders the scene at a reduced resolution and reconstructs a full-resolution
-image. Whether this improves frame cost depends on the workload and hardware.
+Apple MetalFX upscaling for Bevy 0.20. Render at a reduced resolution and let
+MetalFX reconstruct the full-resolution image.
 
-The repository is `ushas`; its published crate is `bevy_metalfx`.
-**The quick start below uses the published 0.4 series. Sections marked
-Development describe unpublished changes intended for 0.5, including a breaking
-adaptive-controller replacement.** The checkout is the unpublished
-`0.5.0-rc.1` candidate; hardware and release gates are still in progress.
-See [CHANGELOG.md](CHANGELOG.md).
+The repository is `ushas`; the crate is `bevy_metalfx`.
+
+**Does it help?** It depends on your scene; do not expect a speed-up by default.
+The saving comes from rendering fewer pixels, and MetalFX reconstructs the image
+from them. On default scenes native rendering was not beaten. Under heavy
+fragment load (Apple M5 Max, 1280x720, static scene, load 8,000) half-resolution
+Temporal completed a frame in 0.4565 times the native time (95% interval 0.4304
+to 0.4859): 13.848 ms against 12.892 ms for plain half-resolution bilinear and
+30.486 ms for native Disabled with MSAA4 (mean per frame). These were measured
+on Apple M5 Max under Bevy 0.19 with the 0.5 candidate code, as serial offscreen
+timing, not production FPS. Details and limits are in the
+[measurement report](https://github.com/mistakeknot/ushas/blob/main/docs/research/claude-completion-campaign-01.md).
 
 ## Quick Start
 
-For Bevy 0.19:
-
 ```toml
 [dependencies]
-bevy_metalfx = "0.4"
+bevy_metalfx = "0.5"
 ```
+
+| bevy_metalfx | Bevy | Rust |
+|--------------|------|------|
+| 0.5 | 0.20 | 1.97.1 |
+| 0.4 | 0.19 | 1.95 |
+| 0.1 to 0.3 | 0.18 | 1.82 |
 
 ```rust
 use bevy::prelude::*;
@@ -44,27 +53,41 @@ Defaults are `render_scale: 0.5`, `mode: Spatial`, and `adaptive: false`.
 Use `..default()` to accommodate optional platform-specific fields. Unsupported
 platforms disable MetalFX while retaining the public configuration resources.
 
+Runnable examples live in [`examples/`](https://github.com/mistakeknot/ushas/blob/main/examples):
+[`spatial`](https://github.com/mistakeknot/ushas/blob/main/examples/spatial.rs),
+[`temporal_with_ui`](https://github.com/mistakeknot/ushas/blob/main/examples/temporal_with_ui.rs) (feature `temporal`) and
+[`quality_menu`](https://github.com/mistakeknot/ushas/blob/main/examples/quality_menu.rs). Upgrading from an earlier release:
+[docs/upgrading.md](https://github.com/mistakeknot/ushas/blob/main/docs/upgrading.md).
+
 ## Modes and Features
 
-| Mode | Cargo feature | Minimum macOS |
-|------|---------------|---------------|
-| Spatial upscaling | `spatial` (default) | 13 |
-| Temporal upscaling with depth and motion vectors | `temporal` | 13 |
-| Experimental frame interpolation | `frame-interpolation` | 26 |
+Spatial and temporal upscaling are supported; frame interpolation and adaptive resolution are experimental. One active 3D camera with a full-target viewport.
+
+| Mode | Cargo feature | Minimum macOS | Status |
+|------|---------------|---------------|--------|
+| Spatial upscaling | `spatial` (default) | 13 | Supported |
+| Temporal upscaling with depth and motion vectors | `temporal` | 13 | Supported |
+| Frame interpolation | `frame-interpolation` | 26 | Experimental |
+| Adaptive resolution | none (`adaptive: true`) | 13 | Experimental |
 
 ```toml
 # Spatial only.
-bevy_metalfx = "0.4"
+bevy_metalfx = "0.5"
 # Temporal includes spatial.
-bevy_metalfx = { version = "0.4", features = ["temporal"] }
+bevy_metalfx = { version = "0.5", features = ["temporal"] }
 # Interpolation includes temporal and spatial.
-bevy_metalfx = { version = "0.4", features = ["frame-interpolation"] }
+bevy_metalfx = { version = "0.5", features = ["frame-interpolation"] }
 ```
 
 Features gate both the crate's encode paths and the corresponding MetalFX
-bindings. Runtime support and scaler readiness must also be checked.
+bindings. Runtime support and scaler readiness must also be checked. The
+adaptive controller installs no validated GPU timing producer by default; until
+an external adapter supplies one it holds the configured quality.
 
-## Development: Render Path and Scope
+Hardware: tested on Apple M5 Max; also run by a contributor on M5 Pro. All
+benchmark figures are from the M5 Max only.
+
+## Render Path and Scope
 
 Spatial and temporal upscaling run after the scene pass, before tonemapping and
 later post-processing. The reconstructed scene then receives output-resolution
@@ -88,31 +111,16 @@ status. A per-view status registry does not imply multi-view rendering support.
 Scaler cache identity includes the view, dimensions, format, and mode; readiness
 is checked again after a replacement.
 
-## Development: Runnable Claude Sample
+## Smoke Test and Measurements
 
-The [smoke sample](tools/smoke/README.md) renders a procedural 3D interpretation
-of [vgel's Claude character](tools/smoke/CHARACTER.md), with motion, thin geometry,
-camera controls and output-resolution UI. See the [actual render](tools/smoke/preview.png).
-Native and bilinear arms provide comparison controls.
-
-The first [balanced completed-render campaign](docs/research/claude-completion-campaign-01.md)
-passed all 60 runs and demonstrates workload-dependent fixed-scale benefit.
-Its serial offscreen rate includes CPU scheduling and polling; it is not
-production pipelined FPS or a GPU-cost signal for automatic adaptation.
+The [smoke sample](https://github.com/mistakeknot/ushas/blob/main/tools/smoke/README.md) is a standalone render fixture with
+readiness checks, matching control arms, captures and an artifact contract. The
+first balanced [completed-render campaign](https://github.com/mistakeknot/ushas/blob/main/docs/research/claude-completion-campaign-01.md)
+passed all 60 runs and shows a workload-dependent fixed-scale benefit. Its serial
+offscreen rate includes CPU scheduling and polling; it is not production
+pipelined FPS or a GPU-cost signal for automatic adaptation.
 
 ## API Reference
-
-The Development APIs below require the source candidate, rather than the
-published 0.4 quick start:
-
-```toml
-bevy_metalfx = { path = "../ushas", features = ["temporal"] }
-```
-
-This unpublished Bevy 0.20 candidate currently requires a local checkout with
-the port applied. Hardware validation and release preparation continue
-separately. After the port lands, replace `path` with the upstream `git` URL and
-an exact verified port commit; the former `f7e2769` pin uses Bevy 0.19.
 
 | Type | Purpose |
 |------|---------|
@@ -124,7 +132,7 @@ an exact verified port commit; the former `f7e2769` pin uses Bevy 0.19.
 | `MetalFxLabel` | Bevy `SystemSet` for pass ordering |
 | `MetalFxConfig`, `MetalFxUpscaleNode` | Renderer state maintained by the plugin |
 
-### Development: Observe the Effect
+### Observe the Effect
 
 `MetalFxEffectStatus` records each view's requested and effective mode, requested
 scale, actual input/output dimensions in physical pixels, frame identity, and
@@ -166,7 +174,7 @@ as `NoRender`. Consumers that tolerate render-world lag must explicitly check
 `is_fresh()` before using `last_observation`. The status and observation-frame
 resources are available even when rendering is disabled or no `RenderApp` exists.
 
-### Development: Scale Bounds and Quality Presets
+### Scale Bounds and Quality Presets
 
 `MetalFxDeviceScaleBand` reports the device's allowed band;
 `MetalFxScaleRange` reports the band configured for the scaler. Render scale is
@@ -174,8 +182,8 @@ resources are available even when rendering is disabled or no `RenderApp` exists
 `contains()`, and the configured range exposes `as_upscale_ratios()`.
 
 The device query runs in plugin `finish`, once a render device exists.
-`is_from_device()` distinguishes a queried band from a fallback. The previously
-tested M5 Max reported a maximum temporal ratio of 3.0, admitting a scale of
+`is_from_device()` distinguishes a queried band from a fallback. An
+Apple M5 Max reported a maximum temporal ratio of 3.0, admitting a scale of
 one third; the conservative temporal fallback admits one half. Spatial mode
 uses the plugin's `0.1..=1.0` range rather than a reported temporal band.
 
@@ -198,7 +206,7 @@ The presets are `UltraPerformance` (1/3), `Performance` (1/2), `Balanced`
 The adaptive quality floor further restricts that ladder: its default of 0.5
 keeps one third disabled even on hardware that admits it.
 
-### Development: Adaptive Resolution
+### Adaptive Resolution (experimental)
 
 Set `adaptive: true` and configure `MetalFxAdaptiveConfig`. The default target
 uses the refresh reported for the primary window's current monitor, with a
@@ -281,11 +289,10 @@ after a workload discontinuity so old cost evidence does not drive the new scene
 On macOS, `GpuTimingSink` / `GpuTimingStats` expose the dedicated MetalFX
 command buffer's elapsed interval. It can include dependency waits and excludes
 other scene work. It cannot establish total GPU frame cost, isolated scaler
-execution cost, or whether the application is GPU-bound. In the development
-checkout, the instrumented `Disabled` arm submits an empty timed buffer as a
+execution cost, or whether the application is GPU-bound. The instrumented `Disabled` arm submits an empty timed buffer as a
 diagnostic control.
 
-**Development:** `frame_timing::ExperimentalFrameTimingPlugin` adds optional
+`frame_timing::ExperimentalFrameTimingPlugin` adds optional
 per-view timestamp markers. Enable it explicitly after `MetalFxPlugin` and
 request `frame_timing::requested_features()` in the renderer's device settings.
 Read observations from `frame_timing::ExperimentalFrameTiming`. Marker coverage,
@@ -296,8 +303,7 @@ the adaptive governor.
 Use the [standalone render smoke](https://github.com/mistakeknot/ushas/blob/main/tools/smoke/README.md) for the build command,
 readiness gates, matching control arms, captures, and artifact contract. A
 passing capture is evidence of rendered content, not physical panel delivery.
-No new GPU speedup or automatic timing validation is claimed for this development
-API.
+No GPU speedup or automatic timing validation is claimed for this API.
 
 ## Experimental Dual Presentation
 
@@ -318,146 +324,24 @@ That commit also records a 10/0/3 weak pass with the display asleep.
 
 The later strong result supersedes the old blanket README claim that drawable
 timestamps never populated. It remains historical evidence for that checkout
-and setup. The current development path still needs a fresh, pinned replay of
-presentation cadence, ordering, latency, and UI/HDR composition; it has no new
-panel-delivery claim.
+and setup. The current path still needs a fresh, pinned replay of
+presentation cadence, ordering, latency, and UI/HDR composition; it makes no panel-delivery claim.
 
 ## Bevy Compatibility
 
 | bevy_metalfx | Bevy | MSRV |
 |-------------|------|------|
-| Development (unpublished) | 0.20 | 1.97.1 |
+| 0.5 | 0.20 | 1.97.1 |
 | 0.4.1–0.4.2 | 0.19 | 1.95 |
 | ~~0.4.0~~ (yanked) | 0.19 | 1.95 |
 | 0.1–0.3 | 0.18 | 1.82 |
 
 0.4.0 panicked on its first MetalFX encode; 0.4.1 fixed the raw/wgpu encoder
 mixing. 0.4.2 fixed extraction of the reduced-resolution override. Historical
-hardware checks and their limits are recorded in the [changelog](CHANGELOG.md);
+hardware checks and their limits are recorded in the [changelog](https://github.com/mistakeknot/ushas/blob/main/CHANGELOG.md);
 compilation alone does not establish rendered behavior.
 
-## Development: Upgrading from 0.4
-
-The 0.5 candidate requires Bevy 0.20 (wgpu 30) and Rust 1.97.1. `bevy` 0.20
-and its WESL shader dependencies set that minimum; nothing in this crate's own code needs it.
-
-The upcoming 0.5 changes replace the app-time P99 governor and remove the public
-`AdaptiveScaleState` type. Read `MetalFxAdaptiveStatus` and configure
-`MetalFxAdaptiveConfig` instead. Existing `MetalFxPlugin { adaptive: true, .. }`
-code must supply an externally validated GPU frame-cost adapter to obtain
-performance-driven scale changes. Without one, scale holds after configuration
-and floor clamping. The default quality floor remains 0.5 even when the device
-admits lower presets.
-
-Spatial and temporal output now enters the view before tonemapping and UI.
-Consumers that ordered custom systems around the old late MetalFX output must
-review that ordering. Frame interpolation retains its experimental late path.
-
-## Upgrading from 0.3
-
-**If you are on Bevy 0.18, stay on `bevy_metalfx` 0.3.** 0.4 requires Bevy 0.19
-and cannot work with 0.18: Bevy 0.19 removed the render graph, and this crate's
-pass is now a system in a schedule. There is no version of this crate that
-supports both.
-
-The upgrade is mostly Bevy's, not ours. Most apps change nothing in their
-MetalFX code — `MetalFxPlugin`, `MetalFxMode`, `MetalFxRenderScale`,
-`is_available()` and `probe_spatial_scaler()` are all untouched.
-
-| Change | Why | Fix |
-|---|---|---|
-| Requires Bevy 0.19 and Rust 1.95 | `bevy_ecs` 0.19 sets the MSRV; nothing here needs it | upgrade both |
-| `MetalFxLabel` is a `SystemSet`, was a `RenderLabel` | Bevy 0.19 has no render graph to label | `.after(MetalFxLabel)` still works; drop any `add_render_graph_edges` |
-| `MetalFxUpscaleNode` is no longer a `ViewNode` | the pass is the `metalfx_upscale` system now | remove any manual graph wiring; the plugin registers it |
-
-If you never referenced the node or the label directly — the common case, since
-the plugin wires itself — 0.4 is a drop-in once you are on Bevy 0.19.
-
-**New in 0.4**, both closing gaps that used to fail silently:
-
-- `MetalFxScaleRange` reports the render-scale band MetalFX will accept, and
-  `contains()` lets you check a scale *before* setting it. Previously an
-  out-of-band scale produced a `nil` scaler with no diagnostic at all.
-- `MetalFxHistoryReset` lets you drop accumulated temporal history on a camera
-  cut, teleport or scene load. Previously only the very first frame reset, so a
-  hard cut ghosted.
-
-## Upgrading from 0.2
-
-0.3 changes two things on the presentation-telemetry surface. Both are breaking
-only for code that reads `PresentSink`/`PresentStats` — the plugin, the modes,
-the render scale and every upscaling type are untouched, so if you do not sample
-presentation telemetry, 0.3 is a drop-in.
-
-| Change | Why | Fix |
-|---|---|---|
-| `PresentSink::counts()` returns `(u64, u64, u64, u64, u64)`, was `(u64, u64, usize, u64, u64)` | the third element is a real counter now, not a length | see below — **read the note, do not just fix the type** |
-| `PresentStats::interp_fps` renamed `presented_fps` | it was never the interpolated-frame rate | rename at the use site |
-
-**The third element of `counts()` changed meaning, not just type.** It used to
-be `presented.len()` — the occupancy of the sample ring, which is capped at
-`RING_CAPACITY` (480). The other four counters are cumulative and unbounded, so
-past 480 presents the old third element sat at 480 forever while `encoded`,
-`callbacks` and `committed` kept climbing. Read as a row, that looks exactly
-like presentation having stopped 480 frames in. It is now `displayed`, a
-cumulative count of frames that actually reached the display, reset only by
-`reset()`.
-
-```rust
-// 0.2 — third element saturates at 480
-let (encoded, dropped, presented_len, callbacks, committed) = sink.counts();
-
-// 0.3 — third element is cumulative, like the other four
-let (encoded, dropped, displayed, callbacks, committed) = sink.counts();
-```
-
-The type moved from `usize` to `u64` in the same change, and that is deliberate:
-it makes the compiler stop you. Had the type stayed put, a saturating gauge
-would have silently become an unbounded counter and every dashboard built on it
-would have kept rendering without a single diagnostic. If you were storing the
-old value as a "how full is the ring" signal, there is no replacement for it —
-that was never a useful number to expose, and it is the ring's own business.
-
-**`interp_fps` → `presented_fps`** is a rename with no behavioural change, but
-the old name was actively wrong. One presented-handler serves every drawable the
-crate presents, so the rate it measures has always covered real and interpolated
-frames together. Code that added a render rate to `interp_fps` to recover a
-total was double-counting the real frames; delete the addition.
-
-```rust
-// 0.2 — the name invited this, and it is wrong
-let total = stats.interp_fps + render_fps;
-
-// 0.3 — the name says what it always measured
-let total = stats.presented_fps;
-```
-
-## Upgrading from 0.1
-
-0.2 carries breaking changes, which is what the minor bump signals for a `0.x`
-crate. In practice one pattern covers almost all of it:
-
-```rust
-// 0.1 — exhaustive struct literal
-MetalFxPlugin { render_scale: 0.5, mode: MetalFxMode::Spatial }
-
-// 0.2 — `..default()` absorbs the new fields
-MetalFxPlugin { render_scale: 0.5, mode: MetalFxMode::Spatial, ..default() }
-```
-
-| Change | Why | Fix |
-|---|---|---|
-| `MetalFxPlugin` gained `adaptive`, `gpu_timing_sink`, `dual_present` | adaptive scaling, GPU timing, dual presentation | add `..default()` |
-| `MetalFxConfig` fields are now private | it is a render-world mirror the plugin maintains, not a control surface | set scale via `MetalFxRenderScale`, mode via `MetalFxPlugin::mode` |
-| `MetalFxModeResource.0` is now private | reading is meaningful, writing is not | `.get()` |
-
-`MetalFxMode`, `MetalFxRenderScale`, `MetalFxLabel`, `MetalFxUpscaleNode`,
-`is_available()` and `probe_spatial_scaler()` are unchanged.
-
-**Fixed in 0.2:** `features = ["temporal"]` did not compile on Linux or Windows
-in 0.1 — an internal module was platform-gated while its caller was not, so the
-build failed with `unresolved module jitter`. If you build cross-platform with
-temporal upscaling, 0.1 never worked for you off macOS; 0.2 does.
+Upgrading from an earlier release? See [docs/upgrading.md](https://github.com/mistakeknot/ushas/blob/main/docs/upgrading.md).
 
 ## Platform Support
 
@@ -468,18 +352,19 @@ temporal upscaling, 0.1 never worked for you off macOS; 0.2 does.
 
 ## Documentation
 
-- [API docs on docs.rs](https://docs.rs/bevy_metalfx)
+- [API docs on docs.rs](https://docs.rs/bevy_metalfx) (built on Linux, so macOS-only modules are missing there; on a Mac run `cargo doc --open -p bevy_metalfx --all-features`)
 - [Apple MetalFX documentation](https://developer.apple.com/documentation/metalfx)
 - [objc2-metal-fx bindings](https://docs.rs/objc2-metal-fx)
 - [Render smoke and measurement procedure](https://github.com/mistakeknot/ushas/blob/main/tools/smoke/README.md)
+- [Upgrading](https://github.com/mistakeknot/ushas/blob/main/docs/upgrading.md) and [changelog](https://github.com/mistakeknot/ushas/blob/main/CHANGELOG.md)
 
 ## License
 
 Licensed under either of
 
-- Apache License, Version 2.0 ([LICENSE-APACHE](LICENSE-APACHE) or
+- Apache License, Version 2.0 ([LICENSE-APACHE](https://github.com/mistakeknot/ushas/blob/main/LICENSE-APACHE) or
   <https://www.apache.org/licenses/LICENSE-2.0>)
-- MIT license ([LICENSE-MIT](LICENSE-MIT) or
+- MIT license ([LICENSE-MIT](https://github.com/mistakeknot/ushas/blob/main/LICENSE-MIT) or
   <https://opensource.org/licenses/MIT>)
 
 at your option.
