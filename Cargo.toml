@@ -75,6 +75,12 @@ bevy = { version = "0.20", default-features = false, features = [
   "png",
 ] }
 
+# winit needs a Linux window backend to compile, so the Linux CI jobs can build
+# the examples and link the test binaries. x11 is loaded at run time with
+# dlopen, so this needs no system libraries on the runner.
+[target.'cfg(target_os = "linux")'.dev-dependencies]
+bevy = { version = "0.20", default-features = false, features = ["x11"] }
+
 [target.'cfg(target_os = "macos")'.dependencies]
 # wgpu + wgpu-hal for raw Metal device/texture/cmdbuf extraction via as_hal
 wgpu = "30"
