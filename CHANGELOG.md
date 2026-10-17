@@ -58,6 +58,10 @@ Hardware and release acceptance gates are still in progress.
   UI. Custom pass ordering must account for this earlier stage. Frame
   interpolation retains its separate experimental late output path.
 
+- The resolution override is applied in `PostUpdate`, after Bevy's
+  `CameraUpdateSystems`, rather than in `Update`. Custom ordering against
+  the override must follow it there. `MipBias` is owned by the plugin on every
+  3D camera: a bias that disagrees with the render scale is corrected.
 - `MetalFxHistoryReset` is now `Clone` rather than `Copy`. Requests persist
   through inactive or unready render frames and clear only when a temporal
   encode acknowledges the captured request; an old acknowledgement cannot
@@ -82,6 +86,12 @@ Hardware and release acceptance gates are still in progress.
   receive resolution overrides without waiting for a further scale change.
   View/size changes invalidate scaler state; unsupported multiple-view and
   viewport layouts report explicit reasons.
+- The reduced-resolution main pass is sized from each 3D camera's own render
+  target instead of the primary window. A camera rendering to an image in a
+  windowless app, or any camera in an app with two windows, previously got no
+  override at all: the scaler was built at a 1:1 ratio and `OutputWritten` was
+  reported with content equal to output, with nothing warning. A camera
+  targeting an image next to a window was sized after the window.
 - The instrumented `Disabled` command-buffer diagnostic is available before
   plugin early returns. `GpuTimingSink::snapshot()` returns chronological samples.
 

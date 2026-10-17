@@ -83,7 +83,7 @@ mod stub {
         pub(crate) dynamic_res_range: Option<(f32, f32)>,
     }
 
-    /// Render graph node (stub for non-macOS platforms — does nothing).
+    /// State of the upscale pass (stub for non-macOS platforms — does nothing).
     #[derive(Default)]
     pub struct MetalFxUpscaleNode;
 }
@@ -737,24 +737,19 @@ impl bevy::app::Plugin for MetalFxPlugin {
         });
         register_resolution_override(app);
 
-        // Adaptive render scale (opt-in).
+        // Adaptive render scale (opt-in). The resolution override is not part
+        // of these chains: it runs in `PostUpdate`, once Bevy has sized every
+        // camera's target for the frame, and reads whatever scale was settled
+        // on here.
         if self.adaptive {
             adaptive_runtime::configure_ladder(app, provisional_ladder.clone(), self.render_scale);
             app.add_systems(
                 bevy::app::Update,
-                (
-                    adaptive_runtime::adaptive_scale_system,
-                    sync_config_scale,
-                    update_resolution_on_scale_change,
-                )
-                    .chain(),
+                (adaptive_runtime::adaptive_scale_system, sync_config_scale).chain(),
             );
         } else {
             // Even without adaptive, keep config in sync for manual scale changes.
-            app.add_systems(
-                bevy::app::Update,
-                (sync_config_scale, update_resolution_on_scale_change).chain(),
-            );
+            app.add_systems(bevy::app::Update, sync_config_scale);
         }
 
         // Temporal + FrameInterpolation modes: add prepass components and jitter system.
@@ -886,12 +881,21 @@ impl MetalFxModeResource {
 /// [`extract_resolution_override`]. Registering them apart again would restore a
 /// plugin that reports a render scale it does not apply.
 fn register_resolution_override(app: &mut App) {
-    app.add_systems(bevy::app::PostStartup, apply_resolution_override);
+    use bevy::camera::CameraUpdateSystems;
+
+    // After `CameraUpdateSystems` in both schedules Bevy runs its
+    // `camera_system` in: that is where a camera learns the physical size of
+    // its render target, and the override is a fraction of exactly that size.
+    // `PostUpdate` rather than `Update` so that a scale the adaptive governor
+    // chose this frame, and a target that resized this frame, both reach the
+    // GPU in this frame rather than the next.
     app.add_systems(
-        bevy::app::Update,
-        (apply_resolution_override, update_resolution_on_resize)
-            .chain()
-            .before(sync_config_scale),
+        bevy::app::PostStartup,
+        apply_resolution_override.after(CameraUpdateSystems),
+    );
+    app.add_systems(
+        bevy::app::PostUpdate,
+        apply_resolution_override.after(CameraUpdateSystems),
     );
 
     let Some(render_app) = app.get_sub_app_mut(bevy::render::RenderApp) else {
@@ -963,93 +967,109 @@ fn extract_resolution_override(
     }
 }
 
-/// Insert `MainPassResolutionOverride` on all Camera3d entities at startup.
+/// The main-pass size for a target at a render scale.
+///
+/// Rounded to whole pixels, never zero in either dimension, and never larger
+/// than the target: `MainPassResolutionOverride` documents that the override
+/// "must be smaller than the camera's viewport size", and a scale of `1.0`
+/// must come out as exactly the target, not a rounding neighbour of it.
+fn override_for(target: UVec2, scale: f32) -> UVec2 {
+    (target.as_vec2() * scale)
+        .round()
+        .as_uvec2()
+        .clamp(UVec2::ONE, target)
+}
+
+/// Keep `MainPassResolutionOverride` and `MipBias` on every 3D camera in step
+/// with that camera's render target and the current render scale.
+///
+/// The size comes from the camera, not from the window. Through 0.4 the
+/// override was the one `Window` in the world scaled down, which is right for
+/// the common case and silently wrong for every other one. A camera rendering
+/// to an `Image` in a windowless app had no window to read, so the query
+/// failed and the camera kept rendering at full size, while the plugin went
+/// on to build a scaler at a 1:1 ratio and report `OutputWritten` with content
+/// equal to output. Nothing warned. The same query fails with two windows, and
+/// with one window it sized a camera targeting an image after the window.
+///
+/// `Camera::physical_viewport_size` is the size Bevy itself renders the main
+/// pass into: the target's physical size, or the viewport's when one is set,
+/// for a window, an image or a manual texture view alike. Bevy fills it in
+/// from `camera_system`, which is why this runs after `CameraUpdateSystems`.
+/// A camera Bevy has not sized yet, or whose target has no pixels, is left
+/// alone rather than guessed at; it is picked up the frame the size arrives.
+///
+/// `MipBias` is owned the same way: the bias is a function of the scale, and
+/// a bias that disagrees with the scale is corrected, not respected.
+// Keep the ECS query filters visible beside this system.
+#[allow(clippy::type_complexity)]
 fn apply_resolution_override(
     mut commands: Commands,
-    cameras: Query<Entity, (With<Camera3d>, Without<MainPassResolutionOverride>)>,
-    windows: Query<&Window>,
+    mut cameras: Query<
+        (
+            Entity,
+            &Camera,
+            Option<&mut MainPassResolutionOverride>,
+            Option<&mut MipBias>,
+        ),
+        With<Camera3d>,
+    >,
     scale: Res<MetalFxRenderScale>,
 ) {
-    let Ok(window) = windows.single() else {
-        return;
-    };
-    let w = window.physical_width();
-    let h = window.physical_height();
-    if w == 0 || h == 0 {
-        return;
-    }
-    let override_w = (w as f32 * scale.0).round() as u32;
-    let override_h = (h as f32 * scale.0).round() as u32;
     let mip_bias = mip_bias_for_scale(scale.0);
-
-    for entity in cameras.iter() {
-        log::info!(
-            "MetalFX: setting MainPassResolutionOverride {override_w}x{override_h} \
-             (window {w}x{h}, scale {}, mip_bias {mip_bias:.3})",
-            scale.0
-        );
-        commands.entity(entity).insert((
-            MainPassResolutionOverride(UVec2::new(override_w, override_h)),
-            MipBias(mip_bias),
-        ));
-    }
-}
-
-/// Update resolution override when the window size changes.
-fn update_resolution_on_resize(
-    mut cameras: Query<&mut MainPassResolutionOverride, With<Camera3d>>,
-    windows: Query<&Window, Changed<Window>>,
-    scale: Res<MetalFxRenderScale>,
-) {
-    let Ok(window) = windows.single() else {
-        return;
-    };
-    let w = window.physical_width();
-    let h = window.physical_height();
-    if w == 0 || h == 0 {
-        return;
-    }
-    let override_w = (w as f32 * scale.0).round() as u32;
-    let override_h = (h as f32 * scale.0).round() as u32;
-
-    for mut res_override in cameras.iter_mut() {
-        if res_override.0 == UVec2::new(override_w, override_h) {
+    for (entity, camera, resolution, bias) in &mut cameras {
+        let Some(target) = camera.physical_viewport_size() else {
+            continue;
+        };
+        if target.x == 0 || target.y == 0 {
             continue;
         }
-        log::info!("MetalFX: resize -> MainPassResolutionOverride {override_w}x{override_h}");
-        res_override.0 = UVec2::new(override_w, override_h);
-    }
-}
-
-/// Update resolution override when the render scale changes (adaptive mode).
-fn update_resolution_on_scale_change(
-    mut cameras: Query<(&mut MainPassResolutionOverride, &mut MipBias), With<Camera3d>>,
-    windows: Query<&Window>,
-    scale: Res<MetalFxRenderScale>,
-) {
-    if !scale.is_changed() {
-        return;
-    }
-    let Ok(window) = windows.single() else {
-        return;
-    };
-    let w = window.physical_width();
-    let h = window.physical_height();
-    if w == 0 || h == 0 {
-        return;
-    }
-    let override_w = (w as f32 * scale.0).round() as u32;
-    let override_h = (h as f32 * scale.0).round() as u32;
-    let mip_bias = mip_bias_for_scale(scale.0);
-
-    for (mut res_override, mut bias) in cameras.iter_mut() {
-        log::info!(
-            "MetalFX: scale change -> MainPassResolutionOverride {override_w}x{override_h} \
-             (scale={}, mip_bias {mip_bias:.3})",
-            scale.0
-        );
-        res_override.0 = UVec2::new(override_w, override_h);
-        bias.0 = mip_bias;
+        let wanted = override_for(target, scale.0);
+        let Some(mut resolution) = resolution else {
+            log::info!(
+                "MetalFX: setting MainPassResolutionOverride {}x{} (target {}x{}, scale {}, \
+                 mip_bias {mip_bias:.3})",
+                wanted.x,
+                wanted.y,
+                target.x,
+                target.y,
+                scale.0
+            );
+            commands
+                .entity(entity)
+                .insert((MainPassResolutionOverride(wanted), MipBias(mip_bias)));
+            continue;
+        };
+        // Compare before writing: `Mut` marks the component changed on any
+        // `DerefMut`, and a per-frame no-op write would look like a per-frame
+        // resize to everything downstream.
+        if resolution.0 != wanted {
+            log::info!(
+                "MetalFX: MainPassResolutionOverride {}x{} -> {}x{} (target {}x{}, scale {})",
+                resolution.0.x,
+                resolution.0.y,
+                wanted.x,
+                wanted.y,
+                target.x,
+                target.y,
+                scale.0
+            );
+            resolution.0 = wanted;
+        }
+        // The bias is the override's pair. A camera that arrived with an
+        // override of its own and no bias, as one a consumer set up by hand
+        // would, gets the bias here rather than keeping sampling full-size
+        // mips indefinitely.
+        match bias {
+            Some(mut bias) => {
+                if bias.0 != mip_bias {
+                    bias.0 = mip_bias;
+                }
+            }
+            None => {
+                commands.entity(entity).insert(MipBias(mip_bias));
+            }
+        }
     }
 }
 
@@ -1601,6 +1621,26 @@ mod tests {
         assert!((mip_bias_for_scale(0.25) - (-2.0)).abs() < 1e-6);
         // Native res → no bias.
         assert!((mip_bias_for_scale(1.0) - 0.0).abs() < 1e-6);
+    }
+
+    /// The override is a whole-pixel fraction of the target that stays inside it.
+    #[test]
+    fn override_rounds_and_stays_inside_the_target() {
+        assert_eq!(
+            override_for(UVec2::new(1280, 720), 0.5),
+            UVec2::new(640, 360)
+        );
+        // `Balanced`: 0.58 of 1280 is 742.4 and of 720 is 417.6.
+        assert_eq!(
+            override_for(UVec2::new(1280, 720), 0.58),
+            UVec2::new(742, 418)
+        );
+        assert_eq!(
+            override_for(UVec2::new(1280, 720), 1.0),
+            UVec2::new(1280, 720)
+        );
+        // A tiny target never rounds down to a zero-sized main pass.
+        assert_eq!(override_for(UVec2::ONE, 0.1), UVec2::ONE);
     }
 
     #[test]

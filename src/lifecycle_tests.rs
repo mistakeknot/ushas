@@ -3,7 +3,40 @@
 #![cfg(target_os = "macos")]
 
 use super::*;
-use bevy::window::PrimaryWindow;
+use bevy::camera::{CameraUpdateSystems, RenderTarget, RenderTargetInfo};
+use bevy::window::{PrimaryWindow, WindowRef};
+
+/// What Bevy's `camera_system` does for a primary-window target, without the
+/// render plugins: fill in each camera's computed target size from the window.
+/// The plugin reads only that computed size, so it is the one input these
+/// headless tests must supply themselves. Registered in `CameraUpdateSystems`
+/// so the plugin's ordering against that set is exercised, not bypassed.
+fn size_cameras_from_the_primary_window(
+    windows: Query<&Window, With<PrimaryWindow>>,
+    mut cameras: Query<(&mut Camera, &RenderTarget)>,
+) {
+    let Ok(window) = windows.single() else {
+        return;
+    };
+    for (mut camera, target) in &mut cameras {
+        if !matches!(target, RenderTarget::Window(WindowRef::Primary)) {
+            continue;
+        }
+        camera.computed.target_info = Some(RenderTargetInfo {
+            physical_size: window.physical_size(),
+            scale_factor: window.scale_factor(),
+        });
+    }
+}
+
+fn sized(physical_size: UVec2) -> Camera {
+    let mut camera = Camera::default();
+    camera.computed.target_info = Some(RenderTargetInfo {
+        physical_size,
+        scale_factor: 1.0,
+    });
+    camera
+}
 
 fn app(mode: MetalFxMode, render_scale: f32, adaptive: bool, minimum_scale: f32) -> (App, Entity) {
     let mut app = App::new();
@@ -11,6 +44,14 @@ fn app(mode: MetalFxMode, render_scale: f32, adaptive: bool, minimum_scale: f32)
         minimum_scale,
         ..default()
     });
+    app.add_systems(
+        PostStartup,
+        size_cameras_from_the_primary_window.in_set(CameraUpdateSystems),
+    );
+    app.add_systems(
+        PostUpdate,
+        size_cameras_from_the_primary_window.in_set(CameraUpdateSystems),
+    );
     let window = app
         .world_mut()
         .spawn((
@@ -163,6 +204,117 @@ fn resize_updates_existing_render_inputs() {
         .set_physical_resolution(1600, 1000);
     app.update();
     assert_scale_is_applied(&app, camera, UVec2::new(1600, 1000));
+}
+
+/// A camera that renders to an image in an app with no window at all: the
+/// headless case the window-sized override never reached. The target is set
+/// directly, as Bevy's `camera_system` would from the image's size.
+#[test]
+fn image_target_camera_without_any_window_gets_the_override() {
+    let mut app = App::new();
+    app.add_plugins(MetalFxPlugin {
+        mode: MetalFxMode::Spatial,
+        render_scale: 0.5,
+        ..default()
+    });
+    let camera = app
+        .world_mut()
+        .spawn((
+            Camera3d::default(),
+            RenderTarget::Image(Handle::<Image>::default().into()),
+            sized(UVec2::new(512, 512)),
+        ))
+        .id();
+    app.update();
+    assert_scale_is_applied(&app, camera, UVec2::new(512, 512));
+    assert_eq!(
+        app.world().get::<MipBias>(camera).map(|b| b.0),
+        Some(mip_bias_for_scale(0.5))
+    );
+
+    // The image is replaced by a larger one: the override follows the camera.
+    app.world_mut()
+        .get_mut::<Camera>(camera)
+        .unwrap()
+        .computed
+        .target_info = Some(RenderTargetInfo {
+        physical_size: UVec2::new(1024, 768),
+        scale_factor: 1.0,
+    });
+    app.update();
+    assert_scale_is_applied(&app, camera, UVec2::new(1024, 768));
+}
+
+/// A camera that arrives with an override of its own but no `MipBias`, as a
+/// consumer that set the override by hand would: the bias is the override's
+/// pair, and both follow the scale from then on. Before the plugin owned the
+/// bias this camera kept sampling full-size mips indefinitely.
+#[test]
+fn an_existing_override_without_a_mip_bias_gets_one() {
+    let (mut app, _) = app(MetalFxMode::Spatial, 0.5, false, 0.5);
+    let camera = app
+        .world_mut()
+        .spawn((
+            Camera3d::default(),
+            MainPassResolutionOverride(UVec2::new(600, 450)),
+        ))
+        .id();
+    app.update();
+    assert_eq!(
+        app.world().get::<MipBias>(camera).map(|b| b.0),
+        Some(mip_bias_for_scale(0.5))
+    );
+    assert_scale_is_applied(&app, camera, UVec2::new(1200, 900));
+}
+
+/// A camera Bevy has not sized yet is left alone rather than guessed at, and
+/// picked up as soon as its target size is known.
+#[test]
+fn unsized_camera_gets_no_override_until_its_target_is_known() {
+    let mut app = App::new();
+    app.add_plugins(MetalFxPlugin {
+        mode: MetalFxMode::Spatial,
+        render_scale: 0.5,
+        ..default()
+    });
+    let camera = app.world_mut().spawn(Camera3d::default()).id();
+    app.update();
+    assert!(
+        app.world()
+            .get::<MainPassResolutionOverride>(camera)
+            .is_none(),
+        "no target size, no override"
+    );
+    app.world_mut()
+        .get_mut::<Camera>(camera)
+        .unwrap()
+        .computed
+        .target_info = Some(RenderTargetInfo {
+        physical_size: UVec2::new(640, 480),
+        scale_factor: 2.0,
+    });
+    app.update();
+    assert_scale_is_applied(&app, camera, UVec2::new(640, 480));
+}
+
+/// Two cameras, two targets, one app: the window camera is sized from the
+/// window and the image camera from its image. The window-sized override
+/// gave both the window's size.
+#[test]
+fn each_camera_is_sized_from_its_own_target() {
+    let (mut app, _) = app(MetalFxMode::Spatial, 0.5, false, 0.5);
+    let window_camera = app.world_mut().spawn(Camera3d::default()).id();
+    let image_camera = app
+        .world_mut()
+        .spawn((
+            Camera3d::default(),
+            RenderTarget::Image(Handle::<Image>::default().into()),
+            sized(UVec2::new(256, 256)),
+        ))
+        .id();
+    app.update();
+    assert_scale_is_applied(&app, window_camera, UVec2::new(1200, 900));
+    assert_scale_is_applied(&app, image_camera, UVec2::new(256, 256));
 }
 
 #[test]
