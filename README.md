@@ -103,6 +103,9 @@ With dual presentation off, it computes an intermediate frame without presenting
 that frame. Use temporal mode when only upscaling is needed.
 
 The current renderer supports one active 3D camera with a full-target viewport.
+That camera may render to a window or to an image: the reduced-resolution main
+pass is sized from the camera's own render target, so a windowless capture app
+gets the same upscale as a windowed one.
 Multiple active views and offset or subrectangle viewports report unsupported
 status. A per-view status registry does not imply multi-view rendering support.
 Scaler cache identity includes the view, dimensions, format, and mode; readiness

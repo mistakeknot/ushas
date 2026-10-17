@@ -66,6 +66,10 @@ The Bevy 0.20 / wgpu 30 port was contributed by @cdeil.
   UI. Custom pass ordering must account for this earlier stage. Frame
   interpolation retains its separate experimental late output path.
 
+- The resolution override is applied in `PostUpdate`, after Bevy's
+  `CameraUpdateSystems`, rather than in `Update`. Custom ordering against
+  the override must follow it there. `MipBias` is owned by the plugin on every
+  3D camera: a bias that disagrees with the render scale is corrected.
 - `MetalFxHistoryReset` is now `Clone` rather than `Copy`. Requests persist
   through inactive or unready render frames and clear only when a temporal
   encode acknowledges the captured request; an old acknowledgement cannot
@@ -83,6 +87,10 @@ The Bevy 0.20 / wgpu 30 port was contributed by @cdeil.
   artifact in static geometry; paired captured images confirm the correction.
 - Frame interpolation uses `Time<Real>` for its inter-frame interval, so pausing
   or changing simulation speed does not alter interpolation timing.
+- Dual presentation released neither its completion block nor the two staging
+  textures it retained for each frame. The block, with its `Arc` to the
+  presentation sink, leaked once per frame; the textures leaked on every
+  resize or mode change.
 - The reduced-scale `Disabled` comparison uses bilinear sampling of the actual
   content region. Bevy 0.19's final blit sampled the full allocated texture with
   nearest filtering, so it did not provide a valid reduced-scale control.
@@ -90,6 +98,12 @@ The Bevy 0.20 / wgpu 30 port was contributed by @cdeil.
   receive resolution overrides without waiting for a further scale change.
   View/size changes invalidate scaler state; unsupported multiple-view and
   viewport layouts report explicit reasons.
+- The reduced-resolution main pass is sized from each 3D camera's own render
+  target instead of the primary window. A camera rendering to an image in a
+  windowless app, or any camera in an app with two windows, previously got no
+  override at all: the scaler was built at a 1:1 ratio and `OutputWritten` was
+  reported with content equal to output, with nothing warning. A camera
+  targeting an image next to a window was sized after the window.
 - The instrumented `Disabled` command-buffer diagnostic is available before
   plugin early returns. `GpuTimingSink::snapshot()` returns chronological samples.
 
