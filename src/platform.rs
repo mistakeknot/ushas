@@ -2,12 +2,14 @@
 //!
 //! Uses `objc2-metal-fx` for MetalFX framework bindings.
 //!
-//! ## ObjC Runtime Interop
+//! ## ObjC runtime
 //!
-//! wgpu-hal uses the `metal` crate v0.32 (built on `objc` v0.2 runtime),
-//! while `objc2-metal-fx` uses `objc2` v0.6. Both wrap the same underlying
-//! ObjC `id` pointers. The `interop` module provides unsafe bridge functions
-//! to convert raw pointers between the two runtime families.
+//! Since wgpu-hal 29 the Metal objects it hands out are `objc2` objects, the
+//! same runtime family `objc2-metal-fx` uses, so there is nothing to bridge:
+//! the raw `*mut c_void` values passed around here are plain ObjC `id`s,
+//! borrowed from wgpu-hal for a call or retained by this crate for a thread.
+//! The `metal` 0.32 / `objc` 0.2 `interop` module that converted between the
+//! two families is gone with the dependency that needed it.
 
 use std::ffi::c_void;
 

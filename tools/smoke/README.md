@@ -33,7 +33,9 @@ The run captures warmup and final PNGs beside its JSON and exits. It waits for
 image before measuring. Active modes require fresh `OutputWritten` observations
 with the requested mode, scale, and physical dimensions throughout measurement.
 Both captures must contain opaque, varied scene pixels beyond the UI header;
-a flat colored or zero-alpha frame fails. Missing
+a flat colored or zero-alpha frame fails, and so does any pipeline-cache error
+Bevy logs, since a material that fails to compile draws nothing while the rest
+of the scene still passes the image checks. Missing
 rendering, timeout, capture failure, or report-write failure returns nonzero.
 A PNG proves captured content, not panel delivery.
 
@@ -219,7 +221,8 @@ HDR main texture and tone-mapped PNG output. Reduced Disabled is the bilinear
 control. Native uses MSAA4; reconstruction arms use MSAA off. Keep dimensions,
 source/binary and HDR setting identical within a comparison.
 
-`--quality-sequence` owns the simulation clock, camera and screenshot schedule.
+`--quality-sequence` owns the simulation clock, camera and screenshot schedule. It
+fails on a pipeline-cache error like the timed run, and its report records the count.
 After at least three seconds and twenty distinct ready frames, it renders 145
 serial frames at fixed 1/60 simulation steps. Ticks 0–31 hold the initial pose;
 32–127 animate the Claude models and pan the camera; tick 128 makes a hard cut

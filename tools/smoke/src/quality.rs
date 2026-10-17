@@ -201,6 +201,17 @@ mod contract_tests {
         assert_eq!(jitter_offset(1)[0], -0.25);
         assert_eq!(jitter_offset(32), jitter_offset(0));
     }
+    /// A compile failure anywhere in the pipeline cache fails the sequence,
+    /// with the count in the message; a clean cache records nothing.
+    #[test]
+    fn pipeline_cache_errors_fail_the_sequence_with_their_count() {
+        assert_eq!(pipeline_error(0), None);
+        let one = pipeline_error(1).expect("one error is an error");
+        assert!(one.starts_with("1 pipeline-cache error"), "{one}");
+        let three = pipeline_error(3).expect("three errors are an error");
+        assert!(three.starts_with("3 pipeline-cache error"), "{three}");
+    }
+
     #[test]
     fn rejects_stale_effect_wrong_view_or_capture_and_skipped_render_ticks() {
         let base = proof(2);
@@ -424,6 +435,13 @@ fn drive(
         run.errors.push(
             "one or more scripted render frames failed identity/readiness/reset checks".into(),
         );
+    }
+    // The same gate the timed run applies: a material that failed to compile
+    // draws nothing, and the scripted frames' identity, readiness and reset
+    // checks cannot tell. `finish` runs in this tick once an error is recorded,
+    // so the message is pushed once.
+    if let Some(error) = pipeline_error(crate::pipeline_errors::count()) {
+        run.errors.push(error);
     }
     let done = run.next_tick == Some(LAST_TICK + 1)
         && records.len() == LAST_TICK as usize + 1
@@ -683,6 +701,14 @@ fn capture(
     run.images.insert(key, result);
 }
 
+/// The error a quality run records when Bevy's pipeline cache has logged
+/// failures. Zero errors record nothing; the count is reported either way.
+fn pipeline_error(count: usize) -> Option<String> {
+    (count > 0).then(|| {
+        format!("{count} pipeline-cache error(s) logged; a shader or pipeline failed to compile")
+    })
+}
+
 fn finish(
     run: &mut QualityRun,
     settings: &Settings,
@@ -716,11 +742,14 @@ fn finish(
         capture["completion_proof"] = json!(fence);
         captures.push(capture);
     }
+    let pipeline_errors = crate::pipeline_errors::count();
     let valid = run.errors.is_empty()
+        && pipeline_errors == 0
         && records.len() == LAST_TICK as usize + 1
         && records.iter().all(|p| p["valid"] == true)
         && captures.iter().all(|c| c["valid"] == true);
     let report = json!({"kind":"quality_sequence","protocol":settings.protocol.id(),"valid":valid,
+        "pipeline_errors":pipeline_errors,
         "scope":settings.protocol.scope(),
         "mode":format!("{:?}",settings.mode),"scale":settings.scale,"output_size":settings.size,"hdr":settings.hdr,
         "msaa_samples":settings.msaa,"scene_version":crate::claude::MODEL_VERSION,"offscreen":true,
