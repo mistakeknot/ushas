@@ -79,6 +79,10 @@ Hardware and release acceptance gates are still in progress.
   artifact in static geometry; paired captured images confirm the correction.
 - Frame interpolation uses `Time<Real>` for its inter-frame interval, so pausing
   or changing simulation speed does not alter interpolation timing.
+- Dual presentation released neither its completion block nor the two staging
+  textures it retained for each frame. The block, with its `Arc` to the
+  presentation sink, leaked once per frame; the textures leaked on every
+  resize or mode change.
 - The reduced-scale `Disabled` comparison uses bilinear sampling of the actual
   content region. Bevy 0.19's final blit sampled the full allocated texture with
   nearest filtering, so it did not provide a valid reduced-scale control.
