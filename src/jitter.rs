@@ -5,8 +5,10 @@
 //!
 //! A longer sequence increases the sub-pixel sampling density the temporal
 //! accumulator can integrate over, improving reconstruction quality (and
-//! letting render scale drop further for the same perceived sharpness). The
-//! first 8 samples are identical to Bevy's built-in 8-phase TAA sequence.
+//! letting render scale drop further for the same perceived sharpness). Bevy's
+//! built-in 8-phase TAA table is `(0, 0)` followed by the first seven of these
+//! points; this sequence starts at Halton index 1 and never spends a frame
+//! unjittered.
 
 use bevy::prelude::*;
 use bevy::render::camera::TemporalJitter;
@@ -24,8 +26,9 @@ pub(crate) fn metalfx_jitter_offset(jitter: Option<&TemporalJitter>) -> Vec2 {
 }
 
 /// Halton(2,3) sequence, 32 samples, centered at 0 (subtract 0.5).
-/// Samples are the Halton points for indices 1..=32 — the leading 8 match
-/// Bevy's built-in TAA sequence exactly.
+/// Samples are the Halton points for indices 1..=32. Bevy's own TAA table is
+/// `(0, 0)` and then indices 1..=7, so the two agree from this table's first
+/// entry to its seventh, offset by one frame.
 const HALTON_SEQUENCE: [Vec2; 32] = [
     Vec2::new(0.0, -0.16666667),
     Vec2::new(-0.25, 0.16666667),
@@ -124,13 +127,34 @@ mod tests {
         }
     }
 
+    /// Bevy's TAA table is `(0, 0)` followed by Halton indices 1..=7; this
+    /// table starts at index 1, so Bevy's entry `i + 1` is this table's `i`.
+    /// Pinned against a copy of Bevy 0.20's own values (`bevy_anti_alias`,
+    /// `taa/mod.rs`), not against this table, which is what the previous
+    /// version of this test did while claiming the two tables were identical.
     #[test]
-    fn first_samples_match_bevy_taa() {
-        // The leading samples must match Bevy's built-in 8-phase TAA sequence
-        // so behaviour is unchanged for the first frames.
-        assert!((HALTON_SEQUENCE[0].x - 0.0).abs() < 1e-5);
-        assert!((HALTON_SEQUENCE[0].y - (-0.16666667)).abs() < 1e-5);
-        assert!((HALTON_SEQUENCE[1].x - (-0.25)).abs() < 1e-5);
-        assert!((HALTON_SEQUENCE[2].x - 0.25).abs() < 1e-5);
+    fn bevy_taa_table_is_zero_then_this_tables_first_seven() {
+        let bevy_taa = [
+            Vec2::new(0.0, 0.0),
+            Vec2::new(0.0, -0.16666666),
+            Vec2::new(-0.25, 0.16666669),
+            Vec2::new(0.25, -0.3888889),
+            Vec2::new(-0.375, -0.055555552),
+            Vec2::new(0.125, 0.2777778),
+            Vec2::new(-0.125, -0.2777778),
+            Vec2::new(0.375, 0.055555582),
+        ];
+        assert_eq!(
+            bevy_taa[0],
+            Vec2::ZERO,
+            "Bevy spends its first phase unjittered"
+        );
+        for (i, expected) in bevy_taa[1..].iter().enumerate() {
+            assert!(
+                (HALTON_SEQUENCE[i] - *expected).length() < 1e-5,
+                "entry {i}: {:?} vs Bevy's {expected:?}",
+                HALTON_SEQUENCE[i]
+            );
+        }
     }
 }

@@ -301,7 +301,8 @@ struct ResolvePipeline {
     bind_group_layout: wgpu::BindGroupLayout,
 }
 
-/// MetalFX upscaling ViewNode (spatial + temporal).
+/// State carried by the `metalfx_upscale` system (spatial + temporal); a
+/// render-graph `ViewNode` through 0.3.
 pub struct MetalFxUpscaleNode {
     cached: Mutex<Option<CachedState>>,
     pending: Mutex<Option<PendingScaler>>,

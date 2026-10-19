@@ -10,7 +10,7 @@
 #     0.1.0 in March until it was found by cross-compiling in July.
 #   - The non-macOS stub warned on every docs.rs build.
 #   - docs.rs would have rendered the stub API: no `present` module, and a
-#     `MetalFxPlugin` missing two of its four fields.
+#     `MetalFxPlugin` missing two of its five fields.
 #
 # Every one of those lives on an axis that default-feature checking never
 # touches. Hence the matrix.
@@ -184,6 +184,14 @@ jobs:
           cargo clippy --locked --manifest-path tools/benchmark/Cargo.toml --all-targets -- -D warnings
       - name: Compile the launcher and test its protocol and process controls
         run: swift test --package-path tools/benchmark/macos
+      # The probe is the one Rust target here that nothing else links: it pins
+      # wgpu by exact version and talks to Metal directly, so a wgpu major that
+      # compiles the library can still break it unnoticed. It has no tests, so
+      # a clippy pass is its build.
+      - name: Check the timestamp probe builds against its locked wgpu
+        run: |
+          cargo fmt --manifest-path tools/timing-probe/Cargo.toml -- --check
+          cargo clippy --locked --manifest-path tools/timing-probe/Cargo.toml --all-targets -- -D warnings
 
   fmt:
     name: rustfmt

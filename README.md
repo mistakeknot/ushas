@@ -298,7 +298,7 @@ other scene work. It cannot establish total GPU frame cost, isolated scaler
 execution cost, or whether the application is GPU-bound. The instrumented `Disabled` arm submits an empty timed buffer as a
 diagnostic control.
 
-`frame_timing::ExperimentalFrameTimingPlugin` adds optional
+`frame_timing::ExperimentalFrameTimingPlugin` (macOS only) adds optional
 per-view timestamp markers. Enable it explicitly after `MetalFxPlugin` and
 request `frame_timing::requested_features()` in the renderer's device settings.
 Read observations from `frame_timing::ExperimentalFrameTiming`. Marker coverage,

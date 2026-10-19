@@ -41,8 +41,13 @@ The Bevy 0.20 / wgpu 30 port was contributed by @cdeil.
   `finish`, with selector guards and explicit fallback provenance.
   `MetalFxQuality` provides device-filtered presets from one third to native;
   the adaptive quality floor further restricts the usable ladder.
-- Opt-in `frame_timing::ExperimentalFrameTimingPlugin` with asynchronous
-  per-view timestamp observations. It reports unvalidated measurements and
+- `MetalFxGpuTimingDisabled`: a marker resource, inserted before
+  `MetalFxPlugin`, that removes the dedicated command-buffer timing diagnostic
+  and the `Disabled` timing-control submission, including when the plugin is
+  handed an explicit sink. For completion-throughput benchmarks that must not
+  carry an extra submission per frame; a no-op off macOS.
+- Opt-in, macOS-only `frame_timing::ExperimentalFrameTimingPlugin` with
+  asynchronous per-view timestamp observations. It reports unvalidated measurements and
   never publishes them to the adaptive controller.
 - Default-off `diagnostic-fault-injection` feature for bounded scaler-creation
   failure and delay fixtures. Extracted fault generations invalidate pending
@@ -92,8 +97,9 @@ The Bevy 0.20 / wgpu 30 port was contributed by @cdeil.
   presentation sink, leaked once per frame; the textures leaked on every
   resize or mode change.
 - The reduced-scale `Disabled` comparison uses bilinear sampling of the actual
-  content region. Bevy 0.19's final blit sampled the full allocated texture with
-  nearest filtering, so it did not provide a valid reduced-scale control.
+  content region. Bevy's final blit (0.19 and 0.20 alike) samples the full
+  allocated texture with nearest filtering, so it did not provide a valid
+  reduced-scale control.
 - Late-added cameras and initial, device-finalized, or policy-clamped scales
   receive resolution overrides without waiting for a further scale change.
   View/size changes invalidate scaler state; unsupported multiple-view and
@@ -106,6 +112,11 @@ The Bevy 0.20 / wgpu 30 port was contributed by @cdeil.
   targeting an image next to a window was sized after the window.
 - The instrumented `Disabled` command-buffer diagnostic is available before
   plugin early returns. `GpuTimingSink::snapshot()` returns chronological samples.
+- The smoke fixture's load plane renders again on Bevy 0.20. Its shader used
+  naga_oil's `#import`, which Bevy 0.20 no longer preprocesses, so the
+  material failed to compile, the plane vanished from every capture and
+  `--pixel-iterations` cost nothing. The fixture now fails a run, timed or
+  quality sequence, on any pipeline-cache error, which is how this escaped.
 
 ### Documentation
 

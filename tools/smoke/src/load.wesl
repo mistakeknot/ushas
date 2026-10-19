@@ -1,10 +1,15 @@
-#import bevy_pbr::forward_io::VertexOutput
+// Bevy 0.20 composes shaders with WESL: `import` statements and the
+// `constants::` module replace naga_oil's `#import` and `#{...}` lines, which
+// Bevy no longer preprocesses. The old spelling parsed as WGSL with a stray
+// `#`, the pipeline failed to compile, and the load plane silently vanished
+// from every capture while `--pixel-iterations` stopped costing anything.
+import bevy_pbr::render::forward_io::VertexOutput;
 
 struct LoadParams {
     iterations: u32,
     padding: vec3<u32>,
-};
-@group(#{MATERIAL_BIND_GROUP}) @binding(0) var<uniform> params: LoadParams;
+}
+@group(constants::MATERIAL_BIND_GROUP) @binding(0) var<uniform> params: LoadParams;
 
 @fragment
 fn fragment(in: VertexOutput) -> @location(0) vec4<f32> {
