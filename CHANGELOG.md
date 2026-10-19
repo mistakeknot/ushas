@@ -118,6 +118,10 @@ The Bevy 0.20 / wgpu 30 port was contributed by @cdeil.
 - The crate description now reads "Apple MetalFX upscaling for Bevy, with
   experimental frame interpolation". The crate docs note that docs.rs builds on
   Linux, so macOS-only modules are missing there.
+- The README's figures and its three-panel image come from a Bevy 0.20 re-run
+  of the completed-render campaign (`docs/research/claude-completion-campaign-02.md`).
+- `docs/` is no longer included in the published package; the README links to it
+  by absolute URL.
 
 ### Evidence and Limitations
 

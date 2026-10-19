@@ -15,8 +15,10 @@ readme = "README.md"
 # examples/present_repro.rs is a bug-reproduction harness for an internal
 # issue, referencing scripts that live outside this crate; it stays out of the
 # package. scripts/ verifies a *published* build and cannot run from inside one.
-# The other examples are small public demos and ship with the crate.
-exclude = ["examples/present_repro.rs", "scripts/", "tools/"]
+# The other examples are small public demos and ship with the crate. docs/ holds
+# research records and images (over a megabyte); README links to it by absolute
+# GitHub URL, so it stays out of the package.
+exclude = ["docs/", "examples/present_repro.rs", "scripts/", "tools/"]
 
 [[example]]
 name = "temporal_with_ui"
