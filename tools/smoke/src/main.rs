@@ -6,6 +6,7 @@ mod gate;
 mod lifecycle;
 mod metrics;
 mod offscreen;
+mod pipeline_errors;
 mod quality;
 mod scene;
 mod window_lifecycle;
@@ -181,18 +182,26 @@ fn main() -> AppExit {
     app.insert_resource(RunConfig(config))
         .insert_resource(RunState::default())
         .init_resource::<offscreen::CaptureTarget>();
-    let mut defaults = DefaultPlugins.set(renderer).set(WindowPlugin {
-        // With Winit disabled this is metadata only: the scale-override
-        // systems still use its physical dimensions, but no native window or
-        // swapchain is created. The scene camera targets the image below.
-        primary_window: Some(window),
-        exit_condition: if offscreen {
-            bevy::window::ExitCondition::DontExit
-        } else {
-            bevy::window::ExitCondition::OnAllClosed
-        },
-        ..default()
-    });
+    let mut defaults = DefaultPlugins
+        .set(renderer)
+        .set(WindowPlugin {
+            // With Winit disabled this is metadata only: the scale-override
+            // systems still use its physical dimensions, but no native window or
+            // swapchain is created. The scene camera targets the image below.
+            primary_window: Some(window),
+            exit_condition: if offscreen {
+                bevy::window::ExitCondition::DontExit
+            } else {
+                bevy::window::ExitCondition::OnAllClosed
+            },
+            ..default()
+        })
+        .set(bevy::log::LogPlugin {
+            // A shader that fails to compile draws nothing and the image checks
+            // cannot tell; the pipeline cache logs it, and that log fails the run.
+            custom_layer: pipeline_errors::layer,
+            ..default()
+        });
     if offscreen {
         defaults = defaults.disable::<WinitPlugin>();
     }
@@ -440,12 +449,14 @@ fn observe_run(
                                     .is_some_and(|n| n >= 20)
                         })
                     }));
+        let pipeline_errors = pipeline_errors::count();
         let valid = lifecycle.as_ref().is_none_or(|l| l.passed())
             && completion_valid
             && !timed_out
             && measured_done
             && run.frames.len() >= 20
             && valid_image
+            && pipeline_errors == 0
             && ready_count == run.frames.len();
         let (target_fps, target_source) = analysis_budget(&config.0, &adaptive_status);
         let mut report = json!({"schema":1,"source_revision":env!("USHAS_SOURCE_REV"),
@@ -461,13 +472,16 @@ fn observe_run(
             "warmup_s":config.0.warmup,"measurement_s":config.0.seconds,"wall_elapsed_s":elapsed,
             "adapter":adapter.as_ref().map(|a|json!({"name":a.name,"backend":format!("{:?}",a.backend),"driver":a.driver,"driver_info":a.driver_info})),
             "validity_scope":"render smoke only; experimental timing and panel delivery have separate gates",
-            "render_proof":"MetalFX OutputWritten is command encoding; screenshot checks nonuniform output; neither proves panel delivery",
+            "render_proof":"MetalFX OutputWritten is command encoding; screenshot checks nonuniform output; a pipeline-cache error fails the run; none of these proves panel delivery",
             "frame_loop":metrics::summarize(&run.frame_ms,target_fps),
             "adaptive_status":format!("{:?}", *adaptive_status),"camera":camera.map(|(e,c)|json!({"entity":e.to_bits(),"active":c.is_active,"target_size":c.physical_target_size().map(|s|s.to_array())})),
             "rendered_observations":{"unique_frames":run.rendered.len(),"first_frame":run.rendered.keys().next(),"last_frame":run.rendered.keys().next_back(),"timestamps_s":run.rendered},
             "warmup_screenshot":run.warmup_screenshot,"environment":runtime_environment(config.0.offscreen),
             "retained_effects":status.snapshots(frame.0).iter().map(|s|format!("{s:?}")).collect::<Vec<_>>(),
             "effect_counts":run.counts,"screenshot":run.screenshot,"frames":run.frames});
+        // Added after construction: one more key in the literal above exceeds
+        // the `json!` macro's recursion limit.
+        report["pipeline_errors"] = json!(pipeline_errors);
         report["completion_requested"] = json!(config.0.completion);
         report["serial_completion"] = json!(completion_snapshot);
         if config.0.offscreen {

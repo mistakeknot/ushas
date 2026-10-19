@@ -106,13 +106,15 @@ The Development APIs below require the source candidate, rather than the
 published 0.4 quick start:
 
 ```toml
-bevy_metalfx = { path = "../ushas", features = ["temporal"] }
+bevy_metalfx = { git = "https://github.com/mistakeknot/ushas", branch = "main", features = ["temporal"] }
 ```
 
-This unpublished Bevy 0.20 candidate currently requires a local checkout with
-the port applied. Hardware validation and release preparation continue
-separately. After the port lands, replace `path` with the upstream `git` URL and
-an exact verified port commit; the former `f7e2769` pin uses Bevy 0.19.
+The Bevy 0.20 port is merged, so `main` resolves against a Bevy 0.20 app; pin
+`rev` to a commit at or after the merge `bbf1886` for a reproducible build, or
+use `path = "../ushas"` for a local checkout. Revisions before `717a240` are
+Bevy 0.19 and do not resolve against Bevy 0.20. The candidate is unpublished:
+hardware validation and release preparation continue separately, and this
+snippet becomes `bevy_metalfx = "0.5"` when 0.5.0 ships.
 
 | Type | Purpose |
 |------|---------|
@@ -285,8 +287,8 @@ execution cost, or whether the application is GPU-bound. In the development
 checkout, the instrumented `Disabled` arm submits an empty timed buffer as a
 diagnostic control.
 
-**Development:** `frame_timing::ExperimentalFrameTimingPlugin` adds optional
-per-view timestamp markers. Enable it explicitly after `MetalFxPlugin` and
+**Development, macOS only:** `frame_timing::ExperimentalFrameTimingPlugin` adds
+optional per-view timestamp markers. Enable it explicitly after `MetalFxPlugin` and
 request `frame_timing::requested_features()` in the renderer's device settings.
 Read observations from `frame_timing::ExperimentalFrameTiming`. Marker coverage,
 output preservation, and overhead require validation; `ObservedUnvalidated`

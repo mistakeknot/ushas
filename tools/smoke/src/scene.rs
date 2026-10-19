@@ -31,7 +31,10 @@ pub struct ScenePlugin;
 
 impl Plugin for ScenePlugin {
     fn build(&self, app: &mut App) {
-        load_internal_asset!(app, LOAD_SHADER, "load.wgsl", Shader::from_wgsl);
+        // WESL, not WGSL: Bevy 0.20 dropped naga_oil, so a `#import` line is a
+        // parse error and the material never compiles. The loader scans the
+        // `import` statements so the pipeline waits for `bevy_pbr`'s modules.
+        load_internal_asset!(app, LOAD_SHADER, "load.wesl", Shader::from_wesl);
         app.add_plugins((
             MaterialPlugin::<LoadMaterial>::default(),
             crate::claude::ClaudePlugin,
