@@ -9,16 +9,22 @@ MetalFX reconstruct the full-resolution image.
 
 The repository is `ushas`; the crate is `bevy_metalfx`.
 
+![Bilinear, MetalFX Spatial and MetalFX Temporal at 0.5 render scale](https://raw.githubusercontent.com/mistakeknot/ushas/main/docs/images/hero-three-panel.png)
+
+*Neutral test scene at 1920×1080 output, rendered at half resolution: bilinear
+stretch, MetalFX Spatial, MetalFX Temporal. Unscaled crops, Apple M5 Max.*
+
 **Does it help?** It depends on your scene; do not expect a speed-up by default.
-The saving comes from rendering fewer pixels, and MetalFX reconstructs the image
-from them. On default scenes native rendering was not beaten. Under heavy
-fragment load (Apple M5 Max, 1280x720, static scene, load 8,000) half-resolution
-Temporal completed a frame in 0.4565 times the native time (95% interval 0.4304
-to 0.4859): 13.848 ms against 12.892 ms for plain half-resolution bilinear and
-30.486 ms for native Disabled with MSAA4 (mean per frame). These were measured
-on Apple M5 Max under Bevy 0.19 with the 0.5 candidate code, as serial offscreen
-timing, not production FPS. Details and limits are in the
-[measurement report](https://github.com/mistakeknot/ushas/blob/main/docs/research/claude-completion-campaign-01.md).
+MetalFX saves time by rendering fewer pixels, and it has a fixed cost of its
+own. On a light scene, Temporal was about 1.44 times slower than native MSAA4,
+and half-resolution bilinear was no faster than native. Under heavy fragment load
+(1280x720, load 8,000), half-resolution Temporal completed a frame in 0.41 times
+the native time (95% interval 0.38 to 0.43): 18.6 ms against 45.9 ms for native.
+Plain half-resolution bilinear took 16.9 ms. Temporal costs a little more than
+the bilinear stretch, and in return it reconstructs the image shown above.
+Measured with Bevy 0.20 on Apple M5 Max as serial offscreen timing, not
+production FPS. Details and limits are in the
+[measurement report](https://github.com/mistakeknot/ushas/blob/main/docs/research/claude-completion-campaign-02.md).
 
 ## Quick Start
 

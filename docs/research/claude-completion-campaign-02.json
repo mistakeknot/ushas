@@ -1,0 +1,3044 @@
+{
+  "schema": 1,
+  "valid": true,
+  "scope": "Paired run-level serial completed-render time ratios, candidate/native-MSAA4; each run uses 1000/completed_render_fps. Lower is faster. Includes CPU preparation, scheduling, callback delivery and polling; not normal pipelined FPS, GPU busy cost, GPU hardware latency or presentation.",
+  "limitations": [
+    "Four repetitions provide limited uncertainty resolution.",
+    "Each run is one observation; frame samples are not independent repetitions.",
+    "Every admitted render frame is drained before the next; this deliberately disables rendering overlap.",
+    "Elapsed time spans first measured admission to last measured callback, including interframe CPU gaps.",
+    "Completion fences and matching render evidence establish completed-view cadence, not a GPU busy-time signal.",
+    "Intervals are pointwise bootstrap estimates, not family-wise guarantees across arms and loads."
+  ],
+  "bootstrap_seed": 21434,
+  "bootstrap_draws": 10000,
+  "practical_threshold": 0.08,
+  "provenance": {
+    "adapter": {
+      "backend": "Metal",
+      "driver": "",
+      "driver_info": "",
+      "name": "Apple M5 Max"
+    },
+    "environment": {},
+    "runtime": {
+      "features": "frame-interpolation (includes temporal)",
+      "metal_debug_layer": null,
+      "os": "ProductName:\t\tmacOS\nProductVersion:\t\t26.5.2\nBuildVersion:\t\t25F84",
+      "rustc": "rustc 1.97.1 (8bab26f4f 2026-07-14)"
+    },
+    "scene_version": "claude-toy-v1",
+    "source_dirty_at_build": "false",
+    "source_revision": "9ab0ac1a0c33b579d57ba24f64376ab71fadd195",
+    "subject": "claude"
+  },
+  "runner_checkout_varied": false,
+  "errors": [],
+  "planned_runs": 60,
+  "execution_records": 60,
+  "runs": [
+    {
+      "id": "000-r0-load0-native-disabled-msaa4",
+      "repetition": 0,
+      "load": 0,
+      "arm": "native-disabled-msaa4",
+      "position": 0,
+      "output": "evidence/claude-completion-campaign-02/000-r0-load0-native-disabled-msaa4.json",
+      "errors": [],
+      "mean_loop_ms": 2.8103034516129046,
+      "loop_samples": 2139,
+      "experimental_markers": {
+        "requested": false,
+        "status": null,
+        "retained_measured_observations": 0,
+        "completed_total": null,
+        "retained_unfiltered_count": null,
+        "mean_elapsed_ms": null,
+        "availability": "no retained measured-frame observations; this does not imply zero completed queries",
+        "validated_for_governor": false,
+        "scope": "Experimental elapsed marker envelope; not GPU busy cost or panel delivery."
+      },
+      "mean_completed_render_ms": 2.8054864034595606,
+      "serial_completion": {
+        "epoch": 2,
+        "closed_by_epoch": 3,
+        "completed_frame_fences": 2139,
+        "qualified_render_frames": 2139,
+        "elapsed_seconds": 6.000935417,
+        "completed_render_fps": 356.4444293035457,
+        "mean_completed_render_ms": 2.8054864034595606
+      },
+      "runner_checkout": {
+        "source_head": {
+          "exit_code": 0,
+          "stdout": "9ab0ac1a0c33b579d57ba24f64376ab71fadd195",
+          "stderr": ""
+        },
+        "source_status": {
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        "lock_sha256": "8a5780c6af681a33fe08656db1ea1d2839084ab3ef272d70c7d49a5fae6c3520",
+        "toolchain_sha256": "11ad20cfc268c7a83a7f8a2ae530136513c54e0dab8a4a115e50b516766f1fa4"
+      }
+    },
+    {
+      "id": "001-r0-load0-temporal-native",
+      "repetition": 0,
+      "load": 0,
+      "arm": "temporal-native",
+      "position": 1,
+      "output": "evidence/claude-completion-campaign-02/001-r0-load0-temporal-native.json",
+      "errors": [],
+      "mean_loop_ms": 4.008768499999999,
+      "loop_samples": 1500,
+      "experimental_markers": {
+        "requested": false,
+        "status": null,
+        "retained_measured_observations": 0,
+        "completed_total": null,
+        "retained_unfiltered_count": null,
+        "mean_elapsed_ms": null,
+        "availability": "no retained measured-frame observations; this does not imply zero completed queries",
+        "validated_for_governor": false,
+        "scope": "Experimental elapsed marker envelope; not GPU busy cost or panel delivery."
+      },
+      "mean_completed_render_ms": 4.001588,
+      "serial_completion": {
+        "epoch": 2,
+        "closed_by_epoch": 3,
+        "completed_frame_fences": 1500,
+        "qualified_render_frames": 1500,
+        "elapsed_seconds": 6.002382,
+        "completed_render_fps": 249.90078938661352,
+        "mean_completed_render_ms": 4.001588
+      },
+      "runner_checkout": {
+        "source_head": {
+          "exit_code": 0,
+          "stdout": "9ab0ac1a0c33b579d57ba24f64376ab71fadd195",
+          "stderr": ""
+        },
+        "source_status": {
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        "lock_sha256": "8a5780c6af681a33fe08656db1ea1d2839084ab3ef272d70c7d49a5fae6c3520",
+        "toolchain_sha256": "11ad20cfc268c7a83a7f8a2ae530136513c54e0dab8a4a115e50b516766f1fa4"
+      }
+    },
+    {
+      "id": "002-r0-load0-temporal-half",
+      "repetition": 0,
+      "load": 0,
+      "arm": "temporal-half",
+      "position": 2,
+      "output": "evidence/claude-completion-campaign-02/002-r0-load0-temporal-half.json",
+      "errors": [],
+      "mean_loop_ms": 3.8109611324461334,
+      "loop_samples": 1578,
+      "experimental_markers": {
+        "requested": false,
+        "status": null,
+        "retained_measured_observations": 0,
+        "completed_total": null,
+        "retained_unfiltered_count": null,
+        "mean_elapsed_ms": null,
+        "availability": "no retained measured-frame observations; this does not imply zero completed queries",
+        "validated_for_governor": false,
+        "scope": "Experimental elapsed marker envelope; not GPU busy cost or panel delivery."
+      },
+      "mean_completed_render_ms": 3.803610662230672,
+      "serial_completion": {
+        "epoch": 2,
+        "closed_by_epoch": 3,
+        "completed_frame_fences": 1578,
+        "qualified_render_frames": 1578,
+        "elapsed_seconds": 6.002097625,
+        "completed_render_fps": 262.90808623760097,
+        "mean_completed_render_ms": 3.803610662230672
+      },
+      "runner_checkout": {
+        "source_head": {
+          "exit_code": 0,
+          "stdout": "9ab0ac1a0c33b579d57ba24f64376ab71fadd195",
+          "stderr": ""
+        },
+        "source_status": {
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        "lock_sha256": "8a5780c6af681a33fe08656db1ea1d2839084ab3ef272d70c7d49a5fae6c3520",
+        "toolchain_sha256": "11ad20cfc268c7a83a7f8a2ae530136513c54e0dab8a4a115e50b516766f1fa4"
+      }
+    },
+    {
+      "id": "003-r0-load0-temporal-third",
+      "repetition": 0,
+      "load": 0,
+      "arm": "temporal-third",
+      "position": 3,
+      "output": "evidence/claude-completion-campaign-02/003-r0-load0-temporal-third.json",
+      "errors": [],
+      "mean_loop_ms": 3.6411365336159918,
+      "loop_samples": 1651,
+      "experimental_markers": {
+        "requested": false,
+        "status": null,
+        "retained_measured_observations": 0,
+        "completed_total": null,
+        "retained_unfiltered_count": null,
+        "mean_elapsed_ms": null,
+        "availability": "no retained measured-frame observations; this does not imply zero completed queries",
+        "validated_for_governor": false,
+        "scope": "Experimental elapsed marker envelope; not GPU busy cost or panel delivery."
+      },
+      "mean_completed_render_ms": 3.6340374518473655,
+      "serial_completion": {
+        "epoch": 2,
+        "closed_by_epoch": 3,
+        "completed_frame_fences": 1651,
+        "qualified_render_frames": 1651,
+        "elapsed_seconds": 5.999795833,
+        "completed_render_fps": 275.1760303107634,
+        "mean_completed_render_ms": 3.6340374518473655
+      },
+      "runner_checkout": {
+        "source_head": {
+          "exit_code": 0,
+          "stdout": "9ab0ac1a0c33b579d57ba24f64376ab71fadd195",
+          "stderr": ""
+        },
+        "source_status": {
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        "lock_sha256": "8a5780c6af681a33fe08656db1ea1d2839084ab3ef272d70c7d49a5fae6c3520",
+        "toolchain_sha256": "11ad20cfc268c7a83a7f8a2ae530136513c54e0dab8a4a115e50b516766f1fa4"
+      }
+    },
+    {
+      "id": "004-r0-load0-bilinear-half",
+      "repetition": 0,
+      "load": 0,
+      "arm": "bilinear-half",
+      "position": 4,
+      "output": "evidence/claude-completion-campaign-02/004-r0-load0-bilinear-half.json",
+      "errors": [],
+      "mean_loop_ms": 2.8016722806526784,
+      "loop_samples": 2145,
+      "experimental_markers": {
+        "requested": false,
+        "status": null,
+        "retained_measured_observations": 0,
+        "completed_total": null,
+        "retained_unfiltered_count": null,
+        "mean_elapsed_ms": null,
+        "availability": "no retained measured-frame observations; this does not imply zero completed queries",
+        "validated_for_governor": false,
+        "scope": "Experimental elapsed marker envelope; not GPU busy cost or panel delivery."
+      },
+      "mean_completed_render_ms": 2.7970826144522145,
+      "serial_completion": {
+        "epoch": 2,
+        "closed_by_epoch": 3,
+        "completed_frame_fences": 2145,
+        "qualified_render_frames": 2145,
+        "elapsed_seconds": 5.999742208,
+        "completed_render_fps": 357.5153607666471,
+        "mean_completed_render_ms": 2.7970826144522145
+      },
+      "runner_checkout": {
+        "source_head": {
+          "exit_code": 0,
+          "stdout": "9ab0ac1a0c33b579d57ba24f64376ab71fadd195",
+          "stderr": ""
+        },
+        "source_status": {
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        "lock_sha256": "8a5780c6af681a33fe08656db1ea1d2839084ab3ef272d70c7d49a5fae6c3520",
+        "toolchain_sha256": "11ad20cfc268c7a83a7f8a2ae530136513c54e0dab8a4a115e50b516766f1fa4"
+      }
+    },
+    {
+      "id": "005-r0-load8000-temporal-native",
+      "repetition": 0,
+      "load": 8000,
+      "arm": "temporal-native",
+      "position": 0,
+      "output": "evidence/claude-completion-campaign-02/005-r0-load8000-temporal-native.json",
+      "errors": [],
+      "mean_loop_ms": 45.27129009774434,
+      "loop_samples": 133,
+      "experimental_markers": {
+        "requested": false,
+        "status": null,
+        "retained_measured_observations": 0,
+        "completed_total": null,
+        "retained_unfiltered_count": null,
+        "mean_elapsed_ms": null,
+        "availability": "no retained measured-frame observations; this does not imply zero completed queries",
+        "validated_for_governor": false,
+        "scope": "Experimental elapsed marker envelope; not GPU busy cost or panel delivery."
+      },
+      "mean_completed_render_ms": 45.13804511278195,
+      "serial_completion": {
+        "epoch": 2,
+        "closed_by_epoch": 3,
+        "completed_frame_fences": 133,
+        "qualified_render_frames": 133,
+        "elapsed_seconds": 6.00336,
+        "completed_render_fps": 22.15426028090936,
+        "mean_completed_render_ms": 45.13804511278195
+      },
+      "runner_checkout": {
+        "source_head": {
+          "exit_code": 0,
+          "stdout": "9ab0ac1a0c33b579d57ba24f64376ab71fadd195",
+          "stderr": ""
+        },
+        "source_status": {
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        "lock_sha256": "8a5780c6af681a33fe08656db1ea1d2839084ab3ef272d70c7d49a5fae6c3520",
+        "toolchain_sha256": "11ad20cfc268c7a83a7f8a2ae530136513c54e0dab8a4a115e50b516766f1fa4"
+      }
+    },
+    {
+      "id": "006-r0-load8000-temporal-half",
+      "repetition": 0,
+      "load": 8000,
+      "arm": "temporal-half",
+      "position": 1,
+      "output": "evidence/claude-completion-campaign-02/006-r0-load8000-temporal-half.json",
+      "errors": [],
+      "mean_loop_ms": 17.685376961764714,
+      "loop_samples": 340,
+      "experimental_markers": {
+        "requested": false,
+        "status": null,
+        "retained_measured_observations": 0,
+        "completed_total": null,
+        "retained_unfiltered_count": null,
+        "mean_elapsed_ms": null,
+        "availability": "no retained measured-frame observations; this does not imply zero completed queries",
+        "validated_for_governor": false,
+        "scope": "Experimental elapsed marker envelope; not GPU busy cost or panel delivery."
+      },
+      "mean_completed_render_ms": 17.64621115,
+      "serial_completion": {
+        "epoch": 2,
+        "closed_by_epoch": 3,
+        "completed_frame_fences": 340,
+        "qualified_render_frames": 340,
+        "elapsed_seconds": 5.999711791,
+        "completed_render_fps": 56.6693887713114,
+        "mean_completed_render_ms": 17.64621115
+      },
+      "runner_checkout": {
+        "source_head": {
+          "exit_code": 0,
+          "stdout": "9ab0ac1a0c33b579d57ba24f64376ab71fadd195",
+          "stderr": ""
+        },
+        "source_status": {
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        "lock_sha256": "8a5780c6af681a33fe08656db1ea1d2839084ab3ef272d70c7d49a5fae6c3520",
+        "toolchain_sha256": "11ad20cfc268c7a83a7f8a2ae530136513c54e0dab8a4a115e50b516766f1fa4"
+      }
+    },
+    {
+      "id": "007-r0-load8000-temporal-third",
+      "repetition": 0,
+      "load": 8000,
+      "arm": "temporal-third",
+      "position": 2,
+      "output": "evidence/claude-completion-campaign-02/007-r0-load8000-temporal-third.json",
+      "errors": [],
+      "mean_loop_ms": 9.335091021705429,
+      "loop_samples": 645,
+      "experimental_markers": {
+        "requested": false,
+        "status": null,
+        "retained_measured_observations": 0,
+        "completed_total": null,
+        "retained_unfiltered_count": null,
+        "mean_elapsed_ms": null,
+        "availability": "no retained measured-frame observations; this does not imply zero completed queries",
+        "validated_for_governor": false,
+        "scope": "Experimental elapsed marker envelope; not GPU busy cost or panel delivery."
+      },
+      "mean_completed_render_ms": 9.305421705426356,
+      "serial_completion": {
+        "epoch": 2,
+        "closed_by_epoch": 3,
+        "completed_frame_fences": 645,
+        "qualified_render_frames": 645,
+        "elapsed_seconds": 6.001997,
+        "completed_render_fps": 107.46423232134238,
+        "mean_completed_render_ms": 9.305421705426356
+      },
+      "runner_checkout": {
+        "source_head": {
+          "exit_code": 0,
+          "stdout": "9ab0ac1a0c33b579d57ba24f64376ab71fadd195",
+          "stderr": ""
+        },
+        "source_status": {
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        "lock_sha256": "8a5780c6af681a33fe08656db1ea1d2839084ab3ef272d70c7d49a5fae6c3520",
+        "toolchain_sha256": "11ad20cfc268c7a83a7f8a2ae530136513c54e0dab8a4a115e50b516766f1fa4"
+      }
+    },
+    {
+      "id": "008-r0-load8000-bilinear-half",
+      "repetition": 0,
+      "load": 8000,
+      "arm": "bilinear-half",
+      "position": 3,
+      "output": "evidence/claude-completion-campaign-02/008-r0-load8000-bilinear-half.json",
+      "errors": [],
+      "mean_loop_ms": 14.338746130952378,
+      "loop_samples": 420,
+      "experimental_markers": {
+        "requested": false,
+        "status": null,
+        "retained_measured_observations": 0,
+        "completed_total": null,
+        "retained_unfiltered_count": null,
+        "mean_elapsed_ms": null,
+        "availability": "no retained measured-frame observations; this does not imply zero completed queries",
+        "validated_for_governor": false,
+        "scope": "Experimental elapsed marker envelope; not GPU busy cost or panel delivery."
+      },
+      "mean_completed_render_ms": 14.301454066666667,
+      "serial_completion": {
+        "epoch": 2,
+        "closed_by_epoch": 3,
+        "completed_frame_fences": 420,
+        "qualified_render_frames": 420,
+        "elapsed_seconds": 6.006610708,
+        "completed_render_fps": 69.92295995487378,
+        "mean_completed_render_ms": 14.301454066666667
+      },
+      "runner_checkout": {
+        "source_head": {
+          "exit_code": 0,
+          "stdout": "9ab0ac1a0c33b579d57ba24f64376ab71fadd195",
+          "stderr": ""
+        },
+        "source_status": {
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        "lock_sha256": "8a5780c6af681a33fe08656db1ea1d2839084ab3ef272d70c7d49a5fae6c3520",
+        "toolchain_sha256": "11ad20cfc268c7a83a7f8a2ae530136513c54e0dab8a4a115e50b516766f1fa4"
+      }
+    },
+    {
+      "id": "009-r0-load8000-native-disabled-msaa4",
+      "repetition": 0,
+      "load": 8000,
+      "arm": "native-disabled-msaa4",
+      "position": 4,
+      "output": "evidence/claude-completion-campaign-02/009-r0-load8000-native-disabled-msaa4.json",
+      "errors": [],
+      "mean_loop_ms": 40.07858636423843,
+      "loop_samples": 151,
+      "experimental_markers": {
+        "requested": false,
+        "status": null,
+        "retained_measured_observations": 0,
+        "completed_total": null,
+        "retained_unfiltered_count": null,
+        "mean_elapsed_ms": null,
+        "availability": "no retained measured-frame observations; this does not imply zero completed queries",
+        "validated_for_governor": false,
+        "scope": "Experimental elapsed marker envelope; not GPU busy cost or panel delivery."
+      },
+      "mean_completed_render_ms": 40.01477786754967,
+      "serial_completion": {
+        "epoch": 2,
+        "closed_by_epoch": 3,
+        "completed_frame_fences": 151,
+        "qualified_render_frames": 151,
+        "elapsed_seconds": 6.042231458,
+        "completed_render_fps": 24.990767243792668,
+        "mean_completed_render_ms": 40.01477786754967
+      },
+      "runner_checkout": {
+        "source_head": {
+          "exit_code": 0,
+          "stdout": "9ab0ac1a0c33b579d57ba24f64376ab71fadd195",
+          "stderr": ""
+        },
+        "source_status": {
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        "lock_sha256": "8a5780c6af681a33fe08656db1ea1d2839084ab3ef272d70c7d49a5fae6c3520",
+        "toolchain_sha256": "11ad20cfc268c7a83a7f8a2ae530136513c54e0dab8a4a115e50b516766f1fa4"
+      }
+    },
+    {
+      "id": "010-r0-load20000-temporal-half",
+      "repetition": 0,
+      "load": 20000,
+      "arm": "temporal-half",
+      "position": 0,
+      "output": "evidence/claude-completion-campaign-02/010-r0-load20000-temporal-half.json",
+      "errors": [],
+      "mean_loop_ms": 39.71551096710525,
+      "loop_samples": 152,
+      "experimental_markers": {
+        "requested": false,
+        "status": null,
+        "retained_measured_observations": 0,
+        "completed_total": null,
+        "retained_unfiltered_count": null,
+        "mean_elapsed_ms": null,
+        "availability": "no retained measured-frame observations; this does not imply zero completed queries",
+        "validated_for_governor": false,
+        "scope": "Experimental elapsed marker envelope; not GPU busy cost or panel delivery."
+      },
+      "mean_completed_render_ms": 39.678819625,
+      "serial_completion": {
+        "epoch": 2,
+        "closed_by_epoch": 3,
+        "completed_frame_fences": 152,
+        "qualified_render_frames": 152,
+        "elapsed_seconds": 6.031180583,
+        "completed_render_fps": 25.202362606823637,
+        "mean_completed_render_ms": 39.678819625
+      },
+      "runner_checkout": {
+        "source_head": {
+          "exit_code": 0,
+          "stdout": "9ab0ac1a0c33b579d57ba24f64376ab71fadd195",
+          "stderr": ""
+        },
+        "source_status": {
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        "lock_sha256": "8a5780c6af681a33fe08656db1ea1d2839084ab3ef272d70c7d49a5fae6c3520",
+        "toolchain_sha256": "11ad20cfc268c7a83a7f8a2ae530136513c54e0dab8a4a115e50b516766f1fa4"
+      }
+    },
+    {
+      "id": "011-r0-load20000-temporal-third",
+      "repetition": 0,
+      "load": 20000,
+      "arm": "temporal-third",
+      "position": 1,
+      "output": "evidence/claude-completion-campaign-02/011-r0-load20000-temporal-third.json",
+      "errors": [],
+      "mean_loop_ms": 20.14163107457629,
+      "loop_samples": 295,
+      "experimental_markers": {
+        "requested": false,
+        "status": null,
+        "retained_measured_observations": 0,
+        "completed_total": null,
+        "retained_unfiltered_count": null,
+        "mean_elapsed_ms": null,
+        "availability": "no retained measured-frame observations; this does not imply zero completed queries",
+        "validated_for_governor": false,
+        "scope": "Experimental elapsed marker envelope; not GPU busy cost or panel delivery."
+      },
+      "mean_completed_render_ms": 20.831684040677963,
+      "serial_completion": {
+        "epoch": 2,
+        "closed_by_epoch": 3,
+        "completed_frame_fences": 295,
+        "qualified_render_frames": 295,
+        "elapsed_seconds": 6.145346792,
+        "completed_render_fps": 48.003800271130416,
+        "mean_completed_render_ms": 20.831684040677963
+      },
+      "runner_checkout": {
+        "source_head": {
+          "exit_code": 0,
+          "stdout": "9ab0ac1a0c33b579d57ba24f64376ab71fadd195",
+          "stderr": ""
+        },
+        "source_status": {
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        "lock_sha256": "8a5780c6af681a33fe08656db1ea1d2839084ab3ef272d70c7d49a5fae6c3520",
+        "toolchain_sha256": "11ad20cfc268c7a83a7f8a2ae530136513c54e0dab8a4a115e50b516766f1fa4"
+      }
+    },
+    {
+      "id": "012-r0-load20000-bilinear-half",
+      "repetition": 0,
+      "load": 20000,
+      "arm": "bilinear-half",
+      "position": 2,
+      "output": "evidence/claude-completion-campaign-02/012-r0-load20000-bilinear-half.json",
+      "errors": [],
+      "mean_loop_ms": 35.41439754705883,
+      "loop_samples": 170,
+      "experimental_markers": {
+        "requested": false,
+        "status": null,
+        "retained_measured_observations": 0,
+        "completed_total": null,
+        "retained_unfiltered_count": null,
+        "mean_elapsed_ms": null,
+        "availability": "no retained measured-frame observations; this does not imply zero completed queries",
+        "validated_for_governor": false,
+        "scope": "Experimental elapsed marker envelope; not GPU busy cost or panel delivery."
+      },
+      "mean_completed_render_ms": 35.31731102941176,
+      "serial_completion": {
+        "epoch": 2,
+        "closed_by_epoch": 3,
+        "completed_frame_fences": 170,
+        "qualified_render_frames": 170,
+        "elapsed_seconds": 6.003942875,
+        "completed_render_fps": 28.31472642883865,
+        "mean_completed_render_ms": 35.31731102941176
+      },
+      "runner_checkout": {
+        "source_head": {
+          "exit_code": 0,
+          "stdout": "9ab0ac1a0c33b579d57ba24f64376ab71fadd195",
+          "stderr": ""
+        },
+        "source_status": {
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        "lock_sha256": "8a5780c6af681a33fe08656db1ea1d2839084ab3ef272d70c7d49a5fae6c3520",
+        "toolchain_sha256": "11ad20cfc268c7a83a7f8a2ae530136513c54e0dab8a4a115e50b516766f1fa4"
+      }
+    },
+    {
+      "id": "013-r0-load20000-native-disabled-msaa4",
+      "repetition": 0,
+      "load": 20000,
+      "arm": "native-disabled-msaa4",
+      "position": 3,
+      "output": "evidence/claude-completion-campaign-02/013-r0-load20000-native-disabled-msaa4.json",
+      "errors": [],
+      "mean_loop_ms": 102.11449788135594,
+      "loop_samples": 59,
+      "experimental_markers": {
+        "requested": false,
+        "status": null,
+        "retained_measured_observations": 0,
+        "completed_total": null,
+        "retained_unfiltered_count": null,
+        "mean_elapsed_ms": null,
+        "availability": "no retained measured-frame observations; this does not imply zero completed queries",
+        "validated_for_governor": false,
+        "scope": "Experimental elapsed marker envelope; not GPU busy cost or panel delivery."
+      },
+      "mean_completed_render_ms": 101.85175988135593,
+      "serial_completion": {
+        "epoch": 2,
+        "closed_by_epoch": 3,
+        "completed_frame_fences": 59,
+        "qualified_render_frames": 59,
+        "elapsed_seconds": 6.009253833,
+        "completed_render_fps": 9.818190683841596,
+        "mean_completed_render_ms": 101.85175988135593
+      },
+      "runner_checkout": {
+        "source_head": {
+          "exit_code": 0,
+          "stdout": "9ab0ac1a0c33b579d57ba24f64376ab71fadd195",
+          "stderr": ""
+        },
+        "source_status": {
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        "lock_sha256": "8a5780c6af681a33fe08656db1ea1d2839084ab3ef272d70c7d49a5fae6c3520",
+        "toolchain_sha256": "11ad20cfc268c7a83a7f8a2ae530136513c54e0dab8a4a115e50b516766f1fa4"
+      }
+    },
+    {
+      "id": "014-r0-load20000-temporal-native",
+      "repetition": 0,
+      "load": 20000,
+      "arm": "temporal-native",
+      "position": 4,
+      "output": "evidence/claude-completion-campaign-02/014-r0-load20000-temporal-native.json",
+      "errors": [],
+      "mean_loop_ms": 113.64571305660375,
+      "loop_samples": 53,
+      "experimental_markers": {
+        "requested": false,
+        "status": null,
+        "retained_measured_observations": 0,
+        "completed_total": null,
+        "retained_unfiltered_count": null,
+        "mean_elapsed_ms": null,
+        "availability": "no retained measured-frame observations; this does not imply zero completed queries",
+        "validated_for_governor": false,
+        "scope": "Experimental elapsed marker envelope; not GPU busy cost or panel delivery."
+      },
+      "mean_completed_render_ms": 113.69233647169813,
+      "serial_completion": {
+        "epoch": 2,
+        "closed_by_epoch": 3,
+        "completed_frame_fences": 53,
+        "qualified_render_frames": 53,
+        "elapsed_seconds": 6.025693833,
+        "completed_render_fps": 8.795667597603941,
+        "mean_completed_render_ms": 113.69233647169813
+      },
+      "runner_checkout": {
+        "source_head": {
+          "exit_code": 0,
+          "stdout": "9ab0ac1a0c33b579d57ba24f64376ab71fadd195",
+          "stderr": ""
+        },
+        "source_status": {
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        "lock_sha256": "8a5780c6af681a33fe08656db1ea1d2839084ab3ef272d70c7d49a5fae6c3520",
+        "toolchain_sha256": "11ad20cfc268c7a83a7f8a2ae530136513c54e0dab8a4a115e50b516766f1fa4"
+      }
+    },
+    {
+      "id": "015-r1-load20000-temporal-native",
+      "repetition": 1,
+      "load": 20000,
+      "arm": "temporal-native",
+      "position": 0,
+      "output": "evidence/claude-completion-campaign-02/015-r1-load20000-temporal-native.json",
+      "errors": [],
+      "mean_loop_ms": 120.96302000000001,
+      "loop_samples": 50,
+      "experimental_markers": {
+        "requested": false,
+        "status": null,
+        "retained_measured_observations": 0,
+        "completed_total": null,
+        "retained_unfiltered_count": null,
+        "mean_elapsed_ms": null,
+        "availability": "no retained measured-frame observations; this does not imply zero completed queries",
+        "validated_for_governor": false,
+        "scope": "Experimental elapsed marker envelope; not GPU busy cost or panel delivery."
+      },
+      "mean_completed_render_ms": 120.50015918,
+      "serial_completion": {
+        "epoch": 2,
+        "closed_by_epoch": 3,
+        "completed_frame_fences": 50,
+        "qualified_render_frames": 50,
+        "elapsed_seconds": 6.025007959,
+        "completed_render_fps": 8.298744224115307,
+        "mean_completed_render_ms": 120.50015918
+      },
+      "runner_checkout": {
+        "source_head": {
+          "exit_code": 0,
+          "stdout": "9ab0ac1a0c33b579d57ba24f64376ab71fadd195",
+          "stderr": ""
+        },
+        "source_status": {
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        "lock_sha256": "8a5780c6af681a33fe08656db1ea1d2839084ab3ef272d70c7d49a5fae6c3520",
+        "toolchain_sha256": "11ad20cfc268c7a83a7f8a2ae530136513c54e0dab8a4a115e50b516766f1fa4"
+      }
+    },
+    {
+      "id": "016-r1-load20000-native-disabled-msaa4",
+      "repetition": 1,
+      "load": 20000,
+      "arm": "native-disabled-msaa4",
+      "position": 1,
+      "output": "evidence/claude-completion-campaign-02/016-r1-load20000-native-disabled-msaa4.json",
+      "errors": [],
+      "mean_loop_ms": 105.30595907017546,
+      "loop_samples": 57,
+      "experimental_markers": {
+        "requested": false,
+        "status": null,
+        "retained_measured_observations": 0,
+        "completed_total": null,
+        "retained_unfiltered_count": null,
+        "mean_elapsed_ms": null,
+        "availability": "no retained measured-frame observations; this does not imply zero completed queries",
+        "validated_for_governor": false,
+        "scope": "Experimental elapsed marker envelope; not GPU busy cost or panel delivery."
+      },
+      "mean_completed_render_ms": 105.38678435087718,
+      "serial_completion": {
+        "epoch": 2,
+        "closed_by_epoch": 3,
+        "completed_frame_fences": 57,
+        "qualified_render_frames": 57,
+        "elapsed_seconds": 6.007046708,
+        "completed_render_fps": 9.488855800653116,
+        "mean_completed_render_ms": 105.38678435087718
+      },
+      "runner_checkout": {
+        "source_head": {
+          "exit_code": 0,
+          "stdout": "9ab0ac1a0c33b579d57ba24f64376ab71fadd195",
+          "stderr": ""
+        },
+        "source_status": {
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        "lock_sha256": "8a5780c6af681a33fe08656db1ea1d2839084ab3ef272d70c7d49a5fae6c3520",
+        "toolchain_sha256": "11ad20cfc268c7a83a7f8a2ae530136513c54e0dab8a4a115e50b516766f1fa4"
+      }
+    },
+    {
+      "id": "017-r1-load20000-bilinear-half",
+      "repetition": 1,
+      "load": 20000,
+      "arm": "bilinear-half",
+      "position": 2,
+      "output": "evidence/claude-completion-campaign-02/017-r1-load20000-bilinear-half.json",
+      "errors": [],
+      "mean_loop_ms": 35.04219306976746,
+      "loop_samples": 172,
+      "experimental_markers": {
+        "requested": false,
+        "status": null,
+        "retained_measured_observations": 0,
+        "completed_total": null,
+        "retained_unfiltered_count": null,
+        "mean_elapsed_ms": null,
+        "availability": "no retained measured-frame observations; this does not imply zero completed queries",
+        "validated_for_governor": false,
+        "scope": "Experimental elapsed marker envelope; not GPU busy cost or panel delivery."
+      },
+      "mean_completed_render_ms": 34.96002422093023,
+      "serial_completion": {
+        "epoch": 2,
+        "closed_by_epoch": 3,
+        "completed_frame_fences": 172,
+        "qualified_render_frames": 172,
+        "elapsed_seconds": 6.013124166,
+        "completed_render_fps": 28.604099175689633,
+        "mean_completed_render_ms": 34.96002422093023
+      },
+      "runner_checkout": {
+        "source_head": {
+          "exit_code": 0,
+          "stdout": "9ab0ac1a0c33b579d57ba24f64376ab71fadd195",
+          "stderr": ""
+        },
+        "source_status": {
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        "lock_sha256": "8a5780c6af681a33fe08656db1ea1d2839084ab3ef272d70c7d49a5fae6c3520",
+        "toolchain_sha256": "11ad20cfc268c7a83a7f8a2ae530136513c54e0dab8a4a115e50b516766f1fa4"
+      }
+    },
+    {
+      "id": "018-r1-load20000-temporal-third",
+      "repetition": 1,
+      "load": 20000,
+      "arm": "temporal-third",
+      "position": 3,
+      "output": "evidence/claude-completion-campaign-02/018-r1-load20000-temporal-third.json",
+      "errors": [],
+      "mean_loop_ms": 20.240437080536907,
+      "loop_samples": 298,
+      "experimental_markers": {
+        "requested": false,
+        "status": null,
+        "retained_measured_observations": 0,
+        "completed_total": null,
+        "retained_unfiltered_count": null,
+        "mean_elapsed_ms": null,
+        "availability": "no retained measured-frame observations; this does not imply zero completed queries",
+        "validated_for_governor": false,
+        "scope": "Experimental elapsed marker envelope; not GPU busy cost or panel delivery."
+      },
+      "mean_completed_render_ms": 20.21071155033557,
+      "serial_completion": {
+        "epoch": 2,
+        "closed_by_epoch": 3,
+        "completed_frame_fences": 298,
+        "qualified_render_frames": 298,
+        "elapsed_seconds": 6.022792042,
+        "completed_render_fps": 49.47871318184225,
+        "mean_completed_render_ms": 20.21071155033557
+      },
+      "runner_checkout": {
+        "source_head": {
+          "exit_code": 0,
+          "stdout": "9ab0ac1a0c33b579d57ba24f64376ab71fadd195",
+          "stderr": ""
+        },
+        "source_status": {
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        "lock_sha256": "8a5780c6af681a33fe08656db1ea1d2839084ab3ef272d70c7d49a5fae6c3520",
+        "toolchain_sha256": "11ad20cfc268c7a83a7f8a2ae530136513c54e0dab8a4a115e50b516766f1fa4"
+      }
+    },
+    {
+      "id": "019-r1-load20000-temporal-half",
+      "repetition": 1,
+      "load": 20000,
+      "arm": "temporal-half",
+      "position": 4,
+      "output": "evidence/claude-completion-campaign-02/019-r1-load20000-temporal-half.json",
+      "errors": [],
+      "mean_loop_ms": 39.983791940397346,
+      "loop_samples": 151,
+      "experimental_markers": {
+        "requested": false,
+        "status": null,
+        "retained_measured_observations": 0,
+        "completed_total": null,
+        "retained_unfiltered_count": null,
+        "mean_elapsed_ms": null,
+        "availability": "no retained measured-frame observations; this does not imply zero completed queries",
+        "validated_for_governor": false,
+        "scope": "Experimental elapsed marker envelope; not GPU busy cost or panel delivery."
+      },
+      "mean_completed_render_ms": 39.865742278145696,
+      "serial_completion": {
+        "epoch": 2,
+        "closed_by_epoch": 3,
+        "completed_frame_fences": 151,
+        "qualified_render_frames": 151,
+        "elapsed_seconds": 6.019727084,
+        "completed_render_fps": 25.08419366740846,
+        "mean_completed_render_ms": 39.865742278145696
+      },
+      "runner_checkout": {
+        "source_head": {
+          "exit_code": 0,
+          "stdout": "9ab0ac1a0c33b579d57ba24f64376ab71fadd195",
+          "stderr": ""
+        },
+        "source_status": {
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        "lock_sha256": "8a5780c6af681a33fe08656db1ea1d2839084ab3ef272d70c7d49a5fae6c3520",
+        "toolchain_sha256": "11ad20cfc268c7a83a7f8a2ae530136513c54e0dab8a4a115e50b516766f1fa4"
+      }
+    },
+    {
+      "id": "020-r1-load8000-native-disabled-msaa4",
+      "repetition": 1,
+      "load": 8000,
+      "arm": "native-disabled-msaa4",
+      "position": 0,
+      "output": "evidence/claude-completion-campaign-02/020-r1-load8000-native-disabled-msaa4.json",
+      "errors": [],
+      "mean_loop_ms": 44.96843346268656,
+      "loop_samples": 134,
+      "experimental_markers": {
+        "requested": false,
+        "status": null,
+        "retained_measured_observations": 0,
+        "completed_total": null,
+        "retained_unfiltered_count": null,
+        "mean_elapsed_ms": null,
+        "availability": "no retained measured-frame observations; this does not imply zero completed queries",
+        "validated_for_governor": false,
+        "scope": "Experimental elapsed marker envelope; not GPU busy cost or panel delivery."
+      },
+      "mean_completed_render_ms": 44.869546014925376,
+      "serial_completion": {
+        "epoch": 2,
+        "closed_by_epoch": 3,
+        "completed_frame_fences": 134,
+        "qualified_render_frames": 134,
+        "elapsed_seconds": 6.012519166,
+        "completed_render_fps": 22.28683124334177,
+        "mean_completed_render_ms": 44.869546014925376
+      },
+      "runner_checkout": {
+        "source_head": {
+          "exit_code": 0,
+          "stdout": "9ab0ac1a0c33b579d57ba24f64376ab71fadd195",
+          "stderr": ""
+        },
+        "source_status": {
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        "lock_sha256": "8a5780c6af681a33fe08656db1ea1d2839084ab3ef272d70c7d49a5fae6c3520",
+        "toolchain_sha256": "11ad20cfc268c7a83a7f8a2ae530136513c54e0dab8a4a115e50b516766f1fa4"
+      }
+    },
+    {
+      "id": "021-r1-load8000-bilinear-half",
+      "repetition": 1,
+      "load": 8000,
+      "arm": "bilinear-half",
+      "position": 1,
+      "output": "evidence/claude-completion-campaign-02/021-r1-load8000-bilinear-half.json",
+      "errors": [],
+      "mean_loop_ms": 15.87150756578947,
+      "loop_samples": 380,
+      "experimental_markers": {
+        "requested": false,
+        "status": null,
+        "retained_measured_observations": 0,
+        "completed_total": null,
+        "retained_unfiltered_count": null,
+        "mean_elapsed_ms": null,
+        "availability": "no retained measured-frame observations; this does not imply zero completed queries",
+        "validated_for_governor": false,
+        "scope": "Experimental elapsed marker envelope; not GPU busy cost or panel delivery."
+      },
+      "mean_completed_render_ms": 15.822041776315789,
+      "serial_completion": {
+        "epoch": 2,
+        "closed_by_epoch": 3,
+        "completed_frame_fences": 380,
+        "qualified_render_frames": 380,
+        "elapsed_seconds": 6.012375875,
+        "completed_render_fps": 63.202967994744675,
+        "mean_completed_render_ms": 15.822041776315789
+      },
+      "runner_checkout": {
+        "source_head": {
+          "exit_code": 0,
+          "stdout": "9ab0ac1a0c33b579d57ba24f64376ab71fadd195",
+          "stderr": ""
+        },
+        "source_status": {
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        "lock_sha256": "8a5780c6af681a33fe08656db1ea1d2839084ab3ef272d70c7d49a5fae6c3520",
+        "toolchain_sha256": "11ad20cfc268c7a83a7f8a2ae530136513c54e0dab8a4a115e50b516766f1fa4"
+      }
+    },
+    {
+      "id": "022-r1-load8000-temporal-third",
+      "repetition": 1,
+      "load": 8000,
+      "arm": "temporal-third",
+      "position": 2,
+      "output": "evidence/claude-completion-campaign-02/022-r1-load8000-temporal-third.json",
+      "errors": [],
+      "mean_loop_ms": 11.066273317431211,
+      "loop_samples": 545,
+      "experimental_markers": {
+        "requested": false,
+        "status": null,
+        "retained_measured_observations": 0,
+        "completed_total": null,
+        "retained_unfiltered_count": null,
+        "mean_elapsed_ms": null,
+        "availability": "no retained measured-frame observations; this does not imply zero completed queries",
+        "validated_for_governor": false,
+        "scope": "Experimental elapsed marker envelope; not GPU busy cost or panel delivery."
+      },
+      "mean_completed_render_ms": 11.018230427522935,
+      "serial_completion": {
+        "epoch": 2,
+        "closed_by_epoch": 3,
+        "completed_frame_fences": 545,
+        "qualified_render_frames": 545,
+        "elapsed_seconds": 6.004935583,
+        "completed_render_fps": 90.75867550401331,
+        "mean_completed_render_ms": 11.018230427522935
+      },
+      "runner_checkout": {
+        "source_head": {
+          "exit_code": 0,
+          "stdout": "9ab0ac1a0c33b579d57ba24f64376ab71fadd195",
+          "stderr": ""
+        },
+        "source_status": {
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        "lock_sha256": "8a5780c6af681a33fe08656db1ea1d2839084ab3ef272d70c7d49a5fae6c3520",
+        "toolchain_sha256": "11ad20cfc268c7a83a7f8a2ae530136513c54e0dab8a4a115e50b516766f1fa4"
+      }
+    },
+    {
+      "id": "023-r1-load8000-temporal-half",
+      "repetition": 1,
+      "load": 8000,
+      "arm": "temporal-half",
+      "position": 3,
+      "output": "evidence/claude-completion-campaign-02/023-r1-load8000-temporal-half.json",
+      "errors": [],
+      "mean_loop_ms": 17.498679023255804,
+      "loop_samples": 344,
+      "experimental_markers": {
+        "requested": false,
+        "status": null,
+        "retained_measured_observations": 0,
+        "completed_total": null,
+        "retained_unfiltered_count": null,
+        "mean_elapsed_ms": null,
+        "availability": "no retained measured-frame observations; this does not imply zero completed queries",
+        "validated_for_governor": false,
+        "scope": "Experimental elapsed marker envelope; not GPU busy cost or panel delivery."
+      },
+      "mean_completed_render_ms": 17.446769014534883,
+      "serial_completion": {
+        "epoch": 2,
+        "closed_by_epoch": 3,
+        "completed_frame_fences": 344,
+        "qualified_render_frames": 344,
+        "elapsed_seconds": 6.001688541,
+        "completed_render_fps": 57.31720292547583,
+        "mean_completed_render_ms": 17.446769014534883
+      },
+      "runner_checkout": {
+        "source_head": {
+          "exit_code": 0,
+          "stdout": "9ab0ac1a0c33b579d57ba24f64376ab71fadd195",
+          "stderr": ""
+        },
+        "source_status": {
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        "lock_sha256": "8a5780c6af681a33fe08656db1ea1d2839084ab3ef272d70c7d49a5fae6c3520",
+        "toolchain_sha256": "11ad20cfc268c7a83a7f8a2ae530136513c54e0dab8a4a115e50b516766f1fa4"
+      }
+    },
+    {
+      "id": "024-r1-load8000-temporal-native",
+      "repetition": 1,
+      "load": 8000,
+      "arm": "temporal-native",
+      "position": 4,
+      "output": "evidence/claude-completion-campaign-02/024-r1-load8000-temporal-native.json",
+      "errors": [],
+      "mean_loop_ms": 47.28219693750002,
+      "loop_samples": 128,
+      "experimental_markers": {
+        "requested": false,
+        "status": null,
+        "retained_measured_observations": 0,
+        "completed_total": null,
+        "retained_unfiltered_count": null,
+        "mean_elapsed_ms": null,
+        "availability": "no retained measured-frame observations; this does not imply zero completed queries",
+        "validated_for_governor": false,
+        "scope": "Experimental elapsed marker envelope; not GPU busy cost or panel delivery."
+      },
+      "mean_completed_render_ms": 47.1920478515625,
+      "serial_completion": {
+        "epoch": 2,
+        "closed_by_epoch": 3,
+        "completed_frame_fences": 128,
+        "qualified_render_frames": 128,
+        "elapsed_seconds": 6.040582125,
+        "completed_render_fps": 21.190010722683454,
+        "mean_completed_render_ms": 47.1920478515625
+      },
+      "runner_checkout": {
+        "source_head": {
+          "exit_code": 0,
+          "stdout": "9ab0ac1a0c33b579d57ba24f64376ab71fadd195",
+          "stderr": ""
+        },
+        "source_status": {
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        "lock_sha256": "8a5780c6af681a33fe08656db1ea1d2839084ab3ef272d70c7d49a5fae6c3520",
+        "toolchain_sha256": "11ad20cfc268c7a83a7f8a2ae530136513c54e0dab8a4a115e50b516766f1fa4"
+      }
+    },
+    {
+      "id": "025-r1-load0-bilinear-half",
+      "repetition": 1,
+      "load": 0,
+      "arm": "bilinear-half",
+      "position": 0,
+      "output": "evidence/claude-completion-campaign-02/025-r1-load0-bilinear-half.json",
+      "errors": [],
+      "mean_loop_ms": 2.796173372093031,
+      "loop_samples": 2150,
+      "experimental_markers": {
+        "requested": false,
+        "status": null,
+        "retained_measured_observations": 0,
+        "completed_total": null,
+        "retained_unfiltered_count": null,
+        "mean_elapsed_ms": null,
+        "availability": "no retained measured-frame observations; this does not imply zero completed queries",
+        "validated_for_governor": false,
+        "scope": "Experimental elapsed marker envelope; not GPU busy cost or panel delivery."
+      },
+      "mean_completed_render_ms": 2.791301085116279,
+      "serial_completion": {
+        "epoch": 2,
+        "closed_by_epoch": 3,
+        "completed_frame_fences": 2150,
+        "qualified_render_frames": 2150,
+        "elapsed_seconds": 6.001297333,
+        "completed_render_fps": 358.2558704727986,
+        "mean_completed_render_ms": 2.791301085116279
+      },
+      "runner_checkout": {
+        "source_head": {
+          "exit_code": 0,
+          "stdout": "9ab0ac1a0c33b579d57ba24f64376ab71fadd195",
+          "stderr": ""
+        },
+        "source_status": {
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        "lock_sha256": "8a5780c6af681a33fe08656db1ea1d2839084ab3ef272d70c7d49a5fae6c3520",
+        "toolchain_sha256": "11ad20cfc268c7a83a7f8a2ae530136513c54e0dab8a4a115e50b516766f1fa4"
+      }
+    },
+    {
+      "id": "026-r1-load0-temporal-third",
+      "repetition": 1,
+      "load": 0,
+      "arm": "temporal-third",
+      "position": 1,
+      "output": "evidence/claude-completion-campaign-02/026-r1-load0-temporal-third.json",
+      "errors": [],
+      "mean_loop_ms": 4.290408969329526,
+      "loop_samples": 1402,
+      "experimental_markers": {
+        "requested": false,
+        "status": null,
+        "retained_measured_observations": 0,
+        "completed_total": null,
+        "retained_unfiltered_count": null,
+        "mean_elapsed_ms": null,
+        "availability": "no retained measured-frame observations; this does not imply zero completed queries",
+        "validated_for_governor": false,
+        "scope": "Experimental elapsed marker envelope; not GPU busy cost or panel delivery."
+      },
+      "mean_completed_render_ms": 4.281610199714693,
+      "serial_completion": {
+        "epoch": 2,
+        "closed_by_epoch": 3,
+        "completed_frame_fences": 1402,
+        "qualified_render_frames": 1402,
+        "elapsed_seconds": 6.0028175,
+        "completed_render_fps": 233.55699219574808,
+        "mean_completed_render_ms": 4.281610199714693
+      },
+      "runner_checkout": {
+        "source_head": {
+          "exit_code": 0,
+          "stdout": "9ab0ac1a0c33b579d57ba24f64376ab71fadd195",
+          "stderr": ""
+        },
+        "source_status": {
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        "lock_sha256": "8a5780c6af681a33fe08656db1ea1d2839084ab3ef272d70c7d49a5fae6c3520",
+        "toolchain_sha256": "11ad20cfc268c7a83a7f8a2ae530136513c54e0dab8a4a115e50b516766f1fa4"
+      }
+    },
+    {
+      "id": "027-r1-load0-temporal-half",
+      "repetition": 1,
+      "load": 0,
+      "arm": "temporal-half",
+      "position": 2,
+      "output": "evidence/claude-completion-campaign-02/027-r1-load0-temporal-half.json",
+      "errors": [],
+      "mean_loop_ms": 4.027468742799734,
+      "loop_samples": 1493,
+      "experimental_markers": {
+        "requested": false,
+        "status": null,
+        "retained_measured_observations": 0,
+        "completed_total": null,
+        "retained_unfiltered_count": null,
+        "mean_elapsed_ms": null,
+        "availability": "no retained measured-frame observations; this does not imply zero completed queries",
+        "validated_for_governor": false,
+        "scope": "Experimental elapsed marker envelope; not GPU busy cost or panel delivery."
+      },
+      "mean_completed_render_ms": 4.019481273945077,
+      "serial_completion": {
+        "epoch": 2,
+        "closed_by_epoch": 3,
+        "completed_frame_fences": 1493,
+        "qualified_render_frames": 1493,
+        "elapsed_seconds": 6.001085542,
+        "completed_render_fps": 248.78832163795875,
+        "mean_completed_render_ms": 4.019481273945077
+      },
+      "runner_checkout": {
+        "source_head": {
+          "exit_code": 0,
+          "stdout": "9ab0ac1a0c33b579d57ba24f64376ab71fadd195",
+          "stderr": ""
+        },
+        "source_status": {
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        "lock_sha256": "8a5780c6af681a33fe08656db1ea1d2839084ab3ef272d70c7d49a5fae6c3520",
+        "toolchain_sha256": "11ad20cfc268c7a83a7f8a2ae530136513c54e0dab8a4a115e50b516766f1fa4"
+      }
+    },
+    {
+      "id": "028-r1-load0-temporal-native",
+      "repetition": 1,
+      "load": 0,
+      "arm": "temporal-native",
+      "position": 3,
+      "output": "evidence/claude-completion-campaign-02/028-r1-load0-temporal-native.json",
+      "errors": [],
+      "mean_loop_ms": 4.010050922615077,
+      "loop_samples": 1499,
+      "experimental_markers": {
+        "requested": false,
+        "status": null,
+        "retained_measured_observations": 0,
+        "completed_total": null,
+        "retained_unfiltered_count": null,
+        "mean_elapsed_ms": null,
+        "availability": "no retained measured-frame observations; this does not imply zero completed queries",
+        "validated_for_governor": false,
+        "scope": "Experimental elapsed marker envelope; not GPU busy cost or panel delivery."
+      },
+      "mean_completed_render_ms": 4.003222648432288,
+      "serial_completion": {
+        "epoch": 2,
+        "closed_by_epoch": 3,
+        "completed_frame_fences": 1499,
+        "qualified_render_frames": 1499,
+        "elapsed_seconds": 6.00083075,
+        "completed_render_fps": 249.79874661520822,
+        "mean_completed_render_ms": 4.003222648432288
+      },
+      "runner_checkout": {
+        "source_head": {
+          "exit_code": 0,
+          "stdout": "9ab0ac1a0c33b579d57ba24f64376ab71fadd195",
+          "stderr": ""
+        },
+        "source_status": {
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        "lock_sha256": "8a5780c6af681a33fe08656db1ea1d2839084ab3ef272d70c7d49a5fae6c3520",
+        "toolchain_sha256": "11ad20cfc268c7a83a7f8a2ae530136513c54e0dab8a4a115e50b516766f1fa4"
+      }
+    },
+    {
+      "id": "029-r1-load0-native-disabled-msaa4",
+      "repetition": 1,
+      "load": 0,
+      "arm": "native-disabled-msaa4",
+      "position": 4,
+      "output": "evidence/claude-completion-campaign-02/029-r1-load0-native-disabled-msaa4.json",
+      "errors": [],
+      "mean_loop_ms": 2.5642641672354967,
+      "loop_samples": 2344,
+      "experimental_markers": {
+        "requested": false,
+        "status": null,
+        "retained_measured_observations": 0,
+        "completed_total": null,
+        "retained_unfiltered_count": null,
+        "mean_elapsed_ms": null,
+        "availability": "no retained measured-frame observations; this does not imply zero completed queries",
+        "validated_for_governor": false,
+        "scope": "Experimental elapsed marker envelope; not GPU busy cost or panel delivery."
+      },
+      "mean_completed_render_ms": 2.5603271471843003,
+      "serial_completion": {
+        "epoch": 2,
+        "closed_by_epoch": 3,
+        "completed_frame_fences": 2344,
+        "qualified_render_frames": 2344,
+        "elapsed_seconds": 6.001406833,
+        "completed_render_fps": 390.5750876796124,
+        "mean_completed_render_ms": 2.5603271471843003
+      },
+      "runner_checkout": {
+        "source_head": {
+          "exit_code": 0,
+          "stdout": "9ab0ac1a0c33b579d57ba24f64376ab71fadd195",
+          "stderr": ""
+        },
+        "source_status": {
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        "lock_sha256": "8a5780c6af681a33fe08656db1ea1d2839084ab3ef272d70c7d49a5fae6c3520",
+        "toolchain_sha256": "11ad20cfc268c7a83a7f8a2ae530136513c54e0dab8a4a115e50b516766f1fa4"
+      }
+    },
+    {
+      "id": "030-r2-load8000-temporal-half",
+      "repetition": 2,
+      "load": 8000,
+      "arm": "temporal-half",
+      "position": 0,
+      "output": "evidence/claude-completion-campaign-02/030-r2-load8000-temporal-half.json",
+      "errors": [],
+      "mean_loop_ms": 20.780460920689674,
+      "loop_samples": 290,
+      "experimental_markers": {
+        "requested": false,
+        "status": null,
+        "retained_measured_observations": 0,
+        "completed_total": null,
+        "retained_unfiltered_count": null,
+        "mean_elapsed_ms": null,
+        "availability": "no retained measured-frame observations; this does not imply zero completed queries",
+        "validated_for_governor": false,
+        "scope": "Experimental elapsed marker envelope; not GPU busy cost or panel delivery."
+      },
+      "mean_completed_render_ms": 20.726050286206895,
+      "serial_completion": {
+        "epoch": 2,
+        "closed_by_epoch": 3,
+        "completed_frame_fences": 290,
+        "qualified_render_frames": 290,
+        "elapsed_seconds": 6.010554583,
+        "completed_render_fps": 48.24845960474659,
+        "mean_completed_render_ms": 20.726050286206895
+      },
+      "runner_checkout": {
+        "source_head": {
+          "exit_code": 0,
+          "stdout": "9ab0ac1a0c33b579d57ba24f64376ab71fadd195",
+          "stderr": ""
+        },
+        "source_status": {
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        "lock_sha256": "8a5780c6af681a33fe08656db1ea1d2839084ab3ef272d70c7d49a5fae6c3520",
+        "toolchain_sha256": "11ad20cfc268c7a83a7f8a2ae530136513c54e0dab8a4a115e50b516766f1fa4"
+      }
+    },
+    {
+      "id": "031-r2-load8000-temporal-third",
+      "repetition": 2,
+      "load": 8000,
+      "arm": "temporal-third",
+      "position": 1,
+      "output": "evidence/claude-completion-campaign-02/031-r2-load8000-temporal-third.json",
+      "errors": [],
+      "mean_loop_ms": 11.333884103578152,
+      "loop_samples": 531,
+      "experimental_markers": {
+        "requested": false,
+        "status": null,
+        "retained_measured_observations": 0,
+        "completed_total": null,
+        "retained_unfiltered_count": null,
+        "mean_elapsed_ms": null,
+        "availability": "no retained measured-frame observations; this does not imply zero completed queries",
+        "validated_for_governor": false,
+        "scope": "Experimental elapsed marker envelope; not GPU busy cost or panel delivery."
+      },
+      "mean_completed_render_ms": 11.305741054613936,
+      "serial_completion": {
+        "epoch": 2,
+        "closed_by_epoch": 3,
+        "completed_frame_fences": 531,
+        "qualified_render_frames": 531,
+        "elapsed_seconds": 6.0033485,
+        "completed_render_fps": 88.45063717357071,
+        "mean_completed_render_ms": 11.305741054613936
+      },
+      "runner_checkout": {
+        "source_head": {
+          "exit_code": 0,
+          "stdout": "9ab0ac1a0c33b579d57ba24f64376ab71fadd195",
+          "stderr": ""
+        },
+        "source_status": {
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        "lock_sha256": "8a5780c6af681a33fe08656db1ea1d2839084ab3ef272d70c7d49a5fae6c3520",
+        "toolchain_sha256": "11ad20cfc268c7a83a7f8a2ae530136513c54e0dab8a4a115e50b516766f1fa4"
+      }
+    },
+    {
+      "id": "032-r2-load8000-bilinear-half",
+      "repetition": 2,
+      "load": 8000,
+      "arm": "bilinear-half",
+      "position": 2,
+      "output": "evidence/claude-completion-campaign-02/032-r2-load8000-bilinear-half.json",
+      "errors": [],
+      "mean_loop_ms": 20.438510874576266,
+      "loop_samples": 295,
+      "experimental_markers": {
+        "requested": false,
+        "status": null,
+        "retained_measured_observations": 0,
+        "completed_total": null,
+        "retained_unfiltered_count": null,
+        "mean_elapsed_ms": null,
+        "availability": "no retained measured-frame observations; this does not imply zero completed queries",
+        "validated_for_governor": false,
+        "scope": "Experimental elapsed marker envelope; not GPU busy cost or panel delivery."
+      },
+      "mean_completed_render_ms": 20.3632367220339,
+      "serial_completion": {
+        "epoch": 2,
+        "closed_by_epoch": 3,
+        "completed_frame_fences": 295,
+        "qualified_render_frames": 295,
+        "elapsed_seconds": 6.007154833,
+        "completed_render_fps": 49.10810661636894,
+        "mean_completed_render_ms": 20.3632367220339
+      },
+      "runner_checkout": {
+        "source_head": {
+          "exit_code": 0,
+          "stdout": "9ab0ac1a0c33b579d57ba24f64376ab71fadd195",
+          "stderr": ""
+        },
+        "source_status": {
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        "lock_sha256": "8a5780c6af681a33fe08656db1ea1d2839084ab3ef272d70c7d49a5fae6c3520",
+        "toolchain_sha256": "11ad20cfc268c7a83a7f8a2ae530136513c54e0dab8a4a115e50b516766f1fa4"
+      }
+    },
+    {
+      "id": "033-r2-load8000-native-disabled-msaa4",
+      "repetition": 2,
+      "load": 8000,
+      "arm": "native-disabled-msaa4",
+      "position": 3,
+      "output": "evidence/claude-completion-campaign-02/033-r2-load8000-native-disabled-msaa4.json",
+      "errors": [],
+      "mean_loop_ms": 49.65478756557375,
+      "loop_samples": 122,
+      "experimental_markers": {
+        "requested": false,
+        "status": null,
+        "retained_measured_observations": 0,
+        "completed_total": null,
+        "retained_unfiltered_count": null,
+        "mean_elapsed_ms": null,
+        "availability": "no retained measured-frame observations; this does not imply zero completed queries",
+        "validated_for_governor": false,
+        "scope": "Experimental elapsed marker envelope; not GPU busy cost or panel delivery."
+      },
+      "mean_completed_render_ms": 49.317716188524585,
+      "serial_completion": {
+        "epoch": 2,
+        "closed_by_epoch": 3,
+        "completed_frame_fences": 122,
+        "qualified_render_frames": 122,
+        "elapsed_seconds": 6.016761375,
+        "completed_render_fps": 20.276689134941805,
+        "mean_completed_render_ms": 49.317716188524585
+      },
+      "runner_checkout": {
+        "source_head": {
+          "exit_code": 0,
+          "stdout": "9ab0ac1a0c33b579d57ba24f64376ab71fadd195",
+          "stderr": ""
+        },
+        "source_status": {
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        "lock_sha256": "8a5780c6af681a33fe08656db1ea1d2839084ab3ef272d70c7d49a5fae6c3520",
+        "toolchain_sha256": "11ad20cfc268c7a83a7f8a2ae530136513c54e0dab8a4a115e50b516766f1fa4"
+      }
+    },
+    {
+      "id": "034-r2-load8000-temporal-native",
+      "repetition": 2,
+      "load": 8000,
+      "arm": "temporal-native",
+      "position": 4,
+      "output": "evidence/claude-completion-campaign-02/034-r2-load8000-temporal-native.json",
+      "errors": [],
+      "mean_loop_ms": 48.76855275806451,
+      "loop_samples": 124,
+      "experimental_markers": {
+        "requested": false,
+        "status": null,
+        "retained_measured_observations": 0,
+        "completed_total": null,
+        "retained_unfiltered_count": null,
+        "mean_elapsed_ms": null,
+        "availability": "no retained measured-frame observations; this does not imply zero completed queries",
+        "validated_for_governor": false,
+        "scope": "Experimental elapsed marker envelope; not GPU busy cost or panel delivery."
+      },
+      "mean_completed_render_ms": 48.53361828225807,
+      "serial_completion": {
+        "epoch": 2,
+        "closed_by_epoch": 3,
+        "completed_frame_fences": 124,
+        "qualified_render_frames": 124,
+        "elapsed_seconds": 6.018168667,
+        "completed_render_fps": 20.60427463257071,
+        "mean_completed_render_ms": 48.53361828225807
+      },
+      "runner_checkout": {
+        "source_head": {
+          "exit_code": 0,
+          "stdout": "9ab0ac1a0c33b579d57ba24f64376ab71fadd195",
+          "stderr": ""
+        },
+        "source_status": {
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        "lock_sha256": "8a5780c6af681a33fe08656db1ea1d2839084ab3ef272d70c7d49a5fae6c3520",
+        "toolchain_sha256": "11ad20cfc268c7a83a7f8a2ae530136513c54e0dab8a4a115e50b516766f1fa4"
+      }
+    },
+    {
+      "id": "035-r2-load20000-temporal-third",
+      "repetition": 2,
+      "load": 20000,
+      "arm": "temporal-third",
+      "position": 0,
+      "output": "evidence/claude-completion-campaign-02/035-r2-load20000-temporal-third.json",
+      "errors": [],
+      "mean_loop_ms": 20.750990835051542,
+      "loop_samples": 291,
+      "experimental_markers": {
+        "requested": false,
+        "status": null,
+        "retained_measured_observations": 0,
+        "completed_total": null,
+        "retained_unfiltered_count": null,
+        "mean_elapsed_ms": null,
+        "availability": "no retained measured-frame observations; this does not imply zero completed queries",
+        "validated_for_governor": false,
+        "scope": "Experimental elapsed marker envelope; not GPU busy cost or panel delivery."
+      },
+      "mean_completed_render_ms": 20.66219559106529,
+      "serial_completion": {
+        "epoch": 2,
+        "closed_by_epoch": 3,
+        "completed_frame_fences": 291,
+        "qualified_render_frames": 291,
+        "elapsed_seconds": 6.012698917,
+        "completed_render_fps": 48.39756721848177,
+        "mean_completed_render_ms": 20.66219559106529
+      },
+      "runner_checkout": {
+        "source_head": {
+          "exit_code": 0,
+          "stdout": "9ab0ac1a0c33b579d57ba24f64376ab71fadd195",
+          "stderr": ""
+        },
+        "source_status": {
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        "lock_sha256": "8a5780c6af681a33fe08656db1ea1d2839084ab3ef272d70c7d49a5fae6c3520",
+        "toolchain_sha256": "11ad20cfc268c7a83a7f8a2ae530136513c54e0dab8a4a115e50b516766f1fa4"
+      }
+    },
+    {
+      "id": "036-r2-load20000-bilinear-half",
+      "repetition": 2,
+      "load": 20000,
+      "arm": "bilinear-half",
+      "position": 1,
+      "output": "evidence/claude-completion-campaign-02/036-r2-load20000-bilinear-half.json",
+      "errors": [],
+      "mean_loop_ms": 34.284633284090916,
+      "loop_samples": 176,
+      "experimental_markers": {
+        "requested": false,
+        "status": null,
+        "retained_measured_observations": 0,
+        "completed_total": null,
+        "retained_unfiltered_count": null,
+        "mean_elapsed_ms": null,
+        "availability": "no retained measured-frame observations; this does not imply zero completed queries",
+        "validated_for_governor": false,
+        "scope": "Experimental elapsed marker envelope; not GPU busy cost or panel delivery."
+      },
+      "mean_completed_render_ms": 34.22895975568182,
+      "serial_completion": {
+        "epoch": 2,
+        "closed_by_epoch": 3,
+        "completed_frame_fences": 176,
+        "qualified_render_frames": 176,
+        "elapsed_seconds": 6.024296917,
+        "completed_render_fps": 29.215027483679386,
+        "mean_completed_render_ms": 34.22895975568182
+      },
+      "runner_checkout": {
+        "source_head": {
+          "exit_code": 0,
+          "stdout": "9ab0ac1a0c33b579d57ba24f64376ab71fadd195",
+          "stderr": ""
+        },
+        "source_status": {
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        "lock_sha256": "8a5780c6af681a33fe08656db1ea1d2839084ab3ef272d70c7d49a5fae6c3520",
+        "toolchain_sha256": "11ad20cfc268c7a83a7f8a2ae530136513c54e0dab8a4a115e50b516766f1fa4"
+      }
+    },
+    {
+      "id": "037-r2-load20000-native-disabled-msaa4",
+      "repetition": 2,
+      "load": 20000,
+      "arm": "native-disabled-msaa4",
+      "position": 2,
+      "output": "evidence/claude-completion-campaign-02/037-r2-load20000-native-disabled-msaa4.json",
+      "errors": [],
+      "mean_loop_ms": 106.33388596491231,
+      "loop_samples": 57,
+      "experimental_markers": {
+        "requested": false,
+        "status": null,
+        "retained_measured_observations": 0,
+        "completed_total": null,
+        "retained_unfiltered_count": null,
+        "mean_elapsed_ms": null,
+        "availability": "no retained measured-frame observations; this does not imply zero completed queries",
+        "validated_for_governor": false,
+        "scope": "Experimental elapsed marker envelope; not GPU busy cost or panel delivery."
+      },
+      "mean_completed_render_ms": 106.01729314035087,
+      "serial_completion": {
+        "epoch": 2,
+        "closed_by_epoch": 3,
+        "completed_frame_fences": 57,
+        "qualified_render_frames": 57,
+        "elapsed_seconds": 6.042985709,
+        "completed_render_fps": 9.432423431865509,
+        "mean_completed_render_ms": 106.01729314035087
+      },
+      "runner_checkout": {
+        "source_head": {
+          "exit_code": 0,
+          "stdout": "9ab0ac1a0c33b579d57ba24f64376ab71fadd195",
+          "stderr": ""
+        },
+        "source_status": {
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        "lock_sha256": "8a5780c6af681a33fe08656db1ea1d2839084ab3ef272d70c7d49a5fae6c3520",
+        "toolchain_sha256": "11ad20cfc268c7a83a7f8a2ae530136513c54e0dab8a4a115e50b516766f1fa4"
+      }
+    },
+    {
+      "id": "038-r2-load20000-temporal-native",
+      "repetition": 2,
+      "load": 20000,
+      "arm": "temporal-native",
+      "position": 3,
+      "output": "evidence/claude-completion-campaign-02/038-r2-load20000-temporal-native.json",
+      "errors": [],
+      "mean_loop_ms": 108.35317260714284,
+      "loop_samples": 56,
+      "experimental_markers": {
+        "requested": false,
+        "status": null,
+        "retained_measured_observations": 0,
+        "completed_total": null,
+        "retained_unfiltered_count": null,
+        "mean_elapsed_ms": null,
+        "availability": "no retained measured-frame observations; this does not imply zero completed queries",
+        "validated_for_governor": false,
+        "scope": "Experimental elapsed marker envelope; not GPU busy cost or panel delivery."
+      },
+      "mean_completed_render_ms": 108.38928421428572,
+      "serial_completion": {
+        "epoch": 2,
+        "closed_by_epoch": 3,
+        "completed_frame_fences": 56,
+        "qualified_render_frames": 56,
+        "elapsed_seconds": 6.069799916,
+        "completed_render_fps": 9.226004279380598,
+        "mean_completed_render_ms": 108.38928421428572
+      },
+      "runner_checkout": {
+        "source_head": {
+          "exit_code": 0,
+          "stdout": "9ab0ac1a0c33b579d57ba24f64376ab71fadd195",
+          "stderr": ""
+        },
+        "source_status": {
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        "lock_sha256": "8a5780c6af681a33fe08656db1ea1d2839084ab3ef272d70c7d49a5fae6c3520",
+        "toolchain_sha256": "11ad20cfc268c7a83a7f8a2ae530136513c54e0dab8a4a115e50b516766f1fa4"
+      }
+    },
+    {
+      "id": "039-r2-load20000-temporal-half",
+      "repetition": 2,
+      "load": 20000,
+      "arm": "temporal-half",
+      "position": 4,
+      "output": "evidence/claude-completion-campaign-02/039-r2-load20000-temporal-half.json",
+      "errors": [],
+      "mean_loop_ms": 36.77281224390245,
+      "loop_samples": 164,
+      "experimental_markers": {
+        "requested": false,
+        "status": null,
+        "retained_measured_observations": 0,
+        "completed_total": null,
+        "retained_unfiltered_count": null,
+        "mean_elapsed_ms": null,
+        "availability": "no retained measured-frame observations; this does not imply zero completed queries",
+        "validated_for_governor": false,
+        "scope": "Experimental elapsed marker envelope; not GPU busy cost or panel delivery."
+      },
+      "mean_completed_render_ms": 36.70402870731708,
+      "serial_completion": {
+        "epoch": 2,
+        "closed_by_epoch": 3,
+        "completed_frame_fences": 164,
+        "qualified_render_frames": 164,
+        "elapsed_seconds": 6.019460708,
+        "completed_render_fps": 27.24496561328829,
+        "mean_completed_render_ms": 36.70402870731708
+      },
+      "runner_checkout": {
+        "source_head": {
+          "exit_code": 0,
+          "stdout": "9ab0ac1a0c33b579d57ba24f64376ab71fadd195",
+          "stderr": ""
+        },
+        "source_status": {
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        "lock_sha256": "8a5780c6af681a33fe08656db1ea1d2839084ab3ef272d70c7d49a5fae6c3520",
+        "toolchain_sha256": "11ad20cfc268c7a83a7f8a2ae530136513c54e0dab8a4a115e50b516766f1fa4"
+      }
+    },
+    {
+      "id": "040-r2-load0-temporal-native",
+      "repetition": 2,
+      "load": 0,
+      "arm": "temporal-native",
+      "position": 0,
+      "output": "evidence/claude-completion-campaign-02/040-r2-load0-temporal-native.json",
+      "errors": [],
+      "mean_loop_ms": 3.749494515907672,
+      "loop_samples": 1603,
+      "experimental_markers": {
+        "requested": false,
+        "status": null,
+        "retained_measured_observations": 0,
+        "completed_total": null,
+        "retained_unfiltered_count": null,
+        "mean_elapsed_ms": null,
+        "availability": "no retained measured-frame observations; this does not imply zero completed queries",
+        "validated_for_governor": false,
+        "scope": "Experimental elapsed marker envelope; not GPU busy cost or panel delivery."
+      },
+      "mean_completed_render_ms": 3.7428414691203997,
+      "serial_completion": {
+        "epoch": 2,
+        "closed_by_epoch": 3,
+        "completed_frame_fences": 1603,
+        "qualified_render_frames": 1603,
+        "elapsed_seconds": 5.999774875,
+        "completed_render_fps": 267.17669135877367,
+        "mean_completed_render_ms": 3.7428414691203997
+      },
+      "runner_checkout": {
+        "source_head": {
+          "exit_code": 0,
+          "stdout": "9ab0ac1a0c33b579d57ba24f64376ab71fadd195",
+          "stderr": ""
+        },
+        "source_status": {
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        "lock_sha256": "8a5780c6af681a33fe08656db1ea1d2839084ab3ef272d70c7d49a5fae6c3520",
+        "toolchain_sha256": "11ad20cfc268c7a83a7f8a2ae530136513c54e0dab8a4a115e50b516766f1fa4"
+      }
+    },
+    {
+      "id": "041-r2-load0-temporal-half",
+      "repetition": 2,
+      "load": 0,
+      "arm": "temporal-half",
+      "position": 1,
+      "output": "evidence/claude-completion-campaign-02/041-r2-load0-temporal-half.json",
+      "errors": [],
+      "mean_loop_ms": 4.227619256680727,
+      "loop_samples": 1422,
+      "experimental_markers": {
+        "requested": false,
+        "status": null,
+        "retained_measured_observations": 0,
+        "completed_total": null,
+        "retained_unfiltered_count": null,
+        "mean_elapsed_ms": null,
+        "availability": "no retained measured-frame observations; this does not imply zero completed queries",
+        "validated_for_governor": false,
+        "scope": "Experimental elapsed marker envelope; not GPU busy cost or panel delivery."
+      },
+      "mean_completed_render_ms": 4.220454612517581,
+      "serial_completion": {
+        "epoch": 2,
+        "closed_by_epoch": 3,
+        "completed_frame_fences": 1422,
+        "qualified_render_frames": 1422,
+        "elapsed_seconds": 6.001486459,
+        "completed_render_fps": 236.9412994121695,
+        "mean_completed_render_ms": 4.220454612517581
+      },
+      "runner_checkout": {
+        "source_head": {
+          "exit_code": 0,
+          "stdout": "9ab0ac1a0c33b579d57ba24f64376ab71fadd195",
+          "stderr": ""
+        },
+        "source_status": {
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        "lock_sha256": "8a5780c6af681a33fe08656db1ea1d2839084ab3ef272d70c7d49a5fae6c3520",
+        "toolchain_sha256": "11ad20cfc268c7a83a7f8a2ae530136513c54e0dab8a4a115e50b516766f1fa4"
+      }
+    },
+    {
+      "id": "042-r2-load0-temporal-third",
+      "repetition": 2,
+      "load": 0,
+      "arm": "temporal-third",
+      "position": 2,
+      "output": "evidence/claude-completion-campaign-02/042-r2-load0-temporal-third.json",
+      "errors": [],
+      "mean_loop_ms": 3.9993281250000057,
+      "loop_samples": 1504,
+      "experimental_markers": {
+        "requested": false,
+        "status": null,
+        "retained_measured_observations": 0,
+        "completed_total": null,
+        "retained_unfiltered_count": null,
+        "mean_elapsed_ms": null,
+        "availability": "no retained measured-frame observations; this does not imply zero completed queries",
+        "validated_for_governor": false,
+        "scope": "Experimental elapsed marker envelope; not GPU busy cost or panel delivery."
+      },
+      "mean_completed_render_ms": 3.9909383590425533,
+      "serial_completion": {
+        "epoch": 2,
+        "closed_by_epoch": 3,
+        "completed_frame_fences": 1504,
+        "qualified_render_frames": 1504,
+        "elapsed_seconds": 6.002371292,
+        "completed_render_fps": 250.56763849389674,
+        "mean_completed_render_ms": 3.9909383590425533
+      },
+      "runner_checkout": {
+        "source_head": {
+          "exit_code": 0,
+          "stdout": "9ab0ac1a0c33b579d57ba24f64376ab71fadd195",
+          "stderr": ""
+        },
+        "source_status": {
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        "lock_sha256": "8a5780c6af681a33fe08656db1ea1d2839084ab3ef272d70c7d49a5fae6c3520",
+        "toolchain_sha256": "11ad20cfc268c7a83a7f8a2ae530136513c54e0dab8a4a115e50b516766f1fa4"
+      }
+    },
+    {
+      "id": "043-r2-load0-bilinear-half",
+      "repetition": 2,
+      "load": 0,
+      "arm": "bilinear-half",
+      "position": 3,
+      "output": "evidence/claude-completion-campaign-02/043-r2-load0-bilinear-half.json",
+      "errors": [],
+      "mean_loop_ms": 2.9240357694552492,
+      "loop_samples": 2056,
+      "experimental_markers": {
+        "requested": false,
+        "status": null,
+        "retained_measured_observations": 0,
+        "completed_total": null,
+        "retained_unfiltered_count": null,
+        "mean_elapsed_ms": null,
+        "availability": "no retained measured-frame observations; this does not imply zero completed queries",
+        "validated_for_governor": false,
+        "scope": "Experimental elapsed marker envelope; not GPU busy cost or panel delivery."
+      },
+      "mean_completed_render_ms": 2.9191079562256808,
+      "serial_completion": {
+        "epoch": 2,
+        "closed_by_epoch": 3,
+        "completed_frame_fences": 2056,
+        "qualified_render_frames": 2056,
+        "elapsed_seconds": 6.001685958,
+        "completed_render_fps": 342.57040678035423,
+        "mean_completed_render_ms": 2.9191079562256808
+      },
+      "runner_checkout": {
+        "source_head": {
+          "exit_code": 0,
+          "stdout": "9ab0ac1a0c33b579d57ba24f64376ab71fadd195",
+          "stderr": ""
+        },
+        "source_status": {
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        "lock_sha256": "8a5780c6af681a33fe08656db1ea1d2839084ab3ef272d70c7d49a5fae6c3520",
+        "toolchain_sha256": "11ad20cfc268c7a83a7f8a2ae530136513c54e0dab8a4a115e50b516766f1fa4"
+      }
+    },
+    {
+      "id": "044-r2-load0-native-disabled-msaa4",
+      "repetition": 2,
+      "load": 0,
+      "arm": "native-disabled-msaa4",
+      "position": 4,
+      "output": "evidence/claude-completion-campaign-02/044-r2-load0-native-disabled-msaa4.json",
+      "errors": [],
+      "mean_loop_ms": 2.9941403836571987,
+      "loop_samples": 2007,
+      "experimental_markers": {
+        "requested": false,
+        "status": null,
+        "retained_measured_observations": 0,
+        "completed_total": null,
+        "retained_unfiltered_count": null,
+        "mean_elapsed_ms": null,
+        "availability": "no retained measured-frame observations; this does not imply zero completed queries",
+        "validated_for_governor": false,
+        "scope": "Experimental elapsed marker envelope; not GPU busy cost or panel delivery."
+      },
+      "mean_completed_render_ms": 2.989767252117588,
+      "serial_completion": {
+        "epoch": 2,
+        "closed_by_epoch": 3,
+        "completed_frame_fences": 2007,
+        "qualified_render_frames": 2007,
+        "elapsed_seconds": 6.000462875,
+        "completed_render_fps": 334.47419670936637,
+        "mean_completed_render_ms": 2.989767252117588
+      },
+      "runner_checkout": {
+        "source_head": {
+          "exit_code": 0,
+          "stdout": "9ab0ac1a0c33b579d57ba24f64376ab71fadd195",
+          "stderr": ""
+        },
+        "source_status": {
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        "lock_sha256": "8a5780c6af681a33fe08656db1ea1d2839084ab3ef272d70c7d49a5fae6c3520",
+        "toolchain_sha256": "11ad20cfc268c7a83a7f8a2ae530136513c54e0dab8a4a115e50b516766f1fa4"
+      }
+    },
+    {
+      "id": "045-r3-load0-native-disabled-msaa4",
+      "repetition": 3,
+      "load": 0,
+      "arm": "native-disabled-msaa4",
+      "position": 0,
+      "output": "evidence/claude-completion-campaign-02/045-r3-load0-native-disabled-msaa4.json",
+      "errors": [],
+      "mean_loop_ms": 2.9194088513119496,
+      "loop_samples": 2058,
+      "experimental_markers": {
+        "requested": false,
+        "status": null,
+        "retained_measured_observations": 0,
+        "completed_total": null,
+        "retained_unfiltered_count": null,
+        "mean_elapsed_ms": null,
+        "availability": "no retained measured-frame observations; this does not imply zero completed queries",
+        "validated_for_governor": false,
+        "scope": "Experimental elapsed marker envelope; not GPU busy cost or panel delivery."
+      },
+      "mean_completed_render_ms": 2.9151110908649174,
+      "serial_completion": {
+        "epoch": 2,
+        "closed_by_epoch": 3,
+        "completed_frame_fences": 2058,
+        "qualified_render_frames": 2058,
+        "elapsed_seconds": 5.999298625,
+        "completed_render_fps": 343.0400999583514,
+        "mean_completed_render_ms": 2.9151110908649174
+      },
+      "runner_checkout": {
+        "source_head": {
+          "exit_code": 0,
+          "stdout": "9ab0ac1a0c33b579d57ba24f64376ab71fadd195",
+          "stderr": ""
+        },
+        "source_status": {
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        "lock_sha256": "8a5780c6af681a33fe08656db1ea1d2839084ab3ef272d70c7d49a5fae6c3520",
+        "toolchain_sha256": "11ad20cfc268c7a83a7f8a2ae530136513c54e0dab8a4a115e50b516766f1fa4"
+      }
+    },
+    {
+      "id": "046-r3-load0-bilinear-half",
+      "repetition": 3,
+      "load": 0,
+      "arm": "bilinear-half",
+      "position": 1,
+      "output": "evidence/claude-completion-campaign-02/046-r3-load0-bilinear-half.json",
+      "errors": [],
+      "mean_loop_ms": 3.020432244723619,
+      "loop_samples": 1990,
+      "experimental_markers": {
+        "requested": false,
+        "status": null,
+        "retained_measured_observations": 0,
+        "completed_total": null,
+        "retained_unfiltered_count": null,
+        "mean_elapsed_ms": null,
+        "availability": "no retained measured-frame observations; this does not imply zero completed queries",
+        "validated_for_governor": false,
+        "scope": "Experimental elapsed marker envelope; not GPU busy cost or panel delivery."
+      },
+      "mean_completed_render_ms": 3.015268446231156,
+      "serial_completion": {
+        "epoch": 2,
+        "closed_by_epoch": 3,
+        "completed_frame_fences": 1990,
+        "qualified_render_frames": 1990,
+        "elapsed_seconds": 6.000384208,
+        "completed_render_fps": 331.64542986211393,
+        "mean_completed_render_ms": 3.015268446231156
+      },
+      "runner_checkout": {
+        "source_head": {
+          "exit_code": 0,
+          "stdout": "9ab0ac1a0c33b579d57ba24f64376ab71fadd195",
+          "stderr": ""
+        },
+        "source_status": {
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        "lock_sha256": "8a5780c6af681a33fe08656db1ea1d2839084ab3ef272d70c7d49a5fae6c3520",
+        "toolchain_sha256": "11ad20cfc268c7a83a7f8a2ae530136513c54e0dab8a4a115e50b516766f1fa4"
+      }
+    },
+    {
+      "id": "047-r3-load0-temporal-third",
+      "repetition": 3,
+      "load": 0,
+      "arm": "temporal-third",
+      "position": 2,
+      "output": "evidence/claude-completion-campaign-02/047-r3-load0-temporal-third.json",
+      "errors": [],
+      "mean_loop_ms": 4.193355852161786,
+      "loop_samples": 1434,
+      "experimental_markers": {
+        "requested": false,
+        "status": null,
+        "retained_measured_observations": 0,
+        "completed_total": null,
+        "retained_unfiltered_count": null,
+        "mean_elapsed_ms": null,
+        "availability": "no retained measured-frame observations; this does not imply zero completed queries",
+        "validated_for_governor": false,
+        "scope": "Experimental elapsed marker envelope; not GPU busy cost or panel delivery."
+      },
+      "mean_completed_render_ms": 4.185757060669456,
+      "serial_completion": {
+        "epoch": 2,
+        "closed_by_epoch": 3,
+        "completed_frame_fences": 1434,
+        "qualified_render_frames": 1434,
+        "elapsed_seconds": 6.002375625,
+        "completed_render_fps": 238.90540838986564,
+        "mean_completed_render_ms": 4.185757060669456
+      },
+      "runner_checkout": {
+        "source_head": {
+          "exit_code": 0,
+          "stdout": "9ab0ac1a0c33b579d57ba24f64376ab71fadd195",
+          "stderr": ""
+        },
+        "source_status": {
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        "lock_sha256": "8a5780c6af681a33fe08656db1ea1d2839084ab3ef272d70c7d49a5fae6c3520",
+        "toolchain_sha256": "11ad20cfc268c7a83a7f8a2ae530136513c54e0dab8a4a115e50b516766f1fa4"
+      }
+    },
+    {
+      "id": "048-r3-load0-temporal-half",
+      "repetition": 3,
+      "load": 0,
+      "arm": "temporal-half",
+      "position": 3,
+      "output": "evidence/claude-completion-campaign-02/048-r3-load0-temporal-half.json",
+      "errors": [],
+      "mean_loop_ms": 4.368939028322443,
+      "loop_samples": 1377,
+      "experimental_markers": {
+        "requested": false,
+        "status": null,
+        "retained_measured_observations": 0,
+        "completed_total": null,
+        "retained_unfiltered_count": null,
+        "mean_elapsed_ms": null,
+        "availability": "no retained measured-frame observations; this does not imply zero completed queries",
+        "validated_for_governor": false,
+        "scope": "Experimental elapsed marker envelope; not GPU busy cost or panel delivery."
+      },
+      "mean_completed_render_ms": 4.359443052287582,
+      "serial_completion": {
+        "epoch": 2,
+        "closed_by_epoch": 3,
+        "completed_frame_fences": 1377,
+        "qualified_render_frames": 1377,
+        "elapsed_seconds": 6.002953083,
+        "completed_render_fps": 229.38710014235838,
+        "mean_completed_render_ms": 4.359443052287582
+      },
+      "runner_checkout": {
+        "source_head": {
+          "exit_code": 0,
+          "stdout": "9ab0ac1a0c33b579d57ba24f64376ab71fadd195",
+          "stderr": ""
+        },
+        "source_status": {
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        "lock_sha256": "8a5780c6af681a33fe08656db1ea1d2839084ab3ef272d70c7d49a5fae6c3520",
+        "toolchain_sha256": "11ad20cfc268c7a83a7f8a2ae530136513c54e0dab8a4a115e50b516766f1fa4"
+      }
+    },
+    {
+      "id": "049-r3-load0-temporal-native",
+      "repetition": 3,
+      "load": 0,
+      "arm": "temporal-native",
+      "position": 4,
+      "output": "evidence/claude-completion-campaign-02/049-r3-load0-temporal-native.json",
+      "errors": [],
+      "mean_loop_ms": 4.481568678092395,
+      "loop_samples": 1342,
+      "experimental_markers": {
+        "requested": false,
+        "status": null,
+        "retained_measured_observations": 0,
+        "completed_total": null,
+        "retained_unfiltered_count": null,
+        "mean_elapsed_ms": null,
+        "availability": "no retained measured-frame observations; this does not imply zero completed queries",
+        "validated_for_governor": false,
+        "scope": "Experimental elapsed marker envelope; not GPU busy cost or panel delivery."
+      },
+      "mean_completed_render_ms": 4.472812282414307,
+      "serial_completion": {
+        "epoch": 2,
+        "closed_by_epoch": 3,
+        "completed_frame_fences": 1342,
+        "qualified_render_frames": 1342,
+        "elapsed_seconds": 6.002514083,
+        "completed_render_fps": 223.57298649256663,
+        "mean_completed_render_ms": 4.472812282414307
+      },
+      "runner_checkout": {
+        "source_head": {
+          "exit_code": 0,
+          "stdout": "9ab0ac1a0c33b579d57ba24f64376ab71fadd195",
+          "stderr": ""
+        },
+        "source_status": {
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        "lock_sha256": "8a5780c6af681a33fe08656db1ea1d2839084ab3ef272d70c7d49a5fae6c3520",
+        "toolchain_sha256": "11ad20cfc268c7a83a7f8a2ae530136513c54e0dab8a4a115e50b516766f1fa4"
+      }
+    },
+    {
+      "id": "050-r3-load20000-temporal-half",
+      "repetition": 3,
+      "load": 20000,
+      "arm": "temporal-half",
+      "position": 0,
+      "output": "evidence/claude-completion-campaign-02/050-r3-load20000-temporal-half.json",
+      "errors": [],
+      "mean_loop_ms": 40.72880489864866,
+      "loop_samples": 148,
+      "experimental_markers": {
+        "requested": false,
+        "status": null,
+        "retained_measured_observations": 0,
+        "completed_total": null,
+        "retained_unfiltered_count": null,
+        "mean_elapsed_ms": null,
+        "availability": "no retained measured-frame observations; this does not imply zero completed queries",
+        "validated_for_governor": false,
+        "scope": "Experimental elapsed marker envelope; not GPU busy cost or panel delivery."
+      },
+      "mean_completed_render_ms": 40.61722325675676,
+      "serial_completion": {
+        "epoch": 2,
+        "closed_by_epoch": 3,
+        "completed_frame_fences": 148,
+        "qualified_render_frames": 148,
+        "elapsed_seconds": 6.011349042,
+        "completed_render_fps": 24.620097579753878,
+        "mean_completed_render_ms": 40.61722325675676
+      },
+      "runner_checkout": {
+        "source_head": {
+          "exit_code": 0,
+          "stdout": "9ab0ac1a0c33b579d57ba24f64376ab71fadd195",
+          "stderr": ""
+        },
+        "source_status": {
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        "lock_sha256": "8a5780c6af681a33fe08656db1ea1d2839084ab3ef272d70c7d49a5fae6c3520",
+        "toolchain_sha256": "11ad20cfc268c7a83a7f8a2ae530136513c54e0dab8a4a115e50b516766f1fa4"
+      }
+    },
+    {
+      "id": "051-r3-load20000-temporal-native",
+      "repetition": 3,
+      "load": 20000,
+      "arm": "temporal-native",
+      "position": 1,
+      "output": "evidence/claude-completion-campaign-02/051-r3-load20000-temporal-native.json",
+      "errors": [],
+      "mean_loop_ms": 123.41861820408168,
+      "loop_samples": 49,
+      "experimental_markers": {
+        "requested": false,
+        "status": null,
+        "retained_measured_observations": 0,
+        "completed_total": null,
+        "retained_unfiltered_count": null,
+        "mean_elapsed_ms": null,
+        "availability": "no retained measured-frame observations; this does not imply zero completed queries",
+        "validated_for_governor": false,
+        "scope": "Experimental elapsed marker envelope; not GPU busy cost or panel delivery."
+      },
+      "mean_completed_render_ms": 124.41160885714288,
+      "serial_completion": {
+        "epoch": 2,
+        "closed_by_epoch": 3,
+        "completed_frame_fences": 49,
+        "qualified_render_frames": 49,
+        "elapsed_seconds": 6.096168834,
+        "completed_render_fps": 8.037835127976377,
+        "mean_completed_render_ms": 124.41160885714288
+      },
+      "runner_checkout": {
+        "source_head": {
+          "exit_code": 0,
+          "stdout": "9ab0ac1a0c33b579d57ba24f64376ab71fadd195",
+          "stderr": ""
+        },
+        "source_status": {
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        "lock_sha256": "8a5780c6af681a33fe08656db1ea1d2839084ab3ef272d70c7d49a5fae6c3520",
+        "toolchain_sha256": "11ad20cfc268c7a83a7f8a2ae530136513c54e0dab8a4a115e50b516766f1fa4"
+      }
+    },
+    {
+      "id": "052-r3-load20000-native-disabled-msaa4",
+      "repetition": 3,
+      "load": 20000,
+      "arm": "native-disabled-msaa4",
+      "position": 2,
+      "output": "evidence/claude-completion-campaign-02/052-r3-load20000-native-disabled-msaa4.json",
+      "errors": [],
+      "mean_loop_ms": 153.20449584999997,
+      "loop_samples": 40,
+      "experimental_markers": {
+        "requested": false,
+        "status": null,
+        "retained_measured_observations": 0,
+        "completed_total": null,
+        "retained_unfiltered_count": null,
+        "mean_elapsed_ms": null,
+        "availability": "no retained measured-frame observations; this does not imply zero completed queries",
+        "validated_for_governor": false,
+        "scope": "Experimental elapsed marker envelope; not GPU busy cost or panel delivery."
+      },
+      "mean_completed_render_ms": 152.1960375,
+      "serial_completion": {
+        "epoch": 2,
+        "closed_by_epoch": 3,
+        "completed_frame_fences": 40,
+        "qualified_render_frames": 40,
+        "elapsed_seconds": 6.0878415,
+        "completed_render_fps": 6.570473295009405,
+        "mean_completed_render_ms": 152.1960375
+      },
+      "runner_checkout": {
+        "source_head": {
+          "exit_code": 0,
+          "stdout": "9ab0ac1a0c33b579d57ba24f64376ab71fadd195",
+          "stderr": ""
+        },
+        "source_status": {
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        "lock_sha256": "8a5780c6af681a33fe08656db1ea1d2839084ab3ef272d70c7d49a5fae6c3520",
+        "toolchain_sha256": "11ad20cfc268c7a83a7f8a2ae530136513c54e0dab8a4a115e50b516766f1fa4"
+      }
+    },
+    {
+      "id": "053-r3-load20000-bilinear-half",
+      "repetition": 3,
+      "load": 20000,
+      "arm": "bilinear-half",
+      "position": 3,
+      "output": "evidence/claude-completion-campaign-02/053-r3-load20000-bilinear-half.json",
+      "errors": [],
+      "mean_loop_ms": 38.48299415923569,
+      "loop_samples": 157,
+      "experimental_markers": {
+        "requested": false,
+        "status": null,
+        "retained_measured_observations": 0,
+        "completed_total": null,
+        "retained_unfiltered_count": null,
+        "mean_elapsed_ms": null,
+        "availability": "no retained measured-frame observations; this does not imply zero completed queries",
+        "validated_for_governor": false,
+        "scope": "Experimental elapsed marker envelope; not GPU busy cost or panel delivery."
+      },
+      "mean_completed_render_ms": 38.39315525477707,
+      "serial_completion": {
+        "epoch": 2,
+        "closed_by_epoch": 3,
+        "completed_frame_fences": 157,
+        "qualified_render_frames": 157,
+        "elapsed_seconds": 6.027725375,
+        "completed_render_fps": 26.04630938415969,
+        "mean_completed_render_ms": 38.39315525477707
+      },
+      "runner_checkout": {
+        "source_head": {
+          "exit_code": 0,
+          "stdout": "9ab0ac1a0c33b579d57ba24f64376ab71fadd195",
+          "stderr": ""
+        },
+        "source_status": {
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        "lock_sha256": "8a5780c6af681a33fe08656db1ea1d2839084ab3ef272d70c7d49a5fae6c3520",
+        "toolchain_sha256": "11ad20cfc268c7a83a7f8a2ae530136513c54e0dab8a4a115e50b516766f1fa4"
+      }
+    },
+    {
+      "id": "054-r3-load20000-temporal-third",
+      "repetition": 3,
+      "load": 20000,
+      "arm": "temporal-third",
+      "position": 4,
+      "output": "evidence/claude-completion-campaign-02/054-r3-load20000-temporal-third.json",
+      "errors": [],
+      "mean_loop_ms": 22.286499538745378,
+      "loop_samples": 271,
+      "experimental_markers": {
+        "requested": false,
+        "status": null,
+        "retained_measured_observations": 0,
+        "completed_total": null,
+        "retained_unfiltered_count": null,
+        "mean_elapsed_ms": null,
+        "availability": "no retained measured-frame observations; this does not imply zero completed queries",
+        "validated_for_governor": false,
+        "scope": "Experimental elapsed marker envelope; not GPU busy cost or panel delivery."
+      },
+      "mean_completed_render_ms": 22.217444649446495,
+      "serial_completion": {
+        "epoch": 2,
+        "closed_by_epoch": 3,
+        "completed_frame_fences": 271,
+        "qualified_render_frames": 271,
+        "elapsed_seconds": 6.0209275,
+        "completed_render_fps": 45.009676665264614,
+        "mean_completed_render_ms": 22.217444649446495
+      },
+      "runner_checkout": {
+        "source_head": {
+          "exit_code": 0,
+          "stdout": "9ab0ac1a0c33b579d57ba24f64376ab71fadd195",
+          "stderr": ""
+        },
+        "source_status": {
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        "lock_sha256": "8a5780c6af681a33fe08656db1ea1d2839084ab3ef272d70c7d49a5fae6c3520",
+        "toolchain_sha256": "11ad20cfc268c7a83a7f8a2ae530136513c54e0dab8a4a115e50b516766f1fa4"
+      }
+    },
+    {
+      "id": "055-r3-load8000-temporal-native",
+      "repetition": 3,
+      "load": 8000,
+      "arm": "temporal-native",
+      "position": 0,
+      "output": "evidence/claude-completion-campaign-02/055-r3-load8000-temporal-native.json",
+      "errors": [],
+      "mean_loop_ms": 52.678622460869526,
+      "loop_samples": 115,
+      "experimental_markers": {
+        "requested": false,
+        "status": null,
+        "retained_measured_observations": 0,
+        "completed_total": null,
+        "retained_unfiltered_count": null,
+        "mean_elapsed_ms": null,
+        "availability": "no retained measured-frame observations; this does not imply zero completed queries",
+        "validated_for_governor": false,
+        "scope": "Experimental elapsed marker envelope; not GPU busy cost or panel delivery."
+      },
+      "mean_completed_render_ms": 52.46841594782608,
+      "serial_completion": {
+        "epoch": 2,
+        "closed_by_epoch": 3,
+        "completed_frame_fences": 115,
+        "qualified_render_frames": 115,
+        "elapsed_seconds": 6.033867834,
+        "completed_render_fps": 19.059085012103036,
+        "mean_completed_render_ms": 52.46841594782608
+      },
+      "runner_checkout": {
+        "source_head": {
+          "exit_code": 0,
+          "stdout": "9ab0ac1a0c33b579d57ba24f64376ab71fadd195",
+          "stderr": ""
+        },
+        "source_status": {
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        "lock_sha256": "8a5780c6af681a33fe08656db1ea1d2839084ab3ef272d70c7d49a5fae6c3520",
+        "toolchain_sha256": "11ad20cfc268c7a83a7f8a2ae530136513c54e0dab8a4a115e50b516766f1fa4"
+      }
+    },
+    {
+      "id": "056-r3-load8000-native-disabled-msaa4",
+      "repetition": 3,
+      "load": 8000,
+      "arm": "native-disabled-msaa4",
+      "position": 1,
+      "output": "evidence/claude-completion-campaign-02/056-r3-load8000-native-disabled-msaa4.json",
+      "errors": [],
+      "mean_loop_ms": 49.370950139344245,
+      "loop_samples": 122,
+      "experimental_markers": {
+        "requested": false,
+        "status": null,
+        "retained_measured_observations": 0,
+        "completed_total": null,
+        "retained_unfiltered_count": null,
+        "mean_elapsed_ms": null,
+        "availability": "no retained measured-frame observations; this does not imply zero completed queries",
+        "validated_for_governor": false,
+        "scope": "Experimental elapsed marker envelope; not GPU busy cost or panel delivery."
+      },
+      "mean_completed_render_ms": 49.24817144262295,
+      "serial_completion": {
+        "epoch": 2,
+        "closed_by_epoch": 3,
+        "completed_frame_fences": 122,
+        "qualified_render_frames": 122,
+        "elapsed_seconds": 6.008276916,
+        "completed_render_fps": 20.305322425322117,
+        "mean_completed_render_ms": 49.24817144262295
+      },
+      "runner_checkout": {
+        "source_head": {
+          "exit_code": 0,
+          "stdout": "9ab0ac1a0c33b579d57ba24f64376ab71fadd195",
+          "stderr": ""
+        },
+        "source_status": {
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        "lock_sha256": "8a5780c6af681a33fe08656db1ea1d2839084ab3ef272d70c7d49a5fae6c3520",
+        "toolchain_sha256": "11ad20cfc268c7a83a7f8a2ae530136513c54e0dab8a4a115e50b516766f1fa4"
+      }
+    },
+    {
+      "id": "057-r3-load8000-bilinear-half",
+      "repetition": 3,
+      "load": 8000,
+      "arm": "bilinear-half",
+      "position": 2,
+      "output": "evidence/claude-completion-campaign-02/057-r3-load8000-bilinear-half.json",
+      "errors": [],
+      "mean_loop_ms": 17.175451923076928,
+      "loop_samples": 351,
+      "experimental_markers": {
+        "requested": false,
+        "status": null,
+        "retained_measured_observations": 0,
+        "completed_total": null,
+        "retained_unfiltered_count": null,
+        "mean_elapsed_ms": null,
+        "availability": "no retained measured-frame observations; this does not imply zero completed queries",
+        "validated_for_governor": false,
+        "scope": "Experimental elapsed marker envelope; not GPU busy cost or panel delivery."
+      },
+      "mean_completed_render_ms": 17.121544988603986,
+      "serial_completion": {
+        "epoch": 2,
+        "closed_by_epoch": 3,
+        "completed_frame_fences": 351,
+        "qualified_render_frames": 351,
+        "elapsed_seconds": 6.009662291,
+        "completed_render_fps": 58.405944128616596,
+        "mean_completed_render_ms": 17.121544988603986
+      },
+      "runner_checkout": {
+        "source_head": {
+          "exit_code": 0,
+          "stdout": "9ab0ac1a0c33b579d57ba24f64376ab71fadd195",
+          "stderr": ""
+        },
+        "source_status": {
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        "lock_sha256": "8a5780c6af681a33fe08656db1ea1d2839084ab3ef272d70c7d49a5fae6c3520",
+        "toolchain_sha256": "11ad20cfc268c7a83a7f8a2ae530136513c54e0dab8a4a115e50b516766f1fa4"
+      }
+    },
+    {
+      "id": "058-r3-load8000-temporal-third",
+      "repetition": 3,
+      "load": 8000,
+      "arm": "temporal-third",
+      "position": 3,
+      "output": "evidence/claude-completion-campaign-02/058-r3-load8000-temporal-third.json",
+      "errors": [],
+      "mean_loop_ms": 10.489699259581883,
+      "loop_samples": 574,
+      "experimental_markers": {
+        "requested": false,
+        "status": null,
+        "retained_measured_observations": 0,
+        "completed_total": null,
+        "retained_unfiltered_count": null,
+        "mean_elapsed_ms": null,
+        "availability": "no retained measured-frame observations; this does not imply zero completed queries",
+        "validated_for_governor": false,
+        "scope": "Experimental elapsed marker envelope; not GPU busy cost or panel delivery."
+      },
+      "mean_completed_render_ms": 10.459065259581882,
+      "serial_completion": {
+        "epoch": 2,
+        "closed_by_epoch": 3,
+        "completed_frame_fences": 574,
+        "qualified_render_frames": 574,
+        "elapsed_seconds": 6.003503459,
+        "completed_render_fps": 95.61083855785948,
+        "mean_completed_render_ms": 10.459065259581882
+      },
+      "runner_checkout": {
+        "source_head": {
+          "exit_code": 0,
+          "stdout": "9ab0ac1a0c33b579d57ba24f64376ab71fadd195",
+          "stderr": ""
+        },
+        "source_status": {
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        "lock_sha256": "8a5780c6af681a33fe08656db1ea1d2839084ab3ef272d70c7d49a5fae6c3520",
+        "toolchain_sha256": "11ad20cfc268c7a83a7f8a2ae530136513c54e0dab8a4a115e50b516766f1fa4"
+      }
+    },
+    {
+      "id": "059-r3-load8000-temporal-half",
+      "repetition": 3,
+      "load": 8000,
+      "arm": "temporal-half",
+      "position": 4,
+      "output": "evidence/claude-completion-campaign-02/059-r3-load8000-temporal-half.json",
+      "errors": [],
+      "mean_loop_ms": 18.8038608504673,
+      "loop_samples": 321,
+      "experimental_markers": {
+        "requested": false,
+        "status": null,
+        "retained_measured_observations": 0,
+        "completed_total": null,
+        "retained_unfiltered_count": null,
+        "mean_elapsed_ms": null,
+        "availability": "no retained measured-frame observations; this does not imply zero completed queries",
+        "validated_for_governor": false,
+        "scope": "Experimental elapsed marker envelope; not GPU busy cost or panel delivery."
+      },
+      "mean_completed_render_ms": 18.739734813084112,
+      "serial_completion": {
+        "epoch": 2,
+        "closed_by_epoch": 3,
+        "completed_frame_fences": 321,
+        "qualified_render_frames": 321,
+        "elapsed_seconds": 6.015454875,
+        "completed_render_fps": 53.362548081619515,
+        "mean_completed_render_ms": 18.739734813084112
+      },
+      "runner_checkout": {
+        "source_head": {
+          "exit_code": 0,
+          "stdout": "9ab0ac1a0c33b579d57ba24f64376ab71fadd195",
+          "stderr": ""
+        },
+        "source_status": {
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        "lock_sha256": "8a5780c6af681a33fe08656db1ea1d2839084ab3ef272d70c7d49a5fae6c3520",
+        "toolchain_sha256": "11ad20cfc268c7a83a7f8a2ae530136513c54e0dab8a4a115e50b516766f1fa4"
+      }
+    }
+  ],
+  "comparisons": [
+    {
+      "load": 0,
+      "baseline": "native-disabled-msaa4",
+      "candidate": "temporal-native",
+      "failed_or_missing_runs": [],
+      "paired_runs": 4,
+      "ratios": [
+        1.4263437509679167,
+        1.5635590369124512,
+        1.2518838937945505,
+        1.5343539724543458
+      ],
+      "mean_ratio": 1.444035163532316,
+      "ratio_ci95": [
+        1.3225014134594992,
+        1.5489565046833986
+      ],
+      "decision": "clear_practical_regression",
+      "mean_completed_render_time_reduction": -0.4440351635323161
+    },
+    {
+      "load": 0,
+      "baseline": "native-disabled-msaa4",
+      "candidate": "temporal-half",
+      "failed_or_missing_runs": [],
+      "paired_runs": 4,
+      "ratios": [
+        1.3557758317916935,
+        1.5699092509976587,
+        1.411633166270158,
+        1.4954637804194726
+      ],
+      "mean_ratio": 1.4581955073697457,
+      "ratio_ci95": [
+        1.3837044990309257,
+        1.5326865157085656
+      ],
+      "decision": "clear_practical_regression",
+      "mean_completed_render_time_reduction": -0.4581955073697457
+    },
+    {
+      "load": 0,
+      "baseline": "native-disabled-msaa4",
+      "candidate": "temporal-third",
+      "failed_or_missing_runs": [],
+      "paired_runs": 4,
+      "ratios": [
+        1.2953324055914457,
+        1.672290279163489,
+        1.334865901757355,
+        1.4358825204934251
+      ],
+      "mean_ratio": 1.4345927767514288,
+      "ratio_ci95": [
+        1.3150991536744003,
+        1.5879341848119555
+      ],
+      "decision": "clear_practical_regression",
+      "mean_completed_render_time_reduction": -0.4345927767514288
+    },
+    {
+      "load": 0,
+      "baseline": "native-disabled-msaa4",
+      "candidate": "bilinear-half",
+      "failed_or_missing_runs": [],
+      "paired_runs": 4,
+      "ratios": [
+        0.9970045162232891,
+        1.090212666059488,
+        0.9763662887665048,
+        1.0343579891963985
+      ],
+      "mean_ratio": 1.02448536506142,
+      "ratio_ci95": [
+        0.986685402494897,
+        1.0669106286004382
+      ],
+      "decision": "uncertain_or_below_practical_threshold",
+      "mean_completed_render_time_reduction": -0.024485365061420072
+    },
+    {
+      "load": 8000,
+      "baseline": "native-disabled-msaa4",
+      "candidate": "temporal-native",
+      "failed_or_missing_runs": [],
+      "paired_runs": 4,
+      "ratios": [
+        1.128034379253347,
+        1.0517612064954829,
+        0.9841010905032751,
+        1.0653881029665215
+      ],
+      "mean_ratio": 1.0573211948046566,
+      "ratio_ci95": [
+        1.0044228436190867,
+        1.108966086063881
+      ],
+      "decision": "uncertain_or_below_practical_threshold",
+      "mean_completed_render_time_reduction": -0.05732119480465658
+    },
+    {
+      "load": 8000,
+      "baseline": "native-disabled-msaa4",
+      "candidate": "temporal-half",
+      "failed_or_missing_runs": [],
+      "paired_runs": 4,
+      "ratios": [
+        0.4409923555844689,
+        0.3888331967685031,
+        0.4202556786485888,
+        0.3805163575447064
+      ],
+      "mean_ratio": 0.4076493971365668,
+      "ratio_ci95": [
+        0.38467477715660475,
+        0.43062401711652887
+      ],
+      "decision": "clear_practical_improvement",
+      "mean_completed_render_time_reduction": 0.5923506028634332
+    },
+    {
+      "load": 8000,
+      "baseline": "native-disabled-msaa4",
+      "candidate": "temporal-third",
+      "failed_or_missing_runs": [],
+      "paired_runs": 4,
+      "ratios": [
+        0.23254962794564626,
+        0.24556144213845707,
+        0.2292429968045559,
+        0.21237469236329548
+      ],
+      "mean_ratio": 0.22993218981298869,
+      "ratio_ci95": [
+        0.2174184262588832,
+        0.24148183080498178
+      ],
+      "decision": "clear_practical_improvement",
+      "mean_completed_render_time_reduction": 0.7700678101870113
+    },
+    {
+      "load": 8000,
+      "baseline": "native-disabled-msaa4",
+      "candidate": "bilinear-half",
+      "failed_or_missing_runs": [],
+      "paired_runs": 4,
+      "ratios": [
+        0.35740430982785876,
+        0.3526231749938534,
+        0.4128990207939127,
+        0.34765849141326205
+      ],
+      "mean_ratio": 0.3676462492572217,
+      "ratio_ci95": [
+        0.3500949460169112,
+        0.3978300593438979
+      ],
+      "decision": "clear_practical_improvement",
+      "mean_completed_render_time_reduction": 0.6323537507427783
+    },
+    {
+      "load": 20000,
+      "baseline": "native-disabled-msaa4",
+      "candidate": "temporal-native",
+      "failed_or_missing_runs": [],
+      "paired_runs": 4,
+      "ratios": [
+        1.1162530387706107,
+        1.143408634414767,
+        1.022373624185959,
+        0.817443153585013
+      ],
+      "mean_ratio": 1.0248696127390873,
+      "ratio_ci95": [
+        0.8921456248814124,
+        1.1298308365926888
+      ],
+      "decision": "uncertain_or_below_practical_threshold",
+      "mean_completed_render_time_reduction": -0.024869612739087277
+    },
+    {
+      "load": 20000,
+      "baseline": "native-disabled-msaa4",
+      "candidate": "temporal-half",
+      "failed_or_missing_runs": [],
+      "paired_runs": 4,
+      "ratios": [
+        0.3895742171880061,
+        0.37828027986332496,
+        0.3462079404227619,
+        0.26687438072595526
+      ],
+      "mean_ratio": 0.3452342045500121,
+      "ratio_ci95": [
+        0.2947258555102977,
+        0.3839272485256655
+      ],
+      "decision": "clear_practical_improvement",
+      "mean_completed_render_time_reduction": 0.6547657954499879
+    },
+    {
+      "load": 20000,
+      "baseline": "native-disabled-msaa4",
+      "candidate": "temporal-third",
+      "failed_or_missing_runs": [],
+      "paired_runs": 4,
+      "ratios": [
+        0.20452944617691604,
+        0.19177652752972862,
+        0.19489457784695247,
+        0.1459791267525378
+      ],
+      "mean_ratio": 0.18429491957653374,
+      "ratio_ci95": [
+        0.15820798952614146,
+        0.2013412165151192
+      ],
+      "decision": "clear_practical_improvement",
+      "mean_completed_render_time_reduction": 0.8157050804234662
+    },
+    {
+      "load": 20000,
+      "baseline": "native-disabled-msaa4",
+      "candidate": "bilinear-half",
+      "failed_or_missing_runs": [],
+      "paired_runs": 4,
+      "ratios": [
+        0.3467520941273066,
+        0.3317306286197473,
+        0.3228620420478747,
+        0.2522612013126628
+      ],
+      "mean_ratio": 0.31340149152689784,
+      "ratio_ci95": [
+        0.27212855813943393,
+        0.34077958110744866
+      ],
+      "decision": "clear_practical_improvement",
+      "mean_completed_render_time_reduction": 0.6865985084731021
+    }
+  ],
+  "completion": true
+}
