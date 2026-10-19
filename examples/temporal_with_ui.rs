@@ -83,13 +83,13 @@ fn update_overlay(
 ) {
     for camera in &cameras {
         let snapshot = status.snapshot(camera.to_bits(), frame.0);
-        if snapshot.is_fresh(2, Duration::from_millis(250)) {
-            if let Some(seen) = snapshot.last_observation {
-                overlay.0 = format!(
-                    "{:?} | content {:?} -> output {:?} | {:?}",
-                    seen.effective_mode, seen.content_size, seen.output_size, seen.state
-                );
-            }
-        }
+        overlay.0 = match snapshot.last_observation {
+            Some(seen) if snapshot.is_fresh(2, Duration::from_millis(250)) => format!(
+                "{:?} | content {:?} -> output {:?} | {:?}",
+                seen.effective_mode, seen.content_size, seen.output_size, seen.state
+            ),
+            // Stale or missing: say so rather than keep showing the last success.
+            _ => String::from("no fresh MetalFX status"),
+        };
     }
 }

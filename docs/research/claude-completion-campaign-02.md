@@ -15,6 +15,8 @@ Rust 1.97.1. The source was the `release/0.5.0` branch at
 `258a9715700a08767fba0a8c82a5bac54d3939ff`, which ports the fixture's load
 shader to WESL. Without that port the load plane does not compile under Bevy 0.20.
 The merge was a local, clean build (recorded revision `9ab0ac1`, not published).
+Until #2 is merged, `release/0.5.0` alone still carries the old load shader and
+cannot reproduce this campaign. The 0.5.0 release merges #2 before it ships.
 Its `src/` tree is `f1809f781b39595348e39676a92ea6854902984b` and its
 `tools/smoke/` tree is `f7a2d554ad8de0eb29da238a42c5affe4f0f03b6`. The executable
 SHA-256 was `2964a81a4fdc80f61f0453888814b4601900751fc0815ff88c544893a6b45c4e`.

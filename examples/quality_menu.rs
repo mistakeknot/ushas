@@ -3,7 +3,8 @@
 //! The example lists the presets that `MetalFxDeviceScaleBand` admits and lets
 //! the number keys switch `MetalFxRenderScale` at runtime. Spatial mode is used,
 //! so the band is the plugin's own range. In Temporal mode the band comes from
-//! the device and may exclude some presets.
+//! the device and may exclude some presets. Where MetalFX is unavailable the
+//! plugin inserts no band, and the menu says so instead of listing presets.
 //!
 //! Run: `cargo run --example quality_menu`
 
@@ -70,9 +71,12 @@ fn available(band: &MetalFxDeviceScaleBand) -> Vec<MetalFxQuality> {
 
 fn switch_quality(
     keys: Res<ButtonInput<KeyCode>>,
-    band: Res<MetalFxDeviceScaleBand>,
-    mut scale: ResMut<MetalFxRenderScale>,
+    band: Option<Res<MetalFxDeviceScaleBand>>,
+    scale: Option<ResMut<MetalFxRenderScale>>,
 ) {
+    let (Some(band), Some(mut scale)) = (band, scale) else {
+        return;
+    };
     const DIGITS: [KeyCode; 5] = [
         KeyCode::Digit1,
         KeyCode::Digit2,
@@ -88,14 +92,26 @@ fn switch_quality(
 }
 
 fn update_menu(
-    band: Res<MetalFxDeviceScaleBand>,
-    scale: Res<MetalFxRenderScale>,
+    band: Option<Res<MetalFxDeviceScaleBand>>,
+    scale: Option<Res<MetalFxRenderScale>>,
     mut menu: Single<&mut Text, With<Menu>>,
 ) {
+    let (Some(band), Some(scale)) = (band, scale) else {
+        menu.0 = String::from("MetalFX is not available on this system");
+        return;
+    };
     let mut text = String::from("Press a number key to change quality\n");
     for (i, preset) in available(&band).into_iter().enumerate() {
-        let marker = if (scale.0 - preset.render_scale()).abs() < 1e-3 { ">" } else { " " };
-        text += &format!("{marker} {}: {preset:?} ({:.2})\n", i + 1, preset.render_scale());
+        let marker = if (scale.0 - preset.render_scale()).abs() < 1e-3 {
+            ">"
+        } else {
+            " "
+        };
+        text += &format!(
+            "{marker} {}: {preset:?} ({:.2})\n",
+            i + 1,
+            preset.render_scale()
+        );
     }
     menu.0 = text;
 }
