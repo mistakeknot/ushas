@@ -9,9 +9,17 @@ commit history when this file was added.
 
 ## [Unreleased]
 
-The checkout is the unpublished **0.5.0-rc.1** candidate. These APIs are not
-published; the README's crates.io quick start remains on the released 0.4 series.
-Hardware and release acceptance gates are still in progress.
+## [0.5.0]
+
+Requires Bevy 0.20 (wgpu 30) and Rust 1.97.1.
+
+Frame interpolation and the adaptive controller remain **experimental** in 0.5.
+The controller has no default validated GPU timing producer, so it holds its
+configured quality until an external adapter supplies samples. Spatial and
+temporal upscaling are the supported modes, for one active 3D camera with a
+full-target viewport.
+
+The Bevy 0.20 / wgpu 30 port was contributed by @cdeil.
 
 ### Added
 
@@ -109,6 +117,22 @@ Hardware and release acceptance gates are still in progress.
   material failed to compile, the plane vanished from every capture and
   `--pixel-iterations` cost nothing. The fixture now fails a run, timed or
   quality sequence, on any pipeline-cache error, which is how this escaped.
+
+### Documentation
+
+- README rewritten for 0.5: Bevy 0.20 quick start and compatibility table, a
+  sourced "Does it help?" summary, a stability statement, and absolute links so
+  the crates.io page resolves. Per-version upgrade notes moved to
+  `docs/upgrading.md`.
+- New published examples: `spatial`, `temporal_with_ui` (feature `temporal`) and
+  `quality_menu`. `examples/present_repro.rs` stays out of the package.
+- The crate description now reads "Apple MetalFX upscaling for Bevy, with
+  experimental frame interpolation". The crate docs note that docs.rs builds on
+  Linux, so macOS-only modules are missing there.
+- The README's figures and its three-panel image come from a Bevy 0.20 re-run
+  of the completed-render campaign (`docs/research/claude-completion-campaign-02.md`).
+- `docs/` is no longer included in the published package; the README links to it
+  by absolute URL.
 
 ### Evidence and Limitations
 
@@ -390,6 +414,7 @@ node, with the plugin disabling itself on unsupported platforms.
 Yanked: `--features temporal` did not compile on any non-macOS target, so the
 release was unusable for cross-platform consumers. Fixed in 0.2.0.
 
+[0.5.0]: https://crates.io/crates/bevy_metalfx/0.5.0
 [0.4.2]: https://crates.io/crates/bevy_metalfx/0.4.2
 [0.4.1]: https://crates.io/crates/bevy_metalfx/0.4.1
 [0.4.0]: https://crates.io/crates/bevy_metalfx/0.4.0
