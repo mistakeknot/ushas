@@ -9,9 +9,9 @@ commit history when this file was added.
 
 ## [Unreleased]
 
-The checkout is the unpublished **0.5.0-rc.1** candidate. These APIs are not
-published. The README quick start targets 0.5 and Bevy 0.20. Hardware and
-release acceptance gates are still in progress.
+## [0.5.0]
+
+Requires Bevy 0.20 (wgpu 30) and Rust 1.97.1.
 
 Frame interpolation and the adaptive controller remain **experimental** in 0.5.
 The controller has no default validated GPU timing producer, so it holds its
@@ -414,6 +414,7 @@ node, with the plugin disabling itself on unsupported platforms.
 Yanked: `--features temporal` did not compile on any non-macOS target, so the
 release was unusable for cross-platform consumers. Fixed in 0.2.0.
 
+[0.5.0]: https://crates.io/crates/bevy_metalfx/0.5.0
 [0.4.2]: https://crates.io/crates/bevy_metalfx/0.4.2
 [0.4.1]: https://crates.io/crates/bevy_metalfx/0.4.1
 [0.4.0]: https://crates.io/crates/bevy_metalfx/0.4.0
