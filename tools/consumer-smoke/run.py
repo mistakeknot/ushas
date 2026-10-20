@@ -8,6 +8,7 @@ import json
 import math
 import os
 from pathlib import Path
+import re
 import shutil
 import signal
 import subprocess
@@ -19,7 +20,7 @@ import tomllib
 import trial
 
 PIN = "2a49dfcb294a69283e9e4cf9aa0662b61c51495a"
-CONSUMER = Path("/Users/user/consumer-workspace")
+CONSUMER = Path(os.environ["USHAS_CONSUMER"]) if os.environ.get("USHAS_CONSUMER") else None
 HERE = Path(__file__).resolve().parent
 SHOTS = ("before", "p0", "p1", "p2", "p4", "p8")
 ARMS = {"native": ("off", "Disabled", 1.0), "bilinear": ("off", "Disabled", 0.5),
@@ -169,8 +170,16 @@ def patch_consumer(consumer, ushas, completed=False):
         path.write_text(after)
         files[relative] = (files.get(relative, (before,))[0], after)
 
-    change("Cargo.toml", [('bevy_metalfx = { path = "/Users/user/ushas" }',
-                           'bevy_metalfx = { path = "../ushas" }')])
+    # The pinned consumer records an absolute checkout path here; match any
+    # single path entry so the anchor does not depend on that machine's layout.
+    path = consumer / "Cargo.toml"
+    before = path.read_text()
+    anchor = re.compile(r'bevy_metalfx = \{ path = "[^"\n]+" \}')
+    if len(anchor.findall(before)) != 1:
+        raise ValueError("pinned source anchor changed: 'bevy_metalfx = { path = ... }'")
+    after = anchor.sub(lambda _: 'bevy_metalfx = { path = "../ushas" }', before)
+    path.write_text(after)
+    files["Cargo.toml"] = (before, after)
     change("crates/sw-renderer/Cargo.toml", [
         ('bevy_metalfx = { version = "0.4",', f'bevy_metalfx = {{ version = "={version}",'),
         ('env_logger = "0.11"', 'env_logger = "0.11"\nserde_json = "1"')])
@@ -496,7 +505,8 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     sub = parser.add_subparsers(dest="command", required=True)
     prep = sub.add_parser("prepare")
-    prep.add_argument("--consumer", type=Path, default=CONSUMER)
+    prep.add_argument("--consumer", type=Path, default=CONSUMER, required=CONSUMER is None,
+                      help="audited consumer worktree (default: $USHAS_CONSUMER)")
     prep.add_argument("--ushas", type=Path, default=HERE.parents[1])
     prep.add_argument("--revision", required=True, help="committed Ushas revision to archive")
     prep.add_argument("--parent", type=Path, default=Path("/private/tmp"))
