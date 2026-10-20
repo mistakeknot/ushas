@@ -9,7 +9,7 @@ records screenshot request frames without joining them to rendered frames.
 
 The [machine-readable report](consumer-cuts-01.json) records the full image
 inventory, request identities, observations and reset log events. The immutable
-source is Shadow Work `2a49dfcb294a69283e9e4cf9aa0662b61c51495a`, patched only in a
+source is the consumer project `2a49dfcb294a69283e9e4cf9aa0662b61c51495a`, patched only in a
 private copy against Ushas `56a3b16c8c1c8f12a5320adc5082c6d20b6378c1`. The binary
 SHA256 is `e1eaf124a3d01637a115af46bb9f02049c4ad093adb3596d5af49416df31a126`.
 

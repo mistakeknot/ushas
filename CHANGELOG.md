@@ -140,8 +140,8 @@ The Bevy 0.20 / wgpu 30 port was contributed by @cdeil.
   The command-buffer timer is a diagnostic interval that can include dependency
   waits; it cannot establish total GPU frame cost or GPU-boundness. Experimental
   frame timing remains unvalidated. No new GPU performance result is claimed.
-- Restored the historical presentation record: Shadow Work commit
-  [4253273976](https://github.com/mistakeknot/shadow-work/commit/4253273976ba58a454b6cf00ceaa11bd896db8a1)
+- Restored the historical presentation record: consumer-project commit
+  4253273976
   records the frozen `e5h3` gate's awake **13/0/0 strong pass**, and asleep
   **10/0/3 weak pass**. This supersedes the old blanket statement that drawable
   timestamps never populated; it does not validate the current checkout's

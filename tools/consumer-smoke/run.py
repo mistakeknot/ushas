@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Freeze, patch, build, and bound an existing Shadow Work image playtest."""
+"""Freeze, patch, build, and bound an existing consumer image playtest."""
 import argparse
 from datetime import datetime, timezone
 import difflib

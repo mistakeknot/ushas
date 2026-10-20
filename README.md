@@ -322,10 +322,10 @@ frames. Accepted presents alone do not establish displayed frames or latency.
 
 The historical evidence has two stages. An early test recorded approximately
 1.99 times as many accepted presents with nearly unchanged render cadence;
-presentation timestamps were unavailable in that run. Later, Shadow Work's
+presentation timestamps were unavailable in that run. Later, the consumer project's
 frozen `e5h3` gate recorded **13 passed, 0 failed, 0 skipped, PASS (strong)** on
 an awake display. The fix and verdict are preserved in
-[Shadow Work commit 4253273976](https://github.com/mistakeknot/shadow-work/commit/4253273976ba58a454b6cf00ceaa11bd896db8a1).
+consumer-project commit 4253273976.
 That commit also records a 10/0/3 weak pass with the display asleep.
 
 The later strong result supersedes the old blanket README claim that drawable

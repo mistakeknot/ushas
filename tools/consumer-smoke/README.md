@@ -1,6 +1,6 @@
-# Frozen Shadow Work consumer trial
+# Frozen consumer trial
 
-This tool archives Shadow Work commit `2a49dfcb294a69283e9e4cf9aa0662b61c51495a`
+This tool archives consumer-project commit `2a49dfcb294a69283e9e4cf9aa0662b61c51495a`
 and an explicitly selected, committed Ushas revision into a new private directory.
 It patches the archived consumer only. The live consumer worktree, its benchmark
 path, and the Ushas source checkout remain unchanged.
@@ -25,7 +25,8 @@ candidate commit rather than a mutable worktree. Preparation needs approximately
 6GB because it retains the complete consumer archive and extracted tracked data.
 
 ```sh
-python3 tools/consumer-smoke/run.py prepare --revision <ushas-commit>
+python3 tools/consumer-smoke/run.py prepare --revision <ushas-commit> \
+  --consumer <consumer-worktree>   # or set USHAS_CONSUMER
 # The command prints a unique /private/tmp/ushas-consumer-... directory.
 python3 tools/consumer-smoke/run.py build <directory> --check \
   --target-dir <consumer-workspace>/target
@@ -150,7 +151,7 @@ records final readiness and decoded capture results.
 
 The full git archive retains tracked symlink metadata. Extraction omits and records
 links escaping the frozen source tree, so it cannot follow the consumer's sibling
-`shadow-work-data` link. No other live or untracked data is copied except these two
+`consumer-data` link. No other live or untracked data is copied except these two
 explicitly required, locally available NASA texture files, which the consumer
 intentionally ignores in Git:
 
