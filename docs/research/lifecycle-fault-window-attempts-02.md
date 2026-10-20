@@ -32,17 +32,17 @@ establish a fault-seam regression or successful OS sleep/resume behavior.
 
 The [machine-readable audit](lifecycle-fault-window-attempts-02.json) retains the
 failed classifications. Its separate archive at
-`/Users/sma/projects/docs/ushas/evidence/lifecycle-fault-window-attempts-02/`
+`/Users/user/ushas/evidence/lifecycle-fault-window-attempts-02/`
 contains all eight original artifacts, a copy record and a CPU audit: **10 payload
 files, 42,817 bytes**, excluding the manifest. All copies matched source-before,
 source-after and destination hashes. The
-[manifest](/Users/sma/projects/docs/ushas/evidence/lifecycle-fault-window-attempts-02/archive-manifest.json)
+[manifest](/Users/user/ushas/evidence/lifecycle-fault-window-attempts-02/archive-manifest.json)
 SHA256 is `bd8a7d1c1592f8e1bc2dfbe0d9fc879f8bd44722371cdd1471ebfb89c9666753`.
 Missing reports and phase captures are deliberately not synthesized.
 
 ```sh
 PYTHONDONTWRITEBYTECODE=1 python3 \
-  /Users/sma/projects/docs/ushas/evidence/lifecycle-fault-window-attempts-02/audit.py
+  /Users/user/ushas/evidence/lifecycle-fault-window-attempts-02/audit.py
 ```
 
 The remaining gates are actual injected failure/slow fallback and recovery,

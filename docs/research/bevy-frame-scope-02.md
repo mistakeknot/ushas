@@ -44,11 +44,11 @@ submits it, presents window surfaces, and collects screenshots. Therefore
 
 Relevant source anchors:
 
-- [Pipelined extraction and render-app transfer](/Users/sma/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/bevy_render-0.19.0/src/pipelined_rendering.rs:178).
-- [Render set ordering](/Users/sma/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/bevy_render-0.19.0/src/lib.rs:295).
-- [RenderContext creation, deferred flush and explicit FlushCommands](/Users/sma/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/bevy_render-0.19.0/src/renderer/render_context.rs:81).
-- [Camera and auxiliary-view driver](/Users/sma/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/bevy_core_pipeline-0.19.0/src/schedule.rs:133).
-- [Final readback submit and presentation](/Users/sma/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/bevy_render-0.19.0/src/renderer/mod.rs:72).
+- [Pipelined extraction and render-app transfer](/Users/user/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/bevy_render-0.19.0/src/pipelined_rendering.rs:178).
+- [Render set ordering](/Users/user/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/bevy_render-0.19.0/src/lib.rs:295).
+- [RenderContext creation, deferred flush and explicit FlushCommands](/Users/user/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/bevy_render-0.19.0/src/renderer/render_context.rs:81).
+- [Camera and auxiliary-view driver](/Users/user/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/bevy_core_pipeline-0.19.0/src/schedule.rs:133).
+- [Final readback submit and presentation](/Users/user/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/bevy_render-0.19.0/src/renderer/mod.rs:72).
 
 ## GPU work inventory
 
@@ -97,11 +97,11 @@ command buffer can therefore expand into several physical HAL buffers. Preserve
 the owning logical-buffer scope through that expansion; discover the physical
 set at submit, not only at public `finish()`.
 
-- [PendingWrites ownership and activation](/Users/sma/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/wgpu-core-29.0.4/src/device/queue.rs:300),
-  [prepended at submit](/Users/sma/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/wgpu-core-29.0.4/src/device/queue.rs:1419).
-- [Mapped-buffer upload path](/Users/sma/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/wgpu-core-29.0.4/src/resource.rs:890).
-- [Submit-time initialization and Transit buffers](/Users/sma/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/wgpu-core-29.0.4/src/device/queue.rs:1295).
-- [Asset retry/deferred preparation](/Users/sma/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/bevy_render-0.19.0/src/render_asset.rs:380).
+- [PendingWrites ownership and activation](/Users/user/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/wgpu-core-29.0.4/src/device/queue.rs:300),
+  [prepended at submit](/Users/user/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/wgpu-core-29.0.4/src/device/queue.rs:1419).
+- [Mapped-buffer upload path](/Users/user/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/wgpu-core-29.0.4/src/resource.rs:890).
+- [Submit-time initialization and Transit buffers](/Users/user/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/wgpu-core-29.0.4/src/device/queue.rs:1295).
+- [Asset retry/deferred preparation](/Users/user/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/bevy_render-0.19.0/src/render_asset.rs:380).
 
 At Metal level, instrument actual factory calls, not just descriptor-bearing
 variants. Render uses `renderCommandEncoderWithDescriptor`; compute has both
@@ -117,10 +117,10 @@ buffer **`(wgpu internal) Signal`**. Therefore labels are corroborating trace
 metadata, not durable identity. `Queue::present` creates and commits another
 native buffer labelled Present; it is separate from the user-buffer inventory.
 
-See HAL Metal [blit factories and timestamp fallback](/Users/sma/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/wgpu-hal-29.0.4/src/metal/command.rs:157),
-[render factory](/Users/sma/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/wgpu-hal-29.0.4/src/metal/command.rs:1019),
-[compute factories](/Users/sma/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/wgpu-hal-29.0.4/src/metal/command.rs:1663),
-and [submit/present](/Users/sma/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/wgpu-hal-29.0.4/src/metal/mod.rs:543).
+See HAL Metal [blit factories and timestamp fallback](/Users/user/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/wgpu-hal-29.0.4/src/metal/command.rs:157),
+[render factory](/Users/user/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/wgpu-hal-29.0.4/src/metal/command.rs:1019),
+[compute factories](/Users/user/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/wgpu-hal-29.0.4/src/metal/command.rs:1663),
+and [submit/present](/Users/user/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/wgpu-hal-29.0.4/src/metal/mod.rs:543).
 
 ## Work that has no unique original-view assignment today
 
@@ -156,8 +156,8 @@ a buffer and can render a `screenshot_to_screen_pass` back to the target. Its
 capture preparation also redirects output. A capture frame is consequently
 perturbed; do not treat excluding the final copy's duration as proving ordinary
 unperturbed rendering. Generic GPU readback copies and map/CPU delivery need their
-own class. See [screenshot commands](/Users/sma/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/bevy_render-0.19.0/src/view/window/screenshot.rs:498)
-and [generic readback commands](/Users/sma/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/bevy_render-0.19.0/src/gpu_readback.rs:326).
+own class. See [screenshot commands](/Users/user/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/bevy_render-0.19.0/src/view/window/screenshot.rs:498)
+and [generic readback commands](/Users/user/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/bevy_render-0.19.0/src/gpu_readback.rs:326).
 
 Ushas's experimental timestamp resolver submits additional diagnostic buffers
 from root graph Finish ([frame_timing.rs](../../src/frame_timing.rs:691)); optional

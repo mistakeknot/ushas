@@ -93,10 +93,10 @@ GPU-budget governor's validated-signal input.
 ## Retained evidence
 
 All 366 payload files, totaling 160,379,433 bytes, are hash-verified at
-`/Users/sma/projects/docs/ushas/evidence/claude-completion-campaign-01/`.
+`/Users/user/ushas/evidence/claude-completion-campaign-01/`.
 They include every run, captures, logs, manifests, plan, analyses and the exact
 analysis/runner sources. `archive-manifest.json` has SHA-256
 `b406124c30374fa989ae717329e5d5a2a335b3c62a3d6045687bb7500cbe8f7f`.
 The exact executable is separately retained under
-`/Users/sma/projects/docs/ushas/evidence/frozen-binaries-01/`.
+`/Users/user/ushas/evidence/frozen-binaries-01/`.
 Original temporary artifacts remain intact.

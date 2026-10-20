@@ -99,7 +99,7 @@ fixed-preset and consumer recommendations keep their original evidence scope.
 ## Retained evidence
 
 The artifacts are under
-`/Users/sma/projects/docs/ushas/evidence/proxy-validation-control-03/`:
+`/Users/user/ushas/evidence/proxy-validation-control-03/`:
 `build/` retains the source archive, executable, build receipt and logs; the four
 `spatial-{off,calls}-validation{1,0}` directories retain original JSONL, raw
 half-float outputs and PNGs, with sibling run receipts, strict analyses and logs.
@@ -119,7 +119,7 @@ retained standalone build script.
 The audit's input inventory covers 158 payloads, 36,894,598 bytes, excluding its
 own source and result files. Root reproduced the audit; the result is byte
 identical to `results-02.json`. The complete
-[archive manifest](/Users/sma/projects/docs/ushas/evidence/proxy-validation-control-03/archive-manifest.json)
+[archive manifest](/Users/user/ushas/evidence/proxy-validation-control-03/archive-manifest.json)
 covers 163 payloads, 37,102,350 bytes, including auditor and results. Its SHA-256
 is `b5d7c63a5a8a97198105f2e0cdfd69526e4337134cc0ce41fb28b2a8e9900d68`.
 `audit_consistent:true` describes faithful retained evidence;

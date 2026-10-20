@@ -109,7 +109,7 @@ adaptive acceptance and long-duration reliability are also outside this campaign
 The [machine-readable report](native-recovery-05.json) contains per-run audits,
 the UI review, preserved helper failures and the rejected sleep attempt. Originals
 and independent receipts are retained under
-`/Users/sma/projects/docs/ushas/evidence/native-recovery-05/`.
+`/Users/user/ushas/evidence/native-recovery-05/`.
 The archive manifest covers 87 payload files (21,356,882 bytes), SHA256
 `d8f17cb7f889df11c2c025fddd3f8ab727a508b9785e5591dd3f5216315fa0b3`.
 The root integrator reproduced all four independent fixture audits and the
@@ -117,8 +117,8 @@ The root integrator reproduced all four independent fixture audits and the
 separately inspected the native-window image.
 
 ```sh
-python3 /Users/sma/projects/docs/ushas/evidence/native-recovery-05/audit.py \
-  --report /Users/sma/projects/docs/ushas/evidence/native-recovery-05/window-minimize-04.json
+python3 /Users/user/ushas/evidence/native-recovery-05/audit.py \
+  --report /Users/user/ushas/evidence/native-recovery-05/window-minimize-04.json
 ```
 
 The generalized auditor passed 14 CPU protocol tests, including synthetic

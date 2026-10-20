@@ -89,7 +89,7 @@ opaque, and matches its recorded visible-pixel and sampled-color counts.
 
 The entire trial tree and preparation/check/build receipts, patches, exact
 runner/analysis/bridge/completion sources and audit script are retained in
-`/Users/sma/projects/docs/ushas/evidence/consumer-completion-trial-01/`.
+`/Users/user/ushas/evidence/consumer-completion-trial-01/`.
 All 101 payloads (52,352,844 bytes) matched their source hashes before and after
 copying; originals were unchanged. `archive-manifest.json` SHA-256 is
 `aafd5c6b43b2e800cf3e854a45083e53db2858c9f16c8ea9172afc66fda5839c`.

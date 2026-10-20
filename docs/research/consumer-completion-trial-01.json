@@ -671,7 +671,7 @@
     "finding": "All show the same complete globe pose. Native retains fine coastline/terrain detail; Temporal half is visually much closer to native than the softer bilinear half, whose globe silhouette is more visibly stepped. Static captures do not establish moving/cut temporal stability."
   },
   "archive": {
-    "directory": "/Users/sma/projects/docs/ushas/evidence/consumer-completion-trial-01",
+    "directory": "/Users/user/ushas/evidence/consumer-completion-trial-01",
     "manifest_sha256": "aafd5c6b43b2e800cf3e854a45083e53db2858c9f16c8ea9172afc66fda5839c"
   }
 }

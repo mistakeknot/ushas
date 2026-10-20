@@ -6,7 +6,7 @@ exactly 1,800 frames over 30 seconds. Native and Spatial half Geometry exports
 decoded to exactly 600 frames over 10 seconds. All decoded timestamps equal
 frame index / 60, with no audio and Rec.709 primaries, transfer and matrix tags.
 
-Task: `mk-4kbu`. Validation ran on Apple M5 Max with macOS 26 on 2026-09-05.
+Validation ran on Apple M5 Max with macOS 26 on 2026-09-05.
 The [app guide](../../tools/benchmark/README.md) and
 [stream contract](../../tools/benchmark/VIDEO-CONTRACT.md) define the behavior.
 Export preserves the renderer's 120 Hz simulation and temporal history; these

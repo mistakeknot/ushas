@@ -14,7 +14,7 @@ not rebuild or overwrite it between runs. The root integrator schedules all
 builds and GPU execution.
 
 Before this change, both `tools/smoke/target/release/ushas-smoke` and the retained
-`/Users/sma/projects/docs/ushas/evidence/final-runtime-candidate-02/build/ushas-smoke`
+`/Users/user/ushas/evidence/final-runtime-candidate-02/build/ushas-smoke`
 were verified as SHA256
 `2a560c7eba2f9a6d97b2c658519ddb9cfc70fbcb46ea7223addffd280fddf586`, built from
 `45d7a05c74aa100f522a2dd1ebfc34fff80c6d1d`. That executable is a provenance

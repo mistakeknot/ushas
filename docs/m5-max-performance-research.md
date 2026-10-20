@@ -470,7 +470,7 @@ and upscales 1512×900 → 3024×1800 with all fixes active, no panic.
 
 ## `6zit.9` — open-source extraction: publish-ready `bevy_metalfx` 0.2.0
 
-Grounded in a full crates.io publication audit. Key finding: **mk already owns and published `bevy_metalfx` v0.1.0**
+Grounded in a full crates.io publication audit. Key finding: **the maintainer already owns and published `bevy_metalfx` v0.1.0**
 (github.com/mistakeknot/bevy_metalfx, 25 downloads, since 2026-03-23). So this phase is *next-version prep*, not a
 first publish. Changes:
 
@@ -481,7 +481,7 @@ first publish. Changes:
 - **GPU-timing diagnostics documented** — previously undocumented public API, now framed as an opt-in profiling facility.
 - Publication posture verified: **zero path/git deps** in the crate, all metadata present, non-macOS stub complete, `# Safety` docs on all `unsafe fn`. `cargo publish --dry-run` packages cleanly as 0.2.0.
 
-The **actual `cargo publish` is mk's credentialed, outward-facing step** — this phase makes the crate ready; it does
+The **actual `cargo publish` is the maintainer's credentialed, outward-facing step** — this phase makes the crate ready; it does
 not push it.
 
 ## Epic close — what shipped, what's deferred

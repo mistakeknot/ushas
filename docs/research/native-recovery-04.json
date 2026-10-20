@@ -123,16 +123,16 @@
     "scope": "Earlier awake/on-console sample did not establish unlocked state throughout run01. Interactive window gate remains incomplete."
   },
   "auditor_sha256": "c2795300b7656b023fb66ca87e2a2ff377a8201d928b551fba8a488c5d6eb6d8",
-  "evidence_archive": "/Users/sma/projects/docs/ushas/evidence/native-recovery-04",
+  "evidence_archive": "/Users/user/ushas/evidence/native-recovery-04",
   "audit_receipt_sha256": "b17263681ab0472522246be050cfac63d3ebedb8395af91d799c392aa921c84b",
   "archive_manifest": {
-    "path": "/Users/sma/projects/docs/ushas/evidence/native-recovery-04/archive-manifest.json",
+    "path": "/Users/user/ushas/evidence/native-recovery-04/archive-manifest.json",
     "sha256": "7054236ffd0d9fddec52beef70ed6036346381cfd8979608656c147c74a89e63",
     "files": 25,
     "bytes": 106644957
   },
   "root_audit": {
-    "path": "/Users/sma/projects/docs/ushas/evidence/native-recovery-04/root-audit-01.json",
+    "path": "/Users/user/ushas/evidence/native-recovery-04/root-audit-01.json",
     "sha256": "e6e740631119892b9a47baa2708d7848c7c21cde297f38b5853ca3989b7c4bb5",
     "exit_code": 0,
     "self_tests_passed": 7

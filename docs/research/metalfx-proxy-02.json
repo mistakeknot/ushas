@@ -1,6 +1,6 @@
 {
   "archive_final_manifest": {
-    "path": "/Users/sma/projects/docs/ushas/evidence/metalfx-proxy-02/archive-manifest.json",
+    "path": "/Users/user/ushas/evidence/metalfx-proxy-02/archive-manifest.json",
     "payload_bytes": 30998835,
     "payload_files": 150,
     "sha256": "f3204077e2d0745775591533e1bfa74441e69f3a1d12e8feec51049f85e31ea0"
@@ -11,7 +11,7 @@
     "verified_payload_bytes": 30844812,
     "verified_payload_files": 144
   },
-  "archive_path": "/Users/sma/projects/docs/ushas/evidence/metalfx-proxy-02",
+  "archive_path": "/Users/user/ushas/evidence/metalfx-proxy-02",
   "audit_consistent": true,
   "audit_script_sha256": "fc70a148b6898d58304b5aad2538f35223e71b0a26a6753903d5415a867ff921",
   "builds": {

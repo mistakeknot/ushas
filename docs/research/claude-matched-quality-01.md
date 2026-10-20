@@ -65,7 +65,7 @@ from this archive. The harness author's inspection is reported separately from
 the parent's and peer's independent review. These quality samples add no timing
 estimate to the separate performance campaigns.
 
-The [archive manifest](/Users/sma/projects/docs/ushas/evidence/claude-matched-quality-01/archive-manifest.json)
+The [archive manifest](/Users/user/ushas/evidence/claude-matched-quality-01/archive-manifest.json)
 verifies **111 payload files, 147,989,417 bytes**: all six original reports,
 manifests and logs; all 72 PNGs; the exact 101,088,960-byte executable; build
 receipt/log; and 18 harness source files extracted from the committed Git objects.

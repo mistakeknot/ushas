@@ -11,8 +11,8 @@
   "source_revision": "4e3b115d8427cb4b8e7c9025cef993f98c6d2c30",
   "source_status": "",
   "binary_sha256": "8779e580aae2563f338930beeb305024ea6ce7da1635dac7d7ab5b9b15869f8e",
-  "evidence_root": "/Users/sma/projects/docs/ushas/evidence/proxy-validation-control-03",
-  "resolved_evidence_root": "/Users/sma/projects/dotfiles/common/projects/docs/ushas/evidence/proxy-validation-control-03",
+  "evidence_root": "/Users/user/ushas/evidence/proxy-validation-control-03",
+  "resolved_evidence_root": "/Users/user/projects/dotfiles/common/projects/docs/ushas/evidence/proxy-validation-control-03",
   "build_receipt": {
     "path": "build/build.json",
     "sha256": "1309499a0c5ef87c5c7052c893c6c2e62c7c3559ae978efb2af20eb0bf0a281d"
@@ -307,7 +307,7 @@
     "scope": "Exact pixel equality for the deterministic synthetic Spatial gradient only. Both strict CALLS observations and strict reference comparisons remain invalid."
   },
   "archive_manifest": {
-    "path": "/Users/sma/projects/docs/ushas/evidence/proxy-validation-control-03/archive-manifest.json",
+    "path": "/Users/user/ushas/evidence/proxy-validation-control-03/archive-manifest.json",
     "sha256": "b5d7c63a5a8a97198105f2e0cdfd69526e4337134cc0ce41fb28b2a8e9900d68",
     "files": 163,
     "bytes": 37102350
@@ -378,7 +378,7 @@
     "standalone_build_runner_verified": true
   },
   "root_audit": {
-    "path": "/Users/sma/projects/docs/ushas/evidence/proxy-validation-control-03/root-audit-03.json",
+    "path": "/Users/user/ushas/evidence/proxy-validation-control-03/root-audit-03.json",
     "sha256": "268f1725f6c57967b5a00ecf715ff4b09ab215509535b835c8dd4ebf8b25b159",
     "audit_consistent": true
   }

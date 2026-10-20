@@ -93,7 +93,7 @@ These are unpaired diagnostic pilots, not a speed comparison or a repair claim
 for the original unpaced mode. Their [compact provenance](completion-pilots-01.json)
 includes the exact executable, report and capture hashes. All 12 raw reports,
 images and logs are archived with verified hashes at
-`/Users/sma/projects/docs/ushas/evidence/completion-pilots-01/`.
+`/Users/user/ushas/evidence/completion-pilots-01/`.
 The subsequent [balanced completed-render campaign](claude-completion-campaign-01.md)
 passed all 60 runs. Its measurements belong to that serial mode; they do not
 change this campaign's failures or CPU-only interpretation. The current consumer
@@ -103,7 +103,7 @@ trial remains a separate gate.
 
 All 362 files, including failed reports, logs, captures, execution manifests,
 the predeclared plan and analysis, are copied and hash-verified at
-`/Users/sma/projects/docs/ushas/evidence/claude-campaign-01/`.
+`/Users/user/ushas/evidence/claude-campaign-01/`.
 `archive-manifest.json` records every file's size and SHA-256. Original files
 remain in `/private/tmp/ushas-roadmap-evidence/claude-campaign-01/`.
 The public JSON is a compact analysis; it does not replace those raw records.

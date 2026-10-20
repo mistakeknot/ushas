@@ -1,7 +1,7 @@
 # Frame-generation harness reconciliation
 
 This is a source audit and a proposed trial procedure, not a new presentation
-result. No Shadow Work files were edited and no GPU workload was launched for
+result. No consumer-project files were edited and no GPU workload was launched for
 this audit. Frame interpolation remains experimental; positive drawable
 timestamps alone do not establish image ordering, content, latency, or native UI
 and HDR composition.
@@ -9,13 +9,13 @@ and HDR composition.
 ## Inspected versions
 
 The historical consumer worktree is
-`/Users/sma/projects/shadow-work/.claude/worktrees/metalfx-m5-research`, at
+`/Users/user/consumer-workspace`, at
 `2a49dfcb294a69283e9e4cf9aa0662b61c51495a`. The requested old `tools/research`
 paths do not exist there. The actual scripts are
 `crates/sw-renderer/scripts/gate1-gauge.sh` and
 `crates/gpu-load-bench/scripts/sweep.sh`.
 
-Its root Cargo patch points to the live `/Users/sma/projects/ushas` directory.
+Its root Cargo patch points to the live `/Users/user/ushas` directory.
 The resolved package still says `bevy_metalfx 0.4.2`; that version does not pin the
 local implementation. Ushas was at `7db0818b6374f99475995b9939afdf9032aa18ce`
 when its current sink and CI invariants were inspected. Subsequent candidate
@@ -46,23 +46,23 @@ scope in [temporal-quality.md](temporal-quality.md) and
 ## Recovered historical results
 
 The following are immutable **committed accounts of runs**, recovered from
-Shadow Work's git history. They are not newly reproduced measurements or a
+the consumer project's git history. They are not newly reproduced measurements or a
 recovered collection of raw logs and executable hashes.
 
 | Revision and date | Recorded result | Disposition |
 | --- | --- | --- |
-| [`05f81248ecdc2750922fb33898c4dfeec66903a1`](https://github.com/mistakeknot/shadow-work/commit/05f81248ecdc2750922fb33898c4dfeec66903a1), July 25, 2026 | Single: 403 presents, 403 callbacks, 26.9 render fps. Dual: 802 presents, 801 callbacks, 26.7 render fps. Both use the owned layer and compute interpolation; cap 30 fps. | The recorded 1.99× gain is accepted presents. The account explicitly withholds a presented-fps pass and records a separate positive control with 881 callbacks and zero positive presentation timestamps. Identical configured interpolation work does not establish identical measured GPU cost. |
-| [`4253273976ba58a454b6cf00ceaa11bd896db8a1`](https://github.com/mistakeknot/shadow-work/commit/4253273976ba58a454b6cf00ceaa11bd896db8a1), July 27, 2026 | Awake: **13 passed / 0 failed / 0 skipped, PASS (strong)**. Same tree asleep: **10 passed / 0 failed / 3 skipped, PASS (weak)**. | This fixes D1's double-counted rate, D2's ring-occupancy counter, and D3's unbounded bench exit. It records the frozen external gate's outcomes and a subsequent repair to two shell-comment apostrophes. The asleep result deliberately withholds the three presentation criteria. |
-| [`493a06f83f9edf65b10a297281ffe6a166233f37`](https://github.com/mistakeknot/shadow-work/commit/493a06f83f9edf65b10a297281ffe6a166233f37), July 27, 2026 | Both pilot arms independently rerun by the validator: **13 passed / 0 failed / 0 skipped, PASS (strong)**. | The merge records a tied gauge result. Arm B was selected on implementation and harness quality, not a larger measured performance gain. |
+| `05f81248ecdc2750922fb33898c4dfeec66903a1`, July 25, 2026 | Single: 403 presents, 403 callbacks, 26.9 render fps. Dual: 802 presents, 801 callbacks, 26.7 render fps. Both use the owned layer and compute interpolation; cap 30 fps. | The recorded 1.99× gain is accepted presents. The account explicitly withholds a presented-fps pass and records a separate positive control with 881 callbacks and zero positive presentation timestamps. Identical configured interpolation work does not establish identical measured GPU cost. |
+| `4253273976ba58a454b6cf00ceaa11bd896db8a1`, July 27, 2026 | Awake: **13 passed / 0 failed / 0 skipped, PASS (strong)**. Same tree asleep: **10 passed / 0 failed / 3 skipped, PASS (weak)**. | This fixes D1's double-counted rate, D2's ring-occupancy counter, and D3's unbounded bench exit. It records the frozen external gate's outcomes and a subsequent repair to two shell-comment apostrophes. The asleep result deliberately withholds the three presentation criteria. |
+| `493a06f83f9edf65b10a297281ffe6a166233f37`, July 27, 2026 | Both pilot arms independently rerun by the validator: **13 passed / 0 failed / 0 skipped, PASS (strong)**. | The merge records a tied gauge result. Arm B was selected on implementation and harness quality, not a larger measured performance gain. |
 
 The July 27 merge explicitly describes a run that measured positive drawable
 timestamps. It supersedes the earlier account's claim that timestamps never
 populate on this machine. That older claim also remained in the
-[research document at the merge revision](https://github.com/mistakeknot/shadow-work/blob/493a06f83f9edf65b10a297281ffe6a166233f37/crates/bevy_metalfx/docs/m5-max-performance-research.md);
+research document at the merge revision;
 its persistence is documentation drift, not evidence of a permanent hardware
 limitation.
 
-The [frozen gauge at that revision](https://github.com/mistakeknot/shadow-work/blob/493a06f83f9edf65b10a297281ffe6a166233f37/crates/sw-renderer/scripts/gate1-gauge.sh)
+The frozen gauge at that revision
 has ten general checks and three presentation checks. The latter test that the
 cumulative displayed counter can exceed 480, that single-present rate is no
 more than 1.15× render rate, and that dual-present rate is between 1.7× and
@@ -216,8 +216,8 @@ effect.
 
 ```bash
 set -euo pipefail
-consumer=/Users/sma/projects/shadow-work/.claude/worktrees/metalfx-m5-research
-ushas=/Users/sma/projects/ushas
+consumer=/Users/user/consumer-workspace
+ushas=/Users/user/ushas
 trial=$(mktemp -d /private/tmp/ushas-fg-candidate.XXXXXX)
 candidate=$(git -C "$ushas" rev-parse HEAD)
 git -C "$ushas" status --porcelain > "$trial/ushas-status.txt"

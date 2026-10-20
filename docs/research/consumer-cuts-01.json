@@ -13,7 +13,7 @@
     "original_run_artifact_hashes_verified": 30
   },
   "archive": {
-    "directory": "/Users/sma/projects/docs/ushas/evidence/consumer-cuts-01",
+    "directory": "/Users/user/ushas/evidence/consumer-cuts-01",
     "manifest": "archive-manifest.json",
     "manifest_sha256": "2b9da776324cafd21fe062bedddc1efc325a05c3ed322bf46348a8f684a6ac3f"
   },
@@ -21,18 +21,18 @@
     "consumer_commit": "2a49dfcb294a69283e9e4cf9aa0662b61c51495a",
     "ushas_commit": "56a3b16c8c1c8f12a5320adc5082c6d20b6378c1",
     "binary_sha256": "e1eaf124a3d01637a115af46bb9f02049c4ad093adb3596d5af49416df31a126",
-    "provenance_archive": "/Users/sma/projects/docs/ushas/evidence/consumer-completion-pilots-01",
+    "provenance_archive": "/Users/user/ushas/evidence/consumer-completion-pilots-01",
     "provenance_archive_manifest_sha256": "e5bc4d25d1f046417b1869a10299a1ab6bb28ae5a7cc61fce762bd9bba50831c",
     "prepared_receipt": {
-      "path": "/Users/sma/projects/docs/ushas/evidence/consumer-completion-pilots-01/prepared.json",
+      "path": "/Users/user/ushas/evidence/consumer-completion-pilots-01/prepared.json",
       "sha256": "94f5f6fc0ce78fa8fea954110e4498f3a51259e57aaf6f7c1dc065d7af473bff"
     },
     "build_receipt": {
-      "path": "/Users/sma/projects/docs/ushas/evidence/consumer-completion-pilots-01/build.json",
+      "path": "/Users/user/ushas/evidence/consumer-completion-pilots-01/build.json",
       "sha256": "d39365899487d97a21e2f8cdc3283756f32a77c9d2a6f88e4f2de9255c6212ed"
     },
     "patch": {
-      "path": "/Users/sma/projects/docs/ushas/evidence/consumer-completion-pilots-01/consumer.patch",
+      "path": "/Users/user/ushas/evidence/consumer-completion-pilots-01/consumer.patch",
       "sha256": "5a76c579e780fefb20049584911c98580f77bc2c5e903c77d4d4d1e98a468aaa"
     },
     "runtime_environment": "Image mode retains pipelined rendering; runner sets OVERLAY=0. No per-run OS, thermal, inherited environment or display/lock observations are retained. Offscreen image targets have no presentation claim."

@@ -59,7 +59,7 @@ nonuniform scene content; recomputed image statistics agree with the reports.
 A separate reviewer inspected all six lifecycle originals. Both fallback images
 retain recognizable faces, all six rails and the UI, with visibly coarse edges
 and checkerboard aliasing; both restored images are smoother and intact. The
-[independent pixel record](/Users/sma/projects/docs/ushas/evidence/lifecycle-fault-offscreen-03/independent-pixels.json)
+[independent pixel record](/Users/user/ushas/evidence/lifecycle-fault-offscreen-03/independent-pixels.json)
 does not claim fallback quality equals native rendering.
 
 These are synthetic creation-result faults exercising the real fallback output
@@ -75,19 +75,19 @@ sleep/resume, adaptive convergence or broad visual-quality claim.
 The [machine-readable report](lifecycle-fault-offscreen-03.json) includes audited
 phase counts, events, decoded capture statistics and explicit retention limits.
 The archive at
-`/Users/sma/projects/docs/ushas/evidence/lifecycle-fault-offscreen-03/` contains
+`/Users/user/ushas/evidence/lifecycle-fault-offscreen-03/` contains
 **27 payload files, 108,872,753 bytes**, excluding its manifest: original reports,
 manifests, logs and ten PNGs; exact executable and build/launch receipts;
 committed-source archive; independent pixel review; copy record and CPU auditor.
 Copies matched source-before, source-after and destination hashes. The
-[manifest](/Users/sma/projects/docs/ushas/evidence/lifecycle-fault-offscreen-03/archive-manifest.json)
+[manifest](/Users/user/ushas/evidence/lifecycle-fault-offscreen-03/archive-manifest.json)
 SHA256 is `ecc0c03914cfef84c67e31f84662f36a63cc5f447ca1b74deb7632cf68f4dfb7`.
 
 ```sh
 PYTHONDONTWRITEBYTECODE=1 python3 \
-  /Users/sma/projects/docs/ushas/evidence/lifecycle-fault-offscreen-03/audit.py
+  /Users/user/ushas/evidence/lifecycle-fault-offscreen-03/audit.py
 PYTHONDONTWRITEBYTECODE=1 python3 \
-  /Users/sma/projects/docs/ushas/evidence/lifecycle-fault-offscreen-03/audit.py --self-test
+  /Users/user/ushas/evidence/lifecycle-fault-offscreen-03/audit.py --self-test
 ```
 
 Eight CPU auditor tests pass, including declared-eviction acceptance and rejection

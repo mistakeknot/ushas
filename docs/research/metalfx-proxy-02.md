@@ -66,13 +66,13 @@ additional work.
 The [machine-readable report](metalfx-proxy-02.json) keeps audit consistency,
 strict run validity, pixel equality and rejected compatibility as separate
 fields. The durable archive is
-`/Users/sma/projects/docs/ushas/evidence/metalfx-proxy-02/`.
+`/Users/user/ushas/evidence/metalfx-proxy-02/`.
 Its initial copy receipt covers 144 payloads totaling 30,844,812 bytes: exact
 source tarballs and binaries, build/execution receipts, original and corrected
 runs, raw outputs, PNGs, strict analyses, CPU failing/passing logs and frozen
 validator sources. The auditor verifies that initial inventory and separately
 hashes the subsequent independent and root visual reviews. The final
-[archive manifest](/Users/sma/projects/docs/ushas/evidence/metalfx-proxy-02/archive-manifest.json)
+[archive manifest](/Users/user/ushas/evidence/metalfx-proxy-02/archive-manifest.json)
 covers **150 payloads, 30,998,835 bytes**, including the auditor, root audit and
 later reviews. Its SHA-256 is
 `f3204077e2d0745775591533e1bfa74441e69f3a1d12e8feec51049f85e31ea0`.
@@ -81,8 +81,8 @@ recorded revision. The original copy receipt and all failed evidence remain
 unchanged.
 
 ```sh
-python3 /Users/sma/projects/docs/ushas/evidence/metalfx-proxy-02/audit.py --self-test
-python3 /Users/sma/projects/docs/ushas/evidence/metalfx-proxy-02/audit.py
+python3 /Users/user/ushas/evidence/metalfx-proxy-02/audit.py --self-test
+python3 /Users/user/ushas/evidence/metalfx-proxy-02/audit.py
 ```
 
 The auditor is read-only, disables bytecode writes and never launches a native

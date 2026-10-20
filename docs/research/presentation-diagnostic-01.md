@@ -37,7 +37,7 @@ or net benefit from the existing aggregate `presentedTime` sink.
 
 The entire attempt and exact committed probe, `run.py`, and frozen smoke
 PNG-helper/capture-callsite sources are retained under
-`/Users/sma/projects/docs/ushas/evidence/presentation-diagnostic-01/`.
+`/Users/user/ushas/evidence/presentation-diagnostic-01/`.
 All seven payloads (84,815 bytes) were hash-verified. The helper sources are
 included for provenance; the child-side helpers were not executed here.
 The archive-manifest SHA-256 is

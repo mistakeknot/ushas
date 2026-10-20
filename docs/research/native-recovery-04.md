@@ -92,17 +92,17 @@ long-duration reliability are outside this result.
 The [machine-readable report](native-recovery-04.json) links the source, protocol,
 decoded images and failed-attempt findings. The retained originals and independent
 auditor are under
-`/Users/sma/projects/docs/ushas/evidence/native-recovery-04/`.
+`/Users/user/ushas/evidence/native-recovery-04/`.
 Root reproduced the audit and all seven tests. The complete
-[archive manifest](/Users/sma/projects/docs/ushas/evidence/native-recovery-04/archive-manifest.json)
+[archive manifest](/Users/user/ushas/evidence/native-recovery-04/archive-manifest.json)
 covers 25 payloads, 106,644,957 bytes; SHA256
 `7054236ffd0d9fddec52beef70ed6036346381cfd8979608656c147c74a89e63`.
 It includes the failed attempt, helper outcome and root visual review, with
 no successful native-window inspection artifact or OS sleep run.
 
 ```sh
-python3 /Users/sma/projects/docs/ushas/evidence/native-recovery-04/audit.py
-python3 /Users/sma/projects/docs/ushas/evidence/native-recovery-04/audit.py --self-test
+python3 /Users/user/ushas/evidence/native-recovery-04/audit.py
+python3 /Users/user/ushas/evidence/native-recovery-04/audit.py --self-test
 ```
 
 All seven auditor tests pass, including rejection of a mismatched arm boundary,

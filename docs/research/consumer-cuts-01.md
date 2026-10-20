@@ -9,7 +9,7 @@ records screenshot request frames without joining them to rendered frames.
 
 The [machine-readable report](consumer-cuts-01.json) records the full image
 inventory, request identities, observations and reset log events. The immutable
-source is Shadow Work `2a49dfcb294a69283e9e4cf9aa0662b61c51495a`, patched only in a
+source is the consumer project `2a49dfcb294a69283e9e4cf9aa0662b61c51495a`, patched only in a
 private copy against Ushas `56a3b16c8c1c8f12a5320adc5082c6d20b6378c1`. The binary
 SHA256 is `e1eaf124a3d01637a115af46bb9f02049c4ad093adb3596d5af49416df31a126`.
 
@@ -61,8 +61,8 @@ All 18 PNGs were independently decoded as 1600×900 RGBA with every alpha byte
 255. All 30 original per-run artifact hashes were checked; the full three run
 directories were copied with source-before/source-after/destination SHA256
 agreement. The archive contains 33 payload files (15,807,014 bytes) plus its
-[verified manifest](/Users/sma/projects/docs/ushas/evidence/consumer-cuts-01/archive-manifest.json).
+[verified manifest](/Users/user/ushas/evidence/consumer-cuts-01/archive-manifest.json).
 Prepared-source, patch, check and build receipts are linked to the existing
-[pilot provenance archive](/Users/sma/projects/docs/ushas/evidence/consumer-completion-pilots-01/archive-manifest.json),
+[pilot provenance archive](/Users/user/ushas/evidence/consumer-completion-pilots-01/archive-manifest.json),
 whose referenced hashes and current binary identity were rechecked. No source,
 runner, live consumer worktree or GPU workload was changed during this audit.

@@ -54,7 +54,7 @@ These measurements neither supply a GPU busy-cost signal nor establish
 production pipelined FPS, input latency or presentation.
 
 All 126 payload files (49,072,839 bytes) are hash-verified in
-`/Users/sma/projects/docs/ushas/evidence/claude-middle-presets-01/`, including
+`/Users/user/ushas/evidence/claude-middle-presets-01/`, including
 the complete plan, reports, images, logs, manifests and exact analysis sources.
 The archive manifest SHA-256 is
 `6df0164cc02507791cf2a7cdcdb131cd73767403e0844c9f8d9210a1d1904622`.
